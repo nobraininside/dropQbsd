@@ -1,6 +1,6 @@
 # dropQbsd
 
-*dropQbsd — compartmentalization made simple*
+*dropQbsd — Compartmentalization made simple*
 
 Take an excellent idea — security by compartmentalization, as developed by Qubes OS — and strip away the hypervisor. **dropQbsd relies on native OpenBSD user separation instead of heavy virtualization**. Same security. Low resources. No multi-gigabyte VM images. No complex Xen setups. Just a few rules, a solid pf.conf, and a handful of scripts. That's it.
 
