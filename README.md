@@ -18,11 +18,11 @@ Ten minutes to install. Uninstall if you're bored. Reinstall if something breaks
 
 ## What you get
 
-**Compartmentalization without virtualization**. Same security model as Qubes, zero overhead.
-**Disposable browsers**. Launch any browser with a temporary profile as any domain user with a single command.
-**Automated archival**. Email and work directories are compressed and pulled across domains on schedule, with integrity verification and retention policies.
-**Quarantine**. Files that violate policy are isolated with an explanation, not silently accepted.
-**Reinstallable in minutes**. The whole framework is a few ksh scripts and some pf rules. No databases, no daemons, no state you can't reconstruct.
+- **Compartmentalization without virtualization**. Same security model as Qubes, zero overhead.
+- **Disposable browsers**. Launch any browser with a temporary profile as any domain user with a single command.
+- **Automated archival**. Email and work directories are compressed and pulled across domains on schedule, with integrity verification and retention policies.
+- **Quarantine**. Files that violate policy are isolated with an explanation, not silently accepted.
+- **Reinstallable in minutes**. The whole framework is a few ksh scripts and some pf rules. No databases, no daemons, no state you can't reconstruct.
 
 ## Philosophy
 
