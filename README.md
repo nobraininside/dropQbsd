@@ -1,40 +1,386 @@
-# dropQbsd
+## dropQbsd
 
-*dropQbsd — Compartmentalization made simple*
+> Compartmentalization without virtualization. Just Unix, done right.
 
-Take an excellent idea — security by compartmentalization, as developed by Qubes OS — and strip away the hypervisor. **dropQbsd relies on native OpenBSD user separation instead of heavy virtualization**. Same security. Low resources. No multi-gigabyte VM images. No complex Xen setups. Just a few rules, a solid pf.conf, and a handful of scripts. That's it.
+---
 
-**dropQbsd is a framework that turns a standard OpenBSD machine into a rock-solid compartmentalized operating system**. Each domain — web, mail, LAN, work — runs as a separate user. They share nothing except a single controlled exchange directory policed by automated scripts that block malware propagation while allowing seamless file sharing.
+### What is this?
 
-Ten minutes to install. Uninstall if you're bored. Reinstall if something breaks. No hypervisor, no lock-in, no magic. Just Unix, done right.
+Take the core insight of Qubes OS — security through compartmentalization — and strip away the hypervisor. **dropQbsd** uses native OpenBSD user separation instead of heavy virtualization.
 
-## How it works
+No multi-gigabyte VM images. No Xen. No moving parts you can't audit in an afternoon.
 
-**Each domain (web browsing, email, LAN, general work) runs as a dedicated user — userweb, usermail, userlan, user**. These users share no files, no home directories, no network namespaces beyond what pf allows. They are isolated at the OS level, not inside virtual machines.
+Each domain — web, mail, LAN — runs as a dedicated user. They share nothing except a single policed exchange directory. A handful of ksh scripts, a solid `pf.conf`, and standard Unix permissions do the rest.
 
-**The main user (user) acts as the conductor**: it can launch graphical applications inside any domain without switching users, without a root password, and without leaving its own desktop session. A single script (run_app) handles X11 authentication forwarding and process execution via doas. This works with any window manager — no custom DE integration required, no Xephyr nesting, no special display manager configuration.
+**Ten minutes to install. Rebuildable in thirty. Zero lock-in.**
 
-**The only bridge between domains is /home/drop — a policed exchange directory**. Files deposited there are automatically checked, their permissions corrected, and unauthorized files quarantined. Importing a file leaves a sentinel behind; a cron job handles cleanup. Malware that compromises one domain cannot propagate through the exchange because it cannot write to files it doesn't own, cannot delete files deposited by others, and cannot escape the permissions cage enforced every 60 seconds.
+---
 
-## What you get
+### Architecture
 
-- **Compartmentalization without virtualization**. Same security model as Qubes, zero overhead.
-- **Disposable browsers**. Launch any browser with a temporary profile as any domain user with a single command.
-- **Automated archival**. Email and work directories are compressed and pulled across domains on schedule, with integrity verification and retention policies.
-- **Quarantine**. Files that violate policy are isolated with an explanation, not silently accepted.
-- **Reinstallable in minutes**. The whole framework is a few ksh scripts and some pf rules. No databases, no daemons, no state you can't reconstruct.
+#### The Four Domains
 
-## Philosophy
+| User | Role | Network |
+|------|------|---------|
+| `user` | Conductor — orchestrates, imports/exports, administers | Minimal (updates only) |
+| `userweb` | Web browser — isolated from mail and LAN | HTTP/HTTPS only |
+| `usermail` | Email client — isolated from web | Mail servers only |
+| `userlan` | LAN and archival storage — no direct internet | LAN + Syncthing |
 
-dropQbsd is not a distribution. It's a configuration. It doesn't fork OpenBSD — it sits on top of it, using tools that have been battle-tested for decades. The goal is not to add layers of abstraction but to remove them: if Unix users and permissions already provide isolation, why add a hypervisor? If cron and find can police a shared directory, why run a service?
-**Complexity is the enemy of security. dropQbsd keeps it simple**, auditable, and boring — exactly what you want from a security tool.
+All belong to the `drop` group. Home directories are `chmod 700` — no cross-domain snooping.
 
+#### The Drop Zone (`/home/drop`)
 
+The **only bridge** between domains. A shared directory with strict rules:
 
-## Install
-...
+- Files in transit: `440` (read-only for owner and group)
+- Directories in transit: `570` (group can traverse and create sentinels)
+- Export directories: SGID `2770`, owned by `root:drop`
 
-## Script
-...
+No domain can delete another domain's files. No domain can modify files once placed. A cron job (`enforce_drop`) runs every 60 seconds, correcting permissions, quarantining violations, and cleaning abandoned artifacts.
 
-## License
+**Import workflow:**
+
+1. `qmv` moves a file into `/home/drop`, sets group to `drop`, permissions to `440`
+2. `qimport` (run by `user`) copies the file out and leaves a `.imported` sentinel
+3. `enforce_drop` sees the sentinel, deletes both it and the original — cleanup is automatic, nobody needs delete permissions
+
+#### The Conductor
+
+`user` launches graphical apps inside any domain without switching users:
+
+```sh
+doas run_app userweb qutebrowser --temp-basedir
+```
+
+`run_app` copies the X11 cookie, creates an isolated runtime directory, and launches the app via `doas -u`. Works with any window manager. No Xephyr nesting. No special display manager configuration.
+
+#### Network Isolation
+
+`pf.conf` enforces strict per-domain rules:
+
+- **Default deny** — nothing gets out unless explicitly allowed
+- `userweb` reaches ports 80/443 only
+- `usermail` reaches only IPs in the `<mailserver>` table, only on mail ports
+- `userlan` reaches LAN subnets and Syncthing ports only
+- **Root has no permanent web access** — only IPs in the `<updates>` table, populated on-demand
+
+#### Archival Pipeline
+
+```
+usermail → export_mail_to_drop → usermail_export → pull_mail_from_Drop → userlan (3 backups)
+userweb  → export_sites_to_Drop → userweb_export  → pull_sites_from_drop  → userlan (3 backups)
+```
+
+Export files are `root:drop 440` — no domain user can modify them. Only `root` (via `enforce_drop`) can delete them. Integrity verified at each step.
+
+---
+
+### What You Get
+
+- **Compartmentalization without virtualization.** Same security model as Qubes, zero overhead.
+- **Disposable browsers.** `doas run_app userweb qutebrowser --temp-basedir` — gone on exit.
+- **Automated archival.** Email and websites compressed, verified, pulled across domains on schedule.
+- **Quarantine with audit trail.** Policy violations are isolated with an explanation ticket, not silently accepted.
+- **Root web access on-demand.** `ensure_updates_table` populates the PF table, `pkg_add_via_pf` and `syspatch_via_pf` do their job, table stays populated (harmless on an isolated system). No telemetry. No background phoning home.
+- **Reinstallable in 30 minutes.** No databases, no daemons, no state you can't reconstruct from scripts and `/etc`.
+
+---
+
+### Security Model
+
+#### What dropQbsd Protects Against
+
+- **Malware propagation between domains.** A compromised browser cannot read your email or access your LAN files.
+- **Network pivoting.** A compromised web domain cannot reach your mail server or LAN.
+- **Persistent browser compromise.** Disposable profiles mean the attacker starts from zero each session.
+- **Accidental data leakage.** Files can only move through the drop zone, which is policed every 60 seconds.
+- **Silent policy violations.** Quarantine catches and explains every non-conforming file.
+
+#### What dropQbsd Does NOT Protect Against
+
+**X11 input isolation.** X11 uses a single shared cookie (MIT-MAGIC-COOKIE-1) for all clients on a display. Any compromised domain can keylog all other domains' keystrokes, capture screenshots, and snoop clipboard contents. This is a fundamental X11 limitation — not a dropQbsd bug.
+
+Mitigations in place:
+- Disposable browsers (`--temp-basedir`) — compromise doesn't persist
+- Per-session cookies via `xenodm` — stolen cookie expires at logout
+- XTEST disabled where possible — blocks `xinput test` and `xdotool`
+- Snooping tools blocked in restricted domains
+
+**Conductor compromise.** If `user` is compromised, all domains are compromised — the conductor holds the keys. Keep `user` clean: no web browsing, no email, no untrusted input.
+
+**Kernel-level attacks.** All domains share one kernel. A kernel exploit in one domain compromises everything. This is the tradeoff for avoiding virtualization. Qubes OS uses Xen VMs for kernel isolation; dropQbsd accepts the shared kernel in exchange for zero-VM simplicity.
+
+#### dropQbsd vs Qubes OS
+
+| | dropQbsd | Qubes OS |
+|---|---|---|
+| Isolation mechanism | Unix users + permissions | Xen hypervisor + VMs |
+| RAM baseline | 512 MB | 8 GB |
+| Input isolation | None (shared X11 cookie) | Full (separate X servers) |
+| Kernel isolation | None (shared kernel) | Full (separate VM kernels) |
+| Disk usage | ~2 GB (OpenBSD base) | 30+ GB (VM images) |
+| Install time | 10 minutes | 1-2 hours |
+| Rebuild from scratch | 30 minutes | Hours/days |
+| Complexity | ~500 lines of ksh | Xen, Qubes tools, GUI stack |
+| Threat model | Malware, network attacks, data leaks | Targeted state actors, kernel exploits |
+
+**Choose dropQbsd if** you want compartmentalization without the weight of virtualization. **Choose Qubes OS if** your threat model includes kernel exploits or targeted input sniffing.
+
+---
+
+### Installation
+
+#### Prerequisites
+
+- OpenBSD (any supported release)
+- No additional packages required — everything is in the base system
+
+#### 1. Create Users and Group
+
+```sh
+groupadd drop
+
+useradd -m -G drop userweb
+useradd -m -G drop usermail
+useradd -m -G drop userlan
+usermod -G drop user
+```
+
+#### 2. Create Directory Structure
+
+```sh
+mkdir -p /usr/local/bin/dropQbsd/admin
+mkdir -p /home/drop/userweb_export
+mkdir -p /home/drop/usermail_export
+mkdir -p /home/drop/_quarantine
+
+chown root:drop /home/drop /home/drop/userweb_export /home/drop/usermail_export
+chmod 750 /home/drop
+chmod 2770 /home/drop/userweb_export /home/drop/usermail_export
+chmod 750 /home/drop/_quarantine
+```
+
+#### 3. Install Scripts
+
+Copy all scripts to `/usr/local/bin/dropQbsd/`:
+
+```
+admin/
+├── enforce_drop
+├── enforce_sync
+├── ensure_updates_table
+├── pkg_add_via_pf
+├── syspatch_via_pf
+└── update_openbsd_via_pf
+run_app
+qmv
+qimport
+export_sites_to_Drop.sh
+export_mail_to_drop
+pull_sites_from_drop
+pull_mail_from_Drop
+```
+
+```sh
+chmod 755 /usr/local/bin/dropQbsd/qmv
+chmod 755 /usr/local/bin/dropQbsd/qimport
+chmod 755 /usr/local/bin/dropQbsd/run_app
+chmod 755 /usr/local/bin/dropQbsd/export_sites_to_Drop.sh
+chmod 755 /usr/local/bin/dropQbsd/export_mail_to_drop
+chmod 755 /usr/local/bin/dropQbsd/pull_sites_from_drop
+chmod 755 /usr/local/bin/dropQbsd/pull_mail_from_Drop
+chmod 700 /usr/local/bin/dropQbsd/admin/*
+chown -R root:wheel /usr/local/bin/dropQbsd
+```
+
+#### 4. Configure doas.conf
+
+```
+permit nopass root
+permit nopass user cmd /usr/local/bin/dropQbsd/run_app
+```
+
+#### 5. Configure pf.conf
+
+Copy the provided `pf.conf` to `/etc/pf.conf`. Create `/etc/mailserver_ips` with your mail server IPs (one per line). Create `/etc/pkg_mirror_ips` (auto-generated on first update if missing).
+
+```sh
+pfctl -f /etc/pf.conf
+```
+
+#### 6. Configure Cron (root)
+
+```
+* * * * * /usr/local/bin/dropQbsd/admin/enforce_drop
+* * * * * /usr/local/bin/dropQbsd/admin/enforce_sync
+```
+
+#### 7. Configure Syncthing (optional)
+
+Set up Syncthing for `userlan` with the Sync directory at `/home/userlan/Sync`. The `enforce_sync` script will maintain correct permissions automatically.
+
+---
+
+### Daily Usage
+
+#### Moving Files Between Domains
+
+```sh
+## Place a file in the drop zone (from any domain)
+qmv ~/document.pdf
+
+## Import it into the conductor's home (as user)
+qimport document.pdf
+```
+
+#### Launching Apps in Domains
+
+```sh
+## Disposable browser
+doas run_app userweb qutebrowser --temp-basedir
+
+## Persistent browser (less secure)
+doas run_app userweb firefox
+
+## Mail client in its isolated domain
+doas run_app usermail claws-mail
+
+## File manager for LAN storage
+doas run_app userlan xfe
+```
+
+#### Archiving
+
+```sh
+## Export websites (as userweb)
+export_sites_to_Drop.sh
+
+## Export mail (as usermail)
+export_mail_to_drop
+
+## Pull into LAN storage (as userlan)
+pull_sites_from_drop
+pull_mail_from_Drop
+```
+
+#### System Updates
+
+```sh
+## Full update (patches + firmware + packages + orphan cleanup)
+doas update_openbsd_via_pf
+
+## Security patches only
+doas syspatch_via_pf
+
+## Install a specific package
+doas pkg_add_via_pf firefox
+
+## Major release upgrade: populate table first, then sysupgrade
+doas ensure_updates_table
+doas sysupgrade
+```
+
+#### Monitoring
+
+```sh
+## Check quarantine
+ls -la /home/drop/_quarantine/
+cat /home/drop/_quarantine/*.txt
+
+## Logs
+tail /var/log/qubsd_drop.log
+tail /var/log/qubsd_sync.log
+tail /var/log/system_update_pf.log
+
+## Live PF traffic
+doas tcpdump -n -e -ttt -i pflog0
+```
+
+---
+
+### Scripts Reference
+
+#### Core Workflow
+
+| Script | Run by | Purpose |
+|--------|--------|---------|
+| `qmv` | Any user | Move file/directory into `/home/drop`, set group and permissions |
+| `qimport` | `user` | Copy from drop zone to home, create `.imported` sentinel |
+| `run_app` | `user` (via doas) | Launch graphical app as another domain user with X11 forwarding |
+
+#### Export/Import Pipeline
+
+| Script | Run by | Purpose |
+|--------|--------|---------|
+| `export_sites_to_Drop.sh` | `userweb` | Compress websites into `userweb_export`, verify integrity |
+| `export_mail_to_drop` | `usermail` | Compress mail into `usermail_export` |
+| `pull_sites_from_drop` | `userlan` | Import latest site archive, verify, keep 3 backups |
+| `pull_mail_from_Drop` | `userlan` | Import latest mail archive, verify, keep 3 backups |
+
+#### Enforcement (cron)
+
+| Script | Run by | Frequency | Purpose |
+|--------|--------|-----------|---------|
+| `enforce_drop` | root | Every minute | Process sentinels, fix permissions, quarantine violations, clean abandoned files |
+| `enforce_sync` | root | Every minute | Fix owner/group/permissions in Sync directory |
+
+#### System Updates (root only)
+
+| Script | Purpose |
+|--------|---------|
+| `ensure_updates_table` | Populate PF `<updates>` table with Fastly CDN blocks and custom mirrors |
+| `pkg_add_via_pf` | Install/update packages through restrictive PF |
+| `syspatch_via_pf` | Apply security patches through restrictive PF |
+| `update_openbsd_via_pf` | Full update: syspatch + fw_update + pkg_add -u + pkg_delete -a |
+
+---
+
+### Recovery
+
+The entire system state is in four places:
+
+1. Scripts in `/usr/local/bin/dropQbsd/`
+2. Users and groups in `/etc/passwd`, `/etc/group`
+3. PF rules in `/etc/pf.conf`
+4. Cron jobs in `/var/cron/tabs/root`
+
+To rebuild from scratch:
+
+1. Install OpenBSD
+2. Copy the scripts
+3. Run the user/group creation commands
+4. Copy `pf.conf` and reload
+5. Add cron jobs
+
+**Thirty minutes. No databases to restore. No daemon state to reconstruct.**
+
+---
+
+### Philosophy
+
+dropQbsd is not a distribution. It's a configuration. It doesn't fork OpenBSD — it sits on top, using tools battle-tested for decades.
+
+The goal is not to add layers of abstraction but to remove them. If Unix users and permissions already provide isolation, why add a hypervisor? If `cron` and `find` can police a shared directory, why run a daemon? If `ksh` and `pfctl` can manage network access for updates, why build a package manager wrapper?
+
+Complexity is the enemy of security. dropQbsd keeps it simple, auditable, and boring — exactly what you want from a security tool.
+
+---
+
+### License
+
+ISC License
+
+Copyright (c) 2025 [your name]
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
