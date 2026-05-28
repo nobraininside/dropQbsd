@@ -107,7 +107,7 @@ Mitigations in place:
 - XTEST disabled where possible — blocks `xinput test` and `xdotool`
 - Snooping tools blocked in restricted domains
 
-**Conductor compromise.** If `user` is compromised, all domains are compromised — the conductor holds the keys. Keep `user` clean: no web browsing, no email, no untrusted input.
+**Conductor compromise.** `user` can launch apps in any domain via `doas run_app`. If `user` is compromised, all domains are compromised — the conductor holds the keys. pf blocks `user` from browsing the web, but a local exploit or a malicious file executed as `user` is game over. Keep `user` minimal: no untrusted binaries, inspect files before importing them from the drop zone.
 
 **Kernel-level attacks.** All domains share one kernel. A kernel exploit in one domain compromises everything. This is the tradeoff for avoiding virtualization. Qubes OS uses Xen VMs for kernel isolation; dropQbsd accepts the shared kernel in exchange for zero-VM simplicity.
 
