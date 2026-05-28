@@ -371,7 +371,7 @@ Complexity is the enemy of security. dropQbsd keeps it simple, auditable, and bo
 
 ISC License
 
-Copyright (c) 2025 [your name]
+Copyright (c) 2026 Nicola Baudo (nobraininside)
 
 Permission to use, copy, modify, and/or distribute this software for any
 purpose with or without fee is hereby granted, provided that the above
