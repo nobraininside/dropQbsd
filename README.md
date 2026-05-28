@@ -215,6 +215,7 @@ pfctl -f /etc/pf.conf
 * * * * * /usr/local/bin/dropQbsd/admin/enforce_drop
 * * * * * /usr/local/bin/dropQbsd/admin/enforce_sync
 ```
+Both scripts use `flock -n` to prevent overlapping runs. If a cycle takes longer than 60 seconds, the next cron trigger exits immediately — no races on the drop zone.
 
 #### 7. Configure Syncthing (optional)
 
