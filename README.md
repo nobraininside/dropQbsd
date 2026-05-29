@@ -172,6 +172,7 @@ admin/
 ├── ensure_updates_table
 ├── pkg_add_via_pf
 ├── syspatch_via_pf
+├── sysupgrade_via_pf
 └── update_openbsd_via_pf
 run_app
 qmv
