@@ -222,6 +222,12 @@ Both scripts use `flock -n` to prevent overlapping runs. If a cycle takes longer
 
 Set up Syncthing for `userlan` with the Sync directory at `/home/userlan/Sync`. The `enforce_sync` script will maintain correct permissions automatically.
 
+### 8. Optional Configurations
+
+Example configuration files for Thunar custom actions, Midnight Commander
+templates, Syncthing, and xenodm are provided in the `examples/` directory.
+Copy and adapt them to your needs.
+
 ---
 
 ### Daily Usage
