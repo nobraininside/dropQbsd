@@ -318,6 +318,7 @@ doas tcpdump -n -e -ttt -i pflog0
 
 | Script | Run by | Purpose |
 |--------|--------|---------|
+| `qcp` | Any user | Copy file/directory into `/home/drop` without deleting the original |
 | `qmv` | Any user | Move file/directory into `/home/drop`, set group and permissions |
 | `qimport` | `user` | Copy from drop zone to home, create `.imported` sentinel |
 | `run_app` | `user` (via doas) | Launch graphical app as another domain user with X11 forwarding |
