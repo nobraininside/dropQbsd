@@ -430,7 +430,7 @@ operating system that costs nothing to license, runs on hardware you already own
 and turns compliance from a legal fiction into an engineering reality.
 
 **Security is simplicity. Privacy is auditable. Accountability is provable.
-Anything less is a gamble dressed in legalese.******
+Anything less is a gamble dressed in legalese.**
 
 ---
 
