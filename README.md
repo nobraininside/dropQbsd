@@ -239,18 +239,23 @@ qimport document.pdf
 #### Launching Apps in Domains
 
 ```sh
-## Disposable browser
-doas run_app userweb qutebrowser --temp-basedir
+# Disposable browser (profile destroyed on exit)
+doas /usr/local/bin/dropQbsd/run_app userweb /usr/local/bin/qutebrowser --temp-basedir
 
-## Persistent browser (less secure)
-doas run_app userweb firefox
+# Persistent browser (less secure — profile survives)
+doas /usr/local/bin/dropQbsd/run_app userweb /usr/local/bin/ungoogled-chromium
 
-## Mail client in its isolated domain
-doas run_app usermail claws-mail
+# Mail client in its isolated domain
+doas /usr/local/bin/dropQbsd/run_app usermail /usr/local/bin/claws-mail
 
-## File manager for LAN storage
-doas run_app userlan xfe
-```
+# File manager for LAN storage
+doas /usr/local/bin/dropQbsd/run_app userlan /usr/local/bin/xfe
+
+Tip: Add this alias to ~/.profile for shorter daily commands:
+alias run='doas /usr/local/bin/dropQbsd/run_app'
+
+Then simply:
+run userweb qutebrowser --temp-basedir
 
 #### Archiving
 
