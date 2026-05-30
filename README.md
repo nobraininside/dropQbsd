@@ -190,6 +190,7 @@ dropQbsd/
 ├── etc/
 │   ├── pf.conf
 │   └── doas.conf
+│   └── profile
 ├── examples/
 │   ├── thunar/
 │   │   └── uca.xml
