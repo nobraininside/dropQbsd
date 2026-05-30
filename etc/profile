@@ -1,0 +1,30 @@
+# /etc/profile - Configurazione globale per tutti gli utenti
+
+# PATH di sistema
+export PATH=$HOME/.local/bin:$HOME/bin:/bin:/sbin:/usr/bin:/usr/sbin:/usr/X11R6/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin/dropQbsd
+
+# Variabili d'ambiente globali
+export DISPLAY=:0
+export XAUTHORITY=$HOME/.Xauthority
+export LANG=en_US.UTF-8
+export LC_CTYPE=en_US.UTF-8
+export LC_COLLATE=en_US.UTF-8
+export LC_TIME=it_IT.UTF-8
+export LC_MONETARY=it_IT.UTF-8
+export LC_NUMERIC=it_IT.UTF-8
+export LESSCHARSET=utf-8
+unset LC_ALL
+
+# Editor e Tool
+export EDITOR=mg
+export VISUAL=mg
+export MC_EDITOR=mg
+export NNN_EDITOR=mg
+export NNN_USE_EDITOR=1
+
+
+# Configurazione ambiente shell
+export ENV=$HOME/.kshrc
+
+# Sicurezza
+umask 077
