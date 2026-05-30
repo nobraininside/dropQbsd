@@ -1,0 +1,60 @@
+#!/bin/sh
+# ==========================================================
+#  QuBSD – Metodo di compartimentalizzazione multi‑utente per OpenBSD
+#  ----------------------------------------------------------
+#  Un metasistema leggero e trasparente per l’uso quotidiano:
+#    • sicurezza nativa, senza hypervisor
+#    • isolamenti orizzontali per dominio (web, mail, LAN, user)
+#    • flussi file controllati e unidirezionali (Drop • Sync)
+#    • configurazioni testuali, ricostruibili in mezz’ora
+#  "OpenBSD orchestrato – Compartimentalizzazione human friendly"
+# ==========================================================
+
+# Questo script serve ad aggiornare gli IP del mailserver a cui usermail è autorizzato a collegarsi da pf.conf
+# Poi va eseguito giornalmente tramite crontab di root
+# Consiglio di mettere il file in /root/bin con permessi rwx (chmod 700)
+
+# Hostname da risolvere
+HOSTNAMES="
+imap.lemmapress.com
+smtp.lemmapress.com
+mail.lemmapress.com
+imap.difesadigitale.email
+smtp.difesadigitale.email
+mail.difesadigitale.email
+imap.baudo.me
+smtp.baudo.me
+mail.baudo.me
+imap.nicolabaudo.fr
+smtp.nicolabaudo.fr
+mail.nicolabaudo.fr
+eu05.server.plus
+dav.difesadigitale.email
+"
+
+# File dove scrivere gli IP risolti
+IP_FILE="/etc/mailserver_ips"
+
+# Tabella PF da aggiornare
+PF_TABLE="mailserver"
+
+# Comando `dig` (puoi usare `host` o `drill` se preferisci)
+DIG="/usr/bin/dig"
+
+# File temporaneo
+TMP_FILE=$(mktemp)
+
+# Risolvi ogni hostname e scrivi gli IP nel file temporaneo
+for HOST in $HOSTNAMES; do
+    $DIG +short "$HOST" | grep -E '^[0-9]+\.' >> "$TMP_FILE"
+done
+
+# Rimuovi duplicati e salva nel file finale
+sort -u "$TMP_FILE" > "$IP_FILE"
+rm "$TMP_FILE"
+
+# Aggiorna la tabella in pf
+pfctl -t "$PF_TABLE" -T replace -f "$IP_FILE"
+
+echo "Tabella PF <$PF_TABLE> aggiornata con gli IP:"
+cat "$IP_FILE"

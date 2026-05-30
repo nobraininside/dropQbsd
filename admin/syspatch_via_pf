@@ -1,0 +1,75 @@
+#!/bin/ksh
+# ==========================================================
+#   syspatch_via_pf
+#
+#  Applies OpenBSD security patches through the restrictive
+#  PF ruleset. Populates the <updates> table, runs syspatch,
+#  leaves the table populated.
+#
+#  Path: /usr/local/bin/dropQbsd/admin/syspatch_via_pf
+#  Permissions: chmod 700, root:wheel
+#
+#  Usage: syspatch_via_pf
+# ==========================================================
+
+ENSURE_SCRIPT="/usr/local/bin/dropQbsd/admin/ensure_updates_table"
+LOGFILE="/var/log/syspatch_pf.log"
+
+#-----------------------------------------------------------------------------
+# LOG FUNCTION
+#-----------------------------------------------------------------------------
+log() {
+	msg="$1"
+	echo "$msg"
+	echo "$(date '+%F %T')  $msg" >> "$LOGFILE"
+}
+
+#-----------------------------------------------------------------------------
+# PRIVILEGE CHECK
+#-----------------------------------------------------------------------------
+if [ "$(id -u)" -ne 0 ]; then
+	echo "Must run as root." >&2
+	exit 2
+fi
+
+#-----------------------------------------------------------------------------
+# DEPENDENCY CHECK
+#-----------------------------------------------------------------------------
+if [ ! -x "$ENSURE_SCRIPT" ]; then
+	echo "FATAL: $ENSURE_SCRIPT not found or not executable." >&2
+	exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# POPULATE PF TABLE
+#-----------------------------------------------------------------------------
+log "=== syspatch_via_pf starting ==="
+"$ENSURE_SCRIPT" || exit $?
+
+#-----------------------------------------------------------------------------
+# TRAP FOR GRACEFUL INTERRUPTION
+#-----------------------------------------------------------------------------
+cleanup() {
+	log ""
+	log "Interrupted (signal received)."
+	log "The <updates> table is still  this is safe."
+	log "To flush it manually: pfctl -t updates -T flush"
+}
+trap cleanup INT TERM
+
+#-----------------------------------------------------------------------------
+# RUN syspatch
+#-----------------------------------------------------------------------------
+log "Running: syspatch"
+syspatch >> "$LOGFILE" 2>&1
+RC=$?
+
+if [ $RC -eq 0 ]; then
+	log "syspatch completed successfully."
+else
+	log "syspatch exited with code  check log for details."
+fi
+
+log "=== syspatch_via_pf finished ==="
+exit $RC
+ 

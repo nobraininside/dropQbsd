@@ -1,0 +1,59 @@
+#!/bin/ksh
+# ==========================================================
+#   sysupgrade_via_pf
+#
+#  Upgrades OpenBSD to the next release through restrictive
+#  PF. Populates <updates> table, runs sysupgrade, leaves
+#  table populated.
+#
+#  Path: /usr/local/bin/dropQbsd/admin/sysupgrade_via_pf
+#  Permissions: chmod 700, root:wheel
+#
+#  Usage: sysupgrade_via_pf
+#
+#  WARNING: sysupgrade downloads the new base system and
+#  reboots automatically. Run update_openbsd_via_pf first
+#  to ensure all patches and packages are current.
+# ==========================================================
+
+ENSURE_SCRIPT="/usr/local/bin/dropQbsd/admin/ensure_updates_table"
+LOGFILE="/var/log/sysupgrade_pf.log"
+
+log() {
+	msg="$1"
+	echo "$msg"
+	echo "$(date '+%F %T')  $msg" >> "$LOGFILE"
+}
+
+if [ "$(id -u)" -ne 0 ]; then
+	echo "Must run as root." >&2
+	exit 2
+fi
+
+if [ ! -x "$ENSURE_SCRIPT" ]; then
+	echo "FATAL: $ENSURE_SCRIPT not found or not executable." >&2
+	exit 1
+fi
+
+log "=== sysupgrade_via_pf starting ==="
+"$ENSURE_SCRIPT" || exit $?
+
+cleanup() {
+	log ""
+	log "Interrupted. The <updates> table is still populated."
+	log "To flush it manually: pfctl -t updates -T flush"
+}
+trap cleanup INT TERM
+
+log "Running: sysupgrade"
+log "This will download the new release and reboot. Press Ctrl+C to abort."
+sleep 3
+
+sysupgrade >> "$LOGFILE" 2>&1
+RC=$?
+
+# sysupgrade normally reboots before reaching this point.
+# If it returns, something went wrong.
+log "sysupgrade exited with code  check log."
+log "=== sysupgrade_via_pf finished ==="
+exit $RC
