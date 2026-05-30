@@ -161,26 +161,41 @@ chmod 2770 /home/drop/userweb_export /home/drop/usermail_export
 chmod 750 /home/drop/_quarantine
 ```
 
-#### 3. Install Scripts
+### 3. Install Scripts
 
-Copy all scripts to `/usr/local/bin/dropQbsd/`:
+Copy `scripts/` to `/usr/local/bin/dropQbsd/`:
+
+```sh
+cp -r scripts /usr/local/bin/dropQbsd
 
 ```
-admin/
-├── enforce_drop
-├── enforce_sync
-├── ensure_updates_table
-├── pkg_add_via_pf
-├── syspatch_via_pf
-├── sysupgrade_via_pf
-└── update_openbsd_via_pf
-run_app
-qmv
-qimport
-export_sites_to_Drop.sh
-export_mail_to_drop
-pull_sites_from_drop
-pull_mail_from_Drop
+dropQbsd/
+├── scripts/
+│   ├── admin/
+│   │   ├── enforce_drop
+│   │   ├── enforce_sync
+│   │   ├── ensure_updates_table
+│   │   ├── pkg_add_via_pf
+│   │   ├── syspatch_via_pf
+│   │   ├── sysupgrade_via_pf
+│   │   └── update_openbsd_via_pf
+│   ├── run_app
+│   ├── qmv
+│   ├── qcp
+│   ├── qimport
+│   ├── export_sites_to_Drop.sh
+│   ├── export_mail_to_drop
+│   ├── pull_sites_from_drop
+│   └── pull_mail_from_Drop
+├── etc/
+│   ├── pf.conf
+│   └── doas.conf
+├── examples/
+│   ├── thunar/
+│   │   └── uca.xml
+│   └── mc/
+├── README.md
+└── LICENSE
 ```
 
 ```sh
