@@ -1,0 +1,88 @@
+#!/bin/ksh
+# ==========================================================
+#   enforce_sync
+#
+#  Monitors and sanitizes the Sync directory permissions.
+#  Ensures all files and directories under /home/userlan/Sync
+#  are owned by userlan:user with correct permissions
+#  (2770 for dirs, 660 for files).
+#
+#  Path: /usr/local/bin/dropQbsd/admin/enforce_sync
+#  Permissions: chmod 700, root:wheel
+#
+#  Cron: * * * * * /usr/local/bin/dropQbsd/admin/enforce_sync
+#
+#  Note: Syncthing writes to temp files and renames atomically,
+#  so races with this script are unlikely. For extra safety,
+#  files younger than 1 minute are skipped.
+# ==========================================================
+
+LOCKDIR="/var/run/enforce_sync.lock"
+
+# Clean up stale lock file from older script versions (which used a file, not a dir)
+if [ -f "$LOCKDIR" ]; then
+	rm -f "$LOCKDIR"
+fi
+
+# Acquire non-blocking lock using mkdir (atomic on Unix)
+if ! mkdir "$LOCKDIR" 2>/dev/null; then
+	exit 0
+fi
+trap 'rmdir "$LOCKDIR"' EXIT
+
+TARGET="/home/userlan/Sync"
+LOG_FILE="/var/log/dropQbsd_sync.log"
+GRACE_MIN=1
+
+#-----------------------------------------------------------------------------
+# EXISTENCE CHECK
+#-----------------------------------------------------------------------------
+[[ -d "$TARGET" ]] || exit 0
+
+#-----------------------------------------------------------------------------
+# 1. COUNT NON-CONFORMING FILES/DIRS BEFORE FIXING
+#-----------------------------------------------------------------------------
+FILES_WRONG=$(find "$TARGET" -type f \
+	! -perm 660 \
+	-mmin +$GRACE_MIN \
+	| wc -l | tr -d ' ')
+DIRS_WRONG=$(find "$TARGET" -type d \
+	! -perm 2770 \
+	! -mmin -$GRACE_MIN \
+	| wc -l | tr -d ' ')
+OWNER_WRONG=$(find "$TARGET" \
+	( ! -user userlan -o ! -group user  \
+	! -mmin -$GRACE_MIN \
+	| wc -l | tr -d ' ')
+
+#-----------------------------------------------------------------------------
+# 2. FIX OWNER/GROUP (batch for efficiency)
+#-----------------------------------------------------------------------------
+find "$TARGET" ( ! -user userlan -o ! -group user ) \
+	-exec chown userlan:user {} +
+
+#-----------------------------------------------------------------------------
+# 3. FIX DIRECTORY PERMISSIONS (2770)
+#-----------------------------------------------------------------------------
+find "$TARGET" -type d ! -perm 2770 \
+	-exec chmod 2770 {} +
+
+#-----------------------------------------------------------------------------
+# 4. FIX FILE PERMISSIONS (660)
+#-----------------------------------------------------------------------------
+find "$TARGET" -type f ! -perm 660 \
+	-exec chmod 660 {} +
+
+#-----------------------------------------------------------------------------
+# 5. LOG ONLY IF SOMETHING WAS FIXED
+#-----------------------------------------------------------------------------
+TOTAL_WRONG=$((FILES_WRONG + DIRS_WRONG + OWNER_WRONG))
+if [ "$TOTAL_WRONG" -gt 0 ]; then
+	echo "$(date '+%Y-%m-%d %H:%M:%S') - Fixed in $TARGET:" \
+		"$FILES_WRONG file(s), $DIRS_WRONG dir(s)," \
+		"$OWNER_WRONG owner/group mismatch(es)" \
+		>> "$LOG_FILE"
+fi
+
+exit 0
+ 
