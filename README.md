@@ -235,6 +235,7 @@ alias run='doas /usr/local/bin/dropQbsd/run_app'
 
 Then simply:
 run userweb qutebrowser --temp-basedir
+```
 
 #### Archiving
 
