@@ -145,11 +145,8 @@ useradd -m -G drop userweb
 useradd -m -G drop usermail
 useradd -m -G drop userlan
 usermod -G drop user
-```
 
-#### 2. Create Directory Structure
-
-```sh
+2. Create Directory Structure
 mkdir -p /usr/local/bin/dropQbsd/admin
 mkdir -p /home/drop/userweb_export
 mkdir -p /home/drop/usermail_export
@@ -159,48 +156,14 @@ chown root:drop /home/drop /home/drop/userweb_export /home/drop/usermail_export
 chmod 750 /home/drop
 chmod 2770 /home/drop/userweb_export /home/drop/usermail_export
 chmod 750 /home/drop/_quarantine
-```
 
-### 3. Install Scripts
-
-Copy `scripts/` to `/usr/local/bin/dropQbsd/`:
-
-```sh
+3. Install Scripts
+Copy the scripts/ directory from the repository to /usr/local/bin/dropQbsd/:
 cp -r scripts /usr/local/bin/dropQbsd
 
-```
-dropQbsd/
-├── scripts/
-│   ├── admin/
-│   │   ├── enforce_drop
-│   │   ├── enforce_sync
-│   │   ├── ensure_updates_table
-│   │   ├── pkg_add_via_pf
-│   │   ├── syspatch_via_pf
-│   │   ├── sysupgrade_via_pf
-│   │   └── update_openbsd_via_pf
-│   ├── run_app
-│   ├── qmv
-│   ├── qcp
-│   ├── qimport
-│   ├── export_sites_to_Drop.sh
-│   ├── export_mail_to_drop
-│   ├── pull_sites_from_drop
-│   └── pull_mail_from_Drop
-├── etc/
-│   ├── pf.conf
-│   └── doas.conf
-│   └── profile
-├── examples/
-│   ├── thunar/
-│   │   └── uca.xml
-│   └── mc/
-├── README.md
-└── LICENSE
-```
-
-```sh
+Set permissions:
 chmod 755 /usr/local/bin/dropQbsd/qmv
+chmod 755 /usr/local/bin/dropQbsd/qcp
 chmod 755 /usr/local/bin/dropQbsd/qimport
 chmod 755 /usr/local/bin/dropQbsd/run_app
 chmod 755 /usr/local/bin/dropQbsd/export_sites_to_Drop.sh
@@ -209,40 +172,30 @@ chmod 755 /usr/local/bin/dropQbsd/pull_sites_from_drop
 chmod 755 /usr/local/bin/dropQbsd/pull_mail_from_Drop
 chmod 700 /usr/local/bin/dropQbsd/admin/*
 chown -R root:wheel /usr/local/bin/dropQbsd
-```
 
-#### 4. Configure doas.conf
+4. Install System Configuration Files
+cp etc/pf.conf /etc/pf.conf
+cp etc/doas.conf /etc/doas.conf
+cp etc/profile /etc/profile
 
-```
-permit nopass root
-permit nopass user cmd /usr/local/bin/dropQbsd/run_app
-```
-
-#### 5. Configure pf.conf
-
-Copy the provided `pf.conf` to `/etc/pf.conf`. Create `/etc/mailserver_ips` with your mail server IPs (one per line). Create `/etc/pkg_mirror_ips` (auto-generated on first update if missing).
-
-```sh
+Create /etc/mailserver_ips with your mail server IPs (one per line).
+/etc/pkg_mirror_ips is auto-generated on first update if missing.
+Review the locale settings in /etc/profile before applying — the example uses Italian regional formats. Adjust LC_TIME, LC_MONETARY, and LC_NUMERIC to your region, or set all to en_US.UTF-8 for full English.
+Reload the firewall:
 pfctl -f /etc/pf.conf
-```
 
-#### 6. Configure Cron (root)
-
-```
+5. Configure Cron (root)
 * * * * * /usr/local/bin/dropQbsd/admin/enforce_drop
 * * * * * /usr/local/bin/dropQbsd/admin/enforce_sync
-```
-Both scripts use `flock -n` to prevent overlapping runs. If a cycle takes longer than 60 seconds, the next cron trigger exits immediately — no races on the drop zone.
 
-#### 7. Configure Syncthing (optional)
+Both scripts use an atomic mkdir lock to prevent overlapping runs. If a cycle takes longer than 60 seconds, the next cron trigger exits immediately — no races on the drop zone or Sync directory.
 
-Set up Syncthing for `userlan` with the Sync directory at `/home/userlan/Sync`. The `enforce_sync` script will maintain correct permissions automatically.
+6. Syncthing (optional)
+Set up Syncthing for userlan with the Sync directory at /home/userlan/Sync. The enforce_sync script maintains correct
+permissions automatically. A reference configuration will be included in a future release.
 
-### 8. Optional Configurations
-
-Example configuration files for Thunar custom actions, Midnight Commander
-templates, Syncthing, and xenodm are provided in the `examples/` directory.
-Copy and adapt them to your needs.
+7. Optional Configurations
+Example configuration files for Thunar custom actions, Midnight Commander templates, and more are provided in the examples/ directory. Copy and adapt them to your needs.
 
 ---
 
