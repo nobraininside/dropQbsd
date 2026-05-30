@@ -1,11 +1,23 @@
-# /etc/profile - Configurazione globale per tutti gli utenti
+# /etc/profile — dropQbsd system-wide shell configuration
+#
+# Applied at login for all users.
+# Copy to: /etc/profile
+#
+# Locale notes:
+#   LANG and LC_CTYPE are set to en_US.UTF-8 for consistent system messages
+#   and character encoding. LC_TIME, LC_MONETARY, and LC_NUMERIC are set to
+#   it_IT.UTF-8 in this example — adjust to your region (e.g. de_DE.UTF-8,
+#   fr_FR.UTF-8, es_ES.UTF-8) or set all to en_US.UTF-8 for full English.
+#   LC_ALL is intentionally unset to allow the per-category overrides to work.
 
-# PATH di sistema
+# System PATH — includes dropQbsd scripts directory
 export PATH=$HOME/.local/bin:$HOME/bin:/bin:/sbin:/usr/bin:/usr/sbin:/usr/X11R6/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin/dropQbsd
 
-# Variabili d'ambiente globali
+# Global environment
 export DISPLAY=:0
 export XAUTHORITY=$HOME/.Xauthority
+
+# Locale: system messages in English, regional formats in Italian (example)
 export LANG=en_US.UTF-8
 export LC_CTYPE=en_US.UTF-8
 export LC_COLLATE=en_US.UTF-8
@@ -15,16 +27,16 @@ export LC_NUMERIC=it_IT.UTF-8
 export LESSCHARSET=utf-8
 unset LC_ALL
 
-# Editor e Tool
+# Default editor
 export EDITOR=mg
 export VISUAL=mg
 export MC_EDITOR=mg
 export NNN_EDITOR=mg
 export NNN_USE_EDITOR=1
 
-
-# Configurazione ambiente shell
+# Shell environment file
 export ENV=$HOME/.kshrc
 
-# Sicurezza
+
+# Security: restrictive umask (files created as 600, dirs as 700)
 umask 077
