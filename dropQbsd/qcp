@@ -1,0 +1,34 @@
+#!/bin/ksh
+# /usr/local/bin/qubsd/qmv
+# Uso: qmv <file_o_cartella>
+
+TARGET=$1
+DST="/home/drop"
+
+# Verifica che l'argomento sia stato fornito
+if [ -z "$TARGET" ]; then
+    echo "Uso: qcp <file_o_cartella>"
+    exit 1
+fi
+
+# Verifica che l'origine esista
+if [ ! -e "$TARGET" ]; then
+    echo "Errore: '$TARGET' non trovato."
+    exit 1
+fi
+
+# Copia ricorsiva
+cp -pR "$TARGET" "$DST/"
+
+# Ottieni il nome base dell'elemento spostato
+NAME=$(basename "$TARGET")
+DEST_PATH="$DST/$NAME"
+
+# Applica gruppo e permessi in modo ricorsivo
+chgrp -R drop "$DEST_PATH"
+
+# Directory: 570 (rwx per gruppo, così possono creare sentinelle e attraversare)
+find "$DEST_PATH" -type d -exec chmod 570 {} +
+# File: 440 (sola lettura per proprietario e gruppo)
+find "$DEST_PATH" -type f -exec chmod 440 {} +
+
