@@ -13,7 +13,7 @@
 <actions>
 <action>
 	<icon>folder-download</icon>
-	<name>qimport (Drop → Downloads)</name>
+	<name>qimport (Drop > Downloads)</name>
 	<submenu>dropQbsd</submenu>
 	<unique-id>1780153704581037-1</unique-id>
 	<command>/usr/local/bin/dropQbsd/qimport %f</command>
