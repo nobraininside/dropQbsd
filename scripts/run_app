@@ -1,64 +1,100 @@
-!/bin/ksh
-# ==============================================================================
-# SCRIPT: run_app
-# DESCRIZIONE: Esegue applicazioni grafiche come utente non privilegiato
-#              in un ambiente isolato con X11 forwarding.
+#!/bin/ksh
+# ==========================================================
+#  dropQbsd — run_app
 #
-# TAPPE PRELIMINARI (Configurazione di sistema):
-# 1. Assicurarsi che gli utenti target (userweb, userlan, etc.) esistano.
-# 2. Configurare /etc/doas.conf per permettere l'esecuzione dei comandi.
-# 3. Verificare che l'utente invocante sia nel gruppo autorizzato o root.
-# 4. Assicurarsi che xenodm sia configurato correttamente per la sessione X.
-# ==============================================================================
+#  Launches graphical applications as a domain user with
+#  X11 forwarding. The main user (conductor) runs this
+#  via doas to open apps inside userweb, usermail, or
+#  userlan without switching login sessions.
+#
+#  How it works:
+#    1. Copies the X11 cookie from xenodm's auth directory
+#       so the target user can connect to the display.
+#    2. Creates an isolated runtime directory under /tmp
+#       owned by the target user.
+#    3. Launches the app via doas -u with the correct
+#       DISPLAY, XAUTHORITY, and XDG_RUNTIME_DIR.
+#
+#  Path: /usr/local/bin/dropQbsd/run_app
+#  Permissions: chmod 755, root:wheel
+#
+#  Usage: doas run_app <target_user> <command> [args...]
+#
+#  Examples:
+#    doas run_app userweb qutebrowser --temp-basedir
+#    doas run_app usermail claws-mail
+#    doas run_app userlan xfe
+#
+#  Prerequisites:
+#    - Target users (userweb, usermail, userlan) must exist.
+#    - doas.conf must allow user to run this script:
+#        permit nopass user cmd /usr/local/bin/dropQbsd/run_app
+#    - xenodm must be running (standard on OpenBSD desktop).
+# ==========================================================
 
-# --- Configurazione Variabili (Facilmente modificabili) ---
+#-----------------------------------------------------------------------------
+# CONFIGURATION
+#-----------------------------------------------------------------------------
 AUTH_DIR="/etc/X11/xenodm/authdir/authfiles"
 BASE_RUNDIR="/tmp/runtime"
-# ---------------------------------------------------------
 
-# Controllo argomenti minimi
+#-----------------------------------------------------------------------------
+# ARGUMENT CHECK
+#-----------------------------------------------------------------------------
 if [[ $# -lt 2 ]]; then
-    echo "Uso: $(basename $0) <target_user> <command> [args...]"
-    exit 1
+	echo "Usage: $(basename $0) <target_user> <command> [args...]"
+	exit 1
 fi
 
 TARGET_USER=$1
 APP_CMD=$2
 shift 2
 
-# Recupero dinamico del file di auth (cerca il primo match)
+#-----------------------------------------------------------------------------
+# LOCATE X11 AUTHENTICATION COOKIE
+#-----------------------------------------------------------------------------
+# xenodm creates per-session cookies in AUTH_DIR named A:0-<random>.
+# Grab the first match — there should be exactly one per display.
 AUTH_SRC=$(ls "$AUTH_DIR"/A:0-* 2>/dev/null | head -n 1)
 
 if [[ -z "$AUTH_SRC" ]]; then
-    echo "Errore: Nessun file di autenticazione X trovato in $AUTH_DIR"
-    exit 1
+	echo "Error: No X11 authentication file found in $AUTH_DIR" >&2
+	exit 1
 fi
 
-# Definizione percorsi runtime
+#-----------------------------------------------------------------------------
+# SET UP ISOLATED RUNTIME DIRECTORY
+#-----------------------------------------------------------------------------
 RUNDIR="$BASE_RUNDIR-$TARGET_USER"
 AUTH_FILE="$RUNDIR/.Xauthority"
 
-# Creazione ambiente
 if ! mkdir -p "$RUNDIR" 2>/dev/null; then
-    echo "Errore: Impossibile creare $RUNDIR. Permessi insufficienti?"
-    exit 1
+	echo "Error: Cannot create $RUNDIR. Insufficient permissions?" >&2
+	exit 1
 fi
 
 chown "$TARGET_USER" "$RUNDIR"
 chmod 700 "$RUNDIR"
 
-# Copia e set permessi auth
+#-----------------------------------------------------------------------------
+# COPY AND RESTRICT X11 COOKIE
+#-----------------------------------------------------------------------------
 cp "$AUTH_SRC" "$AUTH_FILE"
 chown "$TARGET_USER" "$AUTH_FILE"
 chmod 600 "$AUTH_FILE"
 
-# Esecuzione comando tramite doas
-# Usiamo exec per sostituire il processo dello script con quello dell'app
+#-----------------------------------------------------------------------------
+# LAUNCH APPLICATION AS TARGET USER
+#-----------------------------------------------------------------------------
+# exec replaces the shell process with the application,
+# so the cleanup below only runs if doas fails to launch.
 doas -u "$TARGET_USER" env \
-    DISPLAY="$DISPLAY" \
-    XAUTHORITY="$AUTH_FILE" \
-    XDG_RUNTIME_DIR="$RUNDIR" \
-    "$APP_CMD" "$@"
+	DISPLAY="$DISPLAY" \
+	XAUTHORITY="$AUTH_FILE" \
+	XDG_RUNTIME_DIR="$RUNDIR" \
+	"$APP_CMD" "$@"
 
-# Pulizia post-esecuzione
+#-----------------------------------------------------------------------------
+# CLEANUP (reached only if doas or the app fails immediately)
+#-----------------------------------------------------------------------------
 rm -f "$AUTH_FILE"
