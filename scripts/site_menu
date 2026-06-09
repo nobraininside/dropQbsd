@@ -1,0 +1,115 @@
+#!/bin/ksh
+# ==========================================================
+#  dropQbsd - site_menu
+#
+#  Reads ~/dropQbsd/sites.conf and presents a menu
+#  of sites. Selecting a site:
+#    - Copies the password to clipboard (via pass) if a
+#      pass entry is configured.
+#    - Opens the site in a disposable browser (tmpfs-backed,
+#      nothing survives exit).
+#
+#  Path: /usr/local/bin/dropQbsd/site-menu
+#  Permissions: chmod 755, user:wheel
+#
+#  Requires: zenity (package), pass (package), xclip & a browser 
+#   (ungoogled-chromium, qutebrowser or firefox)
+#
+#  sites.conf format:
+#    # Label (ID)|URL|pass_entry (optional)
+#    Bank (my_user_id)|https://bank.example.com|finance/bank
+#    ERP (my_user_id)|https://enterprise_resource.com|work/erp
+#    Linkedin (my_user_id)|https://linkedin.com|social/linkedin
+#
+#  Lines starting with # are comments.
+#  The pass entry is optional - leave empty for sites
+#  that don't need authentication.
+# ==========================================================
+
+CONF="$HOME/dropQbsd/sites.conf"
+
+#-----------------------------------------------------------------------------
+# CHECK DEPENDENCIES
+#-----------------------------------------------------------------------------
+if ! command -v zenity >/dev/null 2>&1; then
+	echo "Error: zenity is required. Install with: pkg_add zenity" >&2
+	exit 1
+fi
+
+if [[ ! -f "$CONF" ]]; then
+	echo "Error: $CONF not found." >&2
+	exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# BUILD MENU LIST FOR ZENITY
+#-----------------------------------------------------------------------------
+MENU=""
+while IFS='|' read -r label url pass_entry; do
+	# Skip comments and empty lines
+	[[ "$label" == \#* ]] && continue
+	[[ -z "$label" ]] && continue
+
+	# Trim whitespace
+	label=$(echo "$label" | sed 's/^ *//;s/ *$//')
+	url=$(echo "$url" | sed 's/^ *//;s/ *$//')
+	pass_entry=$(echo "$pass_entry" | sed 's/^ *//;s/ *$//')
+
+	MENU="${MENU}${label}\n"
+done < "$CONF"
+
+#-----------------------------------------------------------------------------
+# SHOW DROPDOWN
+#-----------------------------------------------------------------------------
+CHOSEN=$(echo "$MENU" | zenity --list \
+	--title="dropQbsd Sites" \
+	--text="Select a site:" \
+	--column="Site" \
+	--width=300 --height=400 2>/dev/null)
+
+if [[ -z "$CHOSEN" ]]; then
+	exit 0  # User cancelled
+fi
+
+#-----------------------------------------------------------------------------
+# FIND MATCHING ENTRY AND LAUNCH
+#-----------------------------------------------------------------------------
+while IFS='|' read -r label url pass_entry; do
+	[[ "$label" == \#* ]] && continue
+	[[ -z "$label" ]] && continue
+
+	label=$(echo "$label" | sed 's/^ *//;s/ *$//')
+	url=$(echo "$url" | sed 's/^ *//;s/ *$//')
+	pass_entry=$(echo "$pass_entry" | sed 's/^ *//;s/ *$//')
+
+	if [[ "$label" == "$CHOSEN" ]]; then
+		# Copy password to clipboard if configured
+		if [[ -n "$pass_entry" ]]; then
+		    pass show -c "$pass_entry" 2>/dev/null
+    
+		    if [[ $? -ne 0 ]]; then
+		        zenity --warning \
+		            --title="dropQbsd" \
+		            --text="GPG passphrase expired or password not found.\nRun: pass $pass_entry\nin a terminal to re-enter your GPG passphrase." \
+		            --width=400 2>/dev/null
+		    else
+		        # Clear clipboard after 15 seconds
+		        (
+		            sleep 15
+		            printf '' | xclip -selection clipboard 2>/dev/null
+		        ) &
+		    fi
+		fi
+
+
+		# Launch the chosen disposable browser
+		# ungoogled-chromium --temp-profile
+		# or qutebrowser --temp-basedir
+		# or firefox --private-window
+		exec doas /usr/local/bin/dropQbsd/run_app --disposable userweb \
+			/usr/local/bin/ungoogled-chromium \
+			--temp-profile \
+			"$url"
+
+	fi
+done < "$CONF"
