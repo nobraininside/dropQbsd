@@ -3,8 +3,8 @@
 #   enforce_sync
 #
 #  Monitors and sanitizes the Sync directory permissions.
-#  Ensures all files and directories under /home/userlan/Sync
-#  are owned by userlan:user with correct permissions
+#  Ensures all files and directories under /home/userdoc/Sync
+#  are owned by userdoc:user with correct permissions
 #  (2770 for dirs, 660 for files).
 #
 #  Path: /usr/local/bin/dropQbsd/admin/enforce_sync
@@ -30,7 +30,7 @@ if ! mkdir "$LOCKDIR" 2>/dev/null; then
 fi
 trap 'rmdir "$LOCKDIR"' EXIT
 
-TARGET="/home/userlan/Sync"
+TARGET="/home/userdoc/Sync"
 LOG_FILE="/var/log/dropQbsd_sync.log"
 GRACE_MIN=1
 
@@ -51,15 +51,15 @@ DIRS_WRONG=$(find "$TARGET" -type d \
 	! -mmin -$GRACE_MIN \
 	| wc -l | tr -d ' ')
 OWNER_WRONG=$(find "$TARGET" \
-	( ! -user userlan -o ! -group user  \
+	\( ! -user userdoc -o ! -group user \)  \
 	! -mmin -$GRACE_MIN \
 	| wc -l | tr -d ' ')
 
 #-----------------------------------------------------------------------------
 # 2. FIX OWNER/GROUP (batch for efficiency)
 #-----------------------------------------------------------------------------
-find "$TARGET" ( ! -user userlan -o ! -group user ) \
-	-exec chown userlan:user {} +
+find "$TARGET" \( ! -user userdoc -o ! -group user \) \
+	-exec chown userdoc:user {} +
 
 #-----------------------------------------------------------------------------
 # 3. FIX DIRECTORY PERMISSIONS (2770)
@@ -85,4 +85,3 @@ if [ "$TOTAL_WRONG" -gt 0 ]; then
 fi
 
 exit 0
- 
