@@ -388,6 +388,7 @@ Mainstream operating systems fail both. They are closed-source, unauditable, lad
 
 ### What This Means for Your Organization
 |	MAINSTREAM STACK |	DROPQBSD ON OPENBSD |
+| ------- | ------- |
 | **Telemetry** | Thousands of daily callbacks	| Zero |
 | **Auditability**	| Closed source, trust us |	Fully auditable, ~500 lines of glue |
 | **Licensing cost**	| Windows/Mac + Office + AV licenses	| $0 |
@@ -417,4 +418,4 @@ dropQbsd offers a different path: an auditable, telemetry-free, compartmentalize
 
 ## License
 
-ISC. See (LICENSE)[https://github.com/nobraininside/dropQbsd/blob/main/LICENSE].
+ISC. See [LICENSE](https://github.com/nobraininside/dropQbsd/blob/main/LICENSE).
