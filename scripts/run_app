@@ -1,34 +1,47 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — run_app
+#  dropQbsd - run_app
 #
 #  Launches graphical applications as a domain user with
 #  X11 forwarding. The main user (conductor) runs this
 #  via doas to open apps inside userweb, usermail, or
-#  userlan without switching login sessions.
+#  userdoc without switching login sessions.
+#
+#  Two modes:
+#    Normal:  runtime directory under /tmp, cleaned on exit.
+#    Disposable:  dedicated tmpfs mounted in RAM, destroyed
+#             on exit. Nothing survives. Ideal for browsers
+#             and untrusted files.
 #
 #  How it works:
 #    1. Copies the X11 cookie from xenodm's auth directory
 #       so the target user can connect to the display.
-#    2. Creates an isolated runtime directory under /tmp
-#       owned by the target user.
+#    2. Creates an isolated runtime directory (tmpfs if
+#       --disposable) owned by the target user.
 #    3. Launches the app via doas -u with the correct
 #       DISPLAY, XAUTHORITY, and XDG_RUNTIME_DIR.
+#    4. On exit, cleans up the runtime directory (normal)
+#       or unmounts and removes the tmpfs (disposable).
 #
 #  Path: /usr/local/bin/dropQbsd/run_app
 #  Permissions: chmod 755, root:wheel
 #
-#  Usage: doas run_app <target_user> <command> [args...]
+#  Usage:
+#    doas run_app [--disposable [size]] <target_user> <command> [args...]
 #
 #  Examples:
-#    doas run_app userweb qutebrowser --temp-basedir
-#    doas run_app usermail claws-mail
-#    doas run_app userlan xfe
+#    doas /usr/local/bin/dropQbsd/run_app userweb qutebrowser --temp-basedir https://qwant.com
+#    doas /usr/local/bin/dropQbsd/run_app --disposable userweb ungoogled-chromium --temp-profile
+#    doas /usr/local/bin/dropQbsd/run_app --disposable userweb firefox --private-window
+#    doas /usr/local/bin/dropQbsd/run_app --disposable 250M userweb mupdf /tmp/sketchy.pdf
+#    doas /usr/local/bin/dropQbsd/run_app usermail claws-mail
 #
 #  Prerequisites:
-#    - Target users (userweb, usermail, userlan) must exist.
+#    - Target users (userweb, usermail, userdoc) must exist.
 #    - doas.conf must allow user to run this script:
 #        permit nopass user cmd /usr/local/bin/dropQbsd/run_app
+#    - doas.conf must allow root to doas without password:
+#        permit nopass root
 #    - xenodm must be running (standard on OpenBSD desktop).
 # ==========================================================
 
@@ -37,18 +50,43 @@
 #-----------------------------------------------------------------------------
 AUTH_DIR="/etc/X11/xenodm/authdir/authfiles"
 BASE_RUNDIR="/tmp/runtime"
+DEFAULT_DISPOSABLE_SIZE="500M"
+
+#-----------------------------------------------------------------------------
+# PARSE OPTIONAL --disposable FLAG
+#-----------------------------------------------------------------------------
+DISPOSABLE=0
+DISPOSABLE_SIZE="$DEFAULT_DISPOSABLE_SIZE"
+
+if [[ "$1" == "--disposable" ]]; then
+    DISPOSABLE=1
+    shift
+    # Check if next argument is a custom size (e.g. 1G, 250M)
+    if [[ "$1" == *M || "$1" == *G ]]; then
+        DISPOSABLE_SIZE="$1"
+        shift
+    fi
+fi
 
 #-----------------------------------------------------------------------------
 # ARGUMENT CHECK
 #-----------------------------------------------------------------------------
 if [[ $# -lt 2 ]]; then
-	echo "Usage: $(basename $0) <target_user> <command> [args...]"
-	exit 1
+    echo "Usage: $(basename $0) [--disposable [size]] <target_user> <command> [args...]"
+    exit 1
 fi
 
 TARGET_USER=$1
 APP_CMD=$2
 shift 2
+
+#-----------------------------------------------------------------------------
+# VERIFY TARGET USER EXISTS
+#-----------------------------------------------------------------------------
+if ! id "$TARGET_USER" >/dev/null 2>&1; then
+    echo "Error: User '$TARGET_USER' does not exist." >&2
+    exit 1
+fi
 
 #-----------------------------------------------------------------------------
 # LOCATE X11 AUTHENTICATION COOKIE
@@ -58,27 +96,39 @@ shift 2
 AUTH_SRC=$(ls "$AUTH_DIR"/A:0-* 2>/dev/null | head -n 1)
 
 if [[ -z "$AUTH_SRC" ]]; then
-	echo "Error: No X11 authentication file found in $AUTH_DIR" >&2
-	exit 1
+    echo "Error: No X11 authentication file found in $AUTH_DIR" >&2
+    exit 1
 fi
 
 #-----------------------------------------------------------------------------
-# SET UP ISOLATED RUNTIME DIRECTORY
+# SET UP RUNTIME DIRECTORY (tmpfs if disposable, regular dir otherwise)
 #-----------------------------------------------------------------------------
-RUNDIR="$BASE_RUNDIR-$TARGET_USER"
-AUTH_FILE="$RUNDIR/.Xauthority"
-
-if ! mkdir -p "$RUNDIR" 2>/dev/null; then
-	echo "Error: Cannot create $RUNDIR. Insufficient permissions?" >&2
-	exit 1
+if [[ "$DISPOSABLE" -eq 1 ]]; then
+    # Create a unique directory under /tmp and mount a tmpfs on it.
+    # The tmpfs lives entirely in RAM (backed by swap if needed).
+    # nodev and nosuid prevent device files and setuid binaries.
+    RUNDIR=$(mktemp -d /tmp/disposable.XXXXXX)
+    if ! mount -t mfs -o rw,nodev,nosuid,-s="$DISPOSABLE_SIZE" swap "$RUNDIR"; then
+        echo "Error: Failed to mount tmpfs ($DISPOSABLE_SIZE). Not enough RAM?" >&2
+        rmdir "$RUNDIR"
+        exit 1
+    fi
+    chown "$TARGET_USER" "$RUNDIR"
+    chmod 700 "$RUNDIR"
+else
+    RUNDIR="$BASE_RUNDIR-$TARGET_USER"
+    if ! mkdir -p "$RUNDIR" 2>/dev/null; then
+        echo "Error: Cannot create $RUNDIR. Insufficient permissions?" >&2
+        exit 1
+    fi
+    chown "$TARGET_USER" "$RUNDIR"
+    chmod 700 "$RUNDIR"
 fi
-
-chown "$TARGET_USER" "$RUNDIR"
-chmod 700 "$RUNDIR"
 
 #-----------------------------------------------------------------------------
 # COPY AND RESTRICT X11 COOKIE
 #-----------------------------------------------------------------------------
+AUTH_FILE="$RUNDIR/.Xauthority"
 cp "$AUTH_SRC" "$AUTH_FILE"
 chown "$TARGET_USER" "$AUTH_FILE"
 chmod 600 "$AUTH_FILE"
@@ -86,15 +136,30 @@ chmod 600 "$AUTH_FILE"
 #-----------------------------------------------------------------------------
 # LAUNCH APPLICATION AS TARGET USER
 #-----------------------------------------------------------------------------
-# exec replaces the shell process with the application,
-# so the cleanup below only runs if doas fails to launch.
+# HOME is set to RUNDIR so the app writes everything inside the isolated
+# directory. For disposable mode this means all data lives in the tmpfs
+# and is destroyed on exit.
+if [[ "$DISPOSABLE" -eq 1 ]]; then
+    APP_HOME="$RUNDIR"
+else
+    APP_HOME=$(eval echo ~"$TARGET_USER")
+fi
+
+
 doas -u "$TARGET_USER" env \
-	DISPLAY="$DISPLAY" \
-	XAUTHORITY="$AUTH_FILE" \
-	XDG_RUNTIME_DIR="$RUNDIR" \
-	"$APP_CMD" "$@"
+    DISPLAY="$DISPLAY" \
+    XAUTHORITY="$AUTH_FILE" \
+    XDG_RUNTIME_DIR="$RUNDIR" \
+    HOME="$APP_HOME" \
+    "$APP_CMD" "$@"
 
 #-----------------------------------------------------------------------------
-# CLEANUP (reached only if doas or the app fails immediately)
+# CLEANUP
 #-----------------------------------------------------------------------------
-rm -f "$AUTH_FILE"
+if [[ "$DISPOSABLE" -eq 1 ]]; then
+    # Unmount the tmpfs - all data written by the app is gone.
+    umount "$RUNDIR" 2>/dev/null
+    rmdir "$RUNDIR" 2>/dev/null
+else
+    rm -rf "$RUNDIR"
+fi
