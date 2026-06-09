@@ -63,7 +63,7 @@ doas /usr/local/bin/dropQbsd/run_app --disposable 1G userweb chromium https://ex
 ```
 ### Site Menu (Password Manager Integration)
 
-site_menu reads a list of sites from `~/.config/dropQbsd/sites.conf` and presents a dropdown menu. Selecting a site copies the password to clipboard via pass and opens the site in a disposable browser.
+`site_menu` reads a list of sites from `~/.config/dropQbsd/sites.conf` and presents a dropdown menu. Selecting a site copies the password to clipboard via `pass` and opens the site in a disposable browser.
 
 Example `sites.conf`:
 ```sh
