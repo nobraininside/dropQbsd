@@ -1,15 +1,3 @@
-Ecco il README completo e aggiornato con tutte le modifiche discusse:
-
-- `userlan` → `userdoc`
-- Browser solo disposable
-- `site_menu` con integrazione `pass`
-- `qcp` aggiunto
-- `run_app` con `--disposable` (tmpfs)
-- Sezione per professionisti privacy
-- Struttura `scripts/` `etc/` `examples/`
-
-Pronto per essere copiato su GitHub.
-
 ```markdown
 # dropQbsd
 
