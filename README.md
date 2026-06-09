@@ -417,4 +417,4 @@ dropQbsd offers a different path: an auditable, telemetry-free, compartmentalize
 
 ## License
 
-ISC. See LICENSE.
+ISC. See LICENSE(https://github.com/nobraininside/dropQbsd/blob/main/LICENSE).
