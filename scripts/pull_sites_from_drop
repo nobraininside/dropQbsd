@@ -3,7 +3,7 @@
 set -eu
 
 SRC="/home/drop/userweb_export"
-DST="/home/userlan/Sync/Archivio/Archivio-siti"
+DST="/home/userdoc/Sync/Archivio/Archivio_siti"
 
 [ -d "$SRC" ] || { echo "Errore: $SRC non accessibile"; exit 1; }
 mkdir -p "$DST"
