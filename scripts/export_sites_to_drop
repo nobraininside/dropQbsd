@@ -1,63 +1,85 @@
-#!/bin/sh
+#!/bin/ksh
 # ==========================================================
-#  QuBSD – Metodo di compartimentalizzazione multi‑utente per OpenBSD
-#  ----------------------------------------------------------
-#  Un metasistema leggero e trasparente per l’uso quotidiano:
-#    • sicurezza nativa, senza hypervisor
-#    • isolamenti orizzontali per dominio (web, mail, LAN, user)
-#    • flussi file controllati e unidirezionali (Drop • Sync)
-#    • configurazioni testuali, ricostruibili in mezz’ora
-#  "OpenBSD orchestrato – Compartimentalizzazione human friendly"
+#  dropQbsd — export_sites_to_Drop
+#
+#  Compresses the userweb sites directory and places the
+#  archive in /home/drop/userweb_export for archival by
+#  userdoc.
+#
+#  Permissions on the exported archive are enforced by
+#  enforce_drop (cron), not by this script — the export
+#  directory is owned by root:drop, so userweb cannot
+#  chmod files there.
+#
+#  Path: /usr/local/bin/dropQbsd/export_sites_to_Drop.sh
+#  Permissions: chmod 755, root:wheel
+#
+#  Usage: export_sites_to_Drop.sh [-v]   (run as userweb)
+#    -v   Verbose output
 # ==========================================================
 
-# ============================================
-# Script /home/userweb/bin/export_sites_to_drop
-# per backup dei siti Flat File CMS verso Drop (fase 1)
-# Script abbinato a /home/userlan/bin/pull_sites_from_drop
-# ============================================
-
-#!/bin/sh
 set -eu
 umask 002
 
 SRC="/home/userweb/Documents/sites"
 DST="/home/drop/userweb_export"
 
-[ -d "$SRC" ] || { echo "[ERRORE] Directory '$SRC' non trovata." >&2; exit 1; }
-
-TMPDIR=$(mktemp -d /home/userweb/tmp_export.XXXXXX)
-trap 'rm -rf "$TMPDIR"' EXIT INT TERM
-
+#-----------------------------------------------------------------------------
+# VERBOSE FLAG
+#-----------------------------------------------------------------------------
 VERBOSE=0
 [ "${1:-}" = "-v" ] && VERBOSE=1
 msg() { [ "$VERBOSE" -eq 1 ] && echo "[INFO] $*"; }
 
-# 1. Controllo spazio libero
-if [ "$(df -P /home | awk 'NR==2 {print $5+0}')" -gt 90 ]; then
-    echo "[ERRORE] Utilizzo /home > 90%." >&2
-    exit 1
+#-----------------------------------------------------------------------------
+# PRE-FLIGHT CHECKS
+#-----------------------------------------------------------------------------
+if [ ! -d "$SRC" ]; then
+	echo "[ERROR] Source directory '$SRC' not found." >&2
+	exit 1
 fi
 
-# 2. Preparazione destinazione
+#-----------------------------------------------------------------------------
+# DISK SPACE CHECK
+#-----------------------------------------------------------------------------
+if [ "$(df -P /home | awk 'NR==2 {print $5+0}')" -gt 90 ]; then
+	echo "[ERROR] /home usage > 90%. Aborting." >&2
+	exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# PREPARE DESTINATION
+#-----------------------------------------------------------------------------
 mkdir -p "$DST"
 
-# 3. Compressione
+#-----------------------------------------------------------------------------
+# COMPRESS
+#-----------------------------------------------------------------------------
+TMPDIR=$(mktemp -d /home/userweb/tmp_export.XXXXXX)
+trap 'rm -rf "$TMPDIR"' EXIT INT TERM
+
 ARCHIVE="$TMPDIR/sites_$(date +%Y%m%d_%H%M%S).tar.gz"
-msg "Compressione in corso: $ARCHIVE"
+msg "Compressing: $ARCHIVE"
 tar -czf "$ARCHIVE" -C "$SRC" .
 
-# 4. Verifica archivio prima del trasferimento
+#-----------------------------------------------------------------------------
+# VERIFY ARCHIVE INTEGRITY
+#-----------------------------------------------------------------------------
 if ! tar -tzf "$ARCHIVE" >/dev/null 2>&1; then
-    echo "[ERRORE] Archivio corrotto dopo la compressione." >&2
-    exit 1
+	echo "[ERROR] Archive corrupt after compression." >&2
+	exit 1
 fi
 
-# 5. Trasferimento con permessi espliciti
+#-----------------------------------------------------------------------------
+# TRANSFER TO DROP ZONE
+#-----------------------------------------------------------------------------
+# enforce_drop (cron, every 60s) will set the correct 440 permissions.
+# userweb cannot chmod here — the export directory is root:drop.
 cp "$ARCHIVE" "$DST/"
-chmod 440 "$DST/$(basename "$ARCHIVE")"
 
-# 6. Pulizia archivi più vecchi di 24 ore
-find "$DST" -type f -name 'sites_*.tar.gz' -mtime +0 -delete
+#-----------------------------------------------------------------------------
+# ROTATE OLD ARCHIVES (> 24 hours)
+#-----------------------------------------------------------------------------
+find "$DST" -type f -name 'sites_*.tar.gz' -mtime +0 -delete 2>/dev/null
 
-msg "Operazione completata con successo."
-
+msg "Export completed successfully."
