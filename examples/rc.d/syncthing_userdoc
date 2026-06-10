@@ -1,0 +1,65 @@
+#!/bin/ksh
+#
+# /etc/rc.d/syncthing_userdoc — Syncthing service for userdoc
+# ================================================================
+# Starts Syncthing in the foreground for user "userdoc" with:
+#   - umask 007 so files are created group read/write
+#   - log output to /home/userdoc/syncthing.log
+#   - tolerance for delayed /home mount (up to 15 seconds)
+#   - increased file descriptor limit for large sync operations
+#
+# Web GUI: http://127.0.0.1:8384
+#
+# Usage: /etc/rc.d/syncthing_userdoc {start|stop|restart|check}
+# Enable at boot: rcctl enable syncthing_userdoc
+# ================================================================
+
+daemon="/usr/local/bin/syncthing"
+daemon_flags="-home /home/userdoc/.config/syncthing -no-browser -gui-address=127.0.0.1:8384"
+rc_bg=YES
+rc_user="userdoc"
+rc_reload=NO
+rc_stop=YES
+rc_class="daemon"
+logfile="/home/userdoc/syncthing.log"
+
+. /etc/rc.d/rc.subr
+
+# Custom check: consider the service running if a syncthing process
+# owned by rc_user exists.
+rc_pid_check() {
+	pgrep -u "${rc_user}" -x syncthing >/dev/null
+}
+
+rc_start() {
+	echo "Starting Syncthing as ${rc_user}..."
+
+	# Wait for /home to be mounted and the binary to be available.
+	# On systems with encrypted or network-mounted /home, the
+	# mount may not be ready when rc.d scripts first run.
+	n=0
+	while [ $n -lt 15 ]; do
+		[ -d /home/userdoc ] && [ -x /usr/local/bin/syncthing ] && break
+		sleep 1
+		n=$((n+1))
+	done
+
+	# Syncthing can use many file descriptors during large syncs.
+	# Raise the limit from the default (typically 1024) to 32768.
+	ulimit -n 32768
+
+	# Launch as rc_user with restrictive umask.
+	# -m preserves the environment (PATH, etc.) from root's context.
+	# nice -n 10 lowers CPU priority so sync doesn't starve the desktop.
+	su -m "${rc_user}" -c "umask 007; \
+		export HOME=/home/${rc_user}; cd /home/${rc_user}; \
+		nice -n 10 ${daemon} ${daemon_flags} >${logfile} 2>&1 &"
+}
+
+rc_stop() {
+	echo "Stopping Syncthing for ${rc_user}..."
+	pkill -u "${rc_user}" -x syncthing 2>/dev/null && echo "Syncthing stopped."
+}
+
+rc_cmd "$1"
+
