@@ -1,39 +1,73 @@
 #!/bin/ksh
-# /usr/local/bin/qubsd/export_mail_to_drop
+# ==========================================================
+#  dropQbsd — export_mail_to_drop
+#
+#  Compresses the usermail directory and places the archive
+#  in /home/drop/usermail_export for archival by userdoc.
+#
+#  Permissions on the exported archive are enforced by
+#  enforce_drop (cron), not by this script — the export
+#  directory is owned by root:drop, so usermail cannot
+#  chmod files there.
+#
+#  Path: /usr/local/bin/dropQbsd/export_mail_to_drop
+#  Permissions: chmod 755, root:wheel
+#
+#  Usage: export_mail_to_drop (run as usermail)
+# ==========================================================
+
 set -eu
 umask 002
 
 SRC="/home/usermail/.mail"
 DST="/home/drop/usermail_export"
 
-[ -d "$SRC" ] || { echo "[ERRORE] Directory '$SRC' non trovata." >&2; exit 1; }
+#-----------------------------------------------------------------------------
+# PRE-FLIGHT CHECKS
+#-----------------------------------------------------------------------------
+if [ ! -d "$SRC" ]; then
+	echo "[ERROR] Source directory '$SRC' not found." >&2
+	exit 1
+fi
 
+#-----------------------------------------------------------------------------
+# DISK SPACE CHECK
+#-----------------------------------------------------------------------------
+if [ "$(df -P /home | awk 'NR==2 {print $5+0}')" -gt 92 ]; then
+	echo "[ERROR] /home usage > 92%. Aborting." >&2
+	exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# PREPARE DESTINATION
+#-----------------------------------------------------------------------------
+mkdir -p "$DST"
+
+#-----------------------------------------------------------------------------
+# COMPRESS (low priority)
+#-----------------------------------------------------------------------------
 TMPDIR=$(mktemp -d /home/usermail/mail_exp.XXXXXX)
 trap 'rm -rf "$TMPDIR"' EXIT INT TERM
 
-# 1. Controllo spazio critico
-if [ "$(df -P /home | awk 'NR==2 {print $5+0}')" -gt 92 ]; then
-    echo "[ERRORE] Utilizzo /home > 92%." >&2
-    exit 1
-fi
-
-# 2. Preparazione destinazione
-mkdir -p "$DST"
-
-# 3. Compressione con priorità ridotta
 ARCHIVE="$TMPDIR/mail_$(date +%Y%m%d_%H%M%S).tar.gz"
 nice -n 10 tar -czf "$ARCHIVE" -C "$SRC" .
 
-# 4. Verifica archivio prima del trasferimento
+#-----------------------------------------------------------------------------
+# VERIFY ARCHIVE INTEGRITY
+#-----------------------------------------------------------------------------
 if ! tar -tzf "$ARCHIVE" >/dev/null 2>&1; then
-    echo "[ERRORE] Archivio corrotto dopo la compressione." >&2
-    exit 1
+	echo "[ERROR] Archive corrupt after compression." >&2
+	exit 1
 fi
 
-# 5. Trasferimento con permessi espliciti
+#-----------------------------------------------------------------------------
+# TRANSFER TO DROP ZONE
+#-----------------------------------------------------------------------------
+# enforce_drop (cron, every 60s) will set the correct 440 permissions.
+# usermail cannot chmod here — the export directory is root:drop.
 cp "$ARCHIVE" "$DST/"
-chmod 440 "$DST/$(basename "$ARCHIVE")"
 
-# 6. Pulizia archivi più vecchi di 2 ore
-find "$DST" -type f -name 'mail_*.tar.gz' -mmin +120 -delete
-
+#-----------------------------------------------------------------------------
+# ROTATE OLD ARCHIVES (> 2 hours)
+#-----------------------------------------------------------------------------
+find "$DST" -type f -name 'mail_*.tar.gz' -mmin +120 -delete 2>/dev/null
