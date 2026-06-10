@@ -3,7 +3,7 @@
 set -eu
 
 SRC="/home/drop/usermail_export"
-DST="/home/userlan/Sync/Archivio/Archivio-email"
+DST="/home/userdoc/Sync/Archivio/Archivio_email"
 
 [ -d "$SRC" ] || { echo "Errore: $SRC non accessibile"; exit 1; }
 mkdir -p "$DST"
@@ -41,9 +41,9 @@ fi
 SENTINEL="${LATEST}.imported"
 touch "$SENTINEL" 2>/dev/null || true
 
-# 6. Pulizia locale: tieni solo gli ultimi 3 archivi
+# 6. Pulizia locale: tieni solo gli ultimi 2 archivi
 cd "$DST" || exit 1
-ls -1t mail_*.tar.gz 2>/dev/null | tail -n +4 | xargs -r rm
+ls -1t mail_*.tar.gz 2>/dev/null | tail -n +3 | xargs -r rm
 
 echo ">>> Sincronizzazione mail completata."
 
