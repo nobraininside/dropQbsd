@@ -208,7 +208,54 @@ Both scripts use an atomic mkdir lock to prevent overlapping runs.
 
 ### 6. Syncthing (optional)
 
-Set up Syncthing for userdoc with the Sync directory at `/home/userdoc/Sync`. The `enforce_sync` script maintains correct permissions automatically.
+Set up Syncthing for `userdoc` with the Sync directory at `/home/userdoc/Sync`. The `enforce_sync` script maintains correct permissions automatically.
+
+#### Installation:
+
+```sh
+pkg_add syncthing
+```
+**Service setup**:
+Copy the `rc.d` script from `examples/rc.d/syncthing_userdoc` to `/etc/rc.d/` and enable it:
+```sh
+cp examples/rc.d/syncthing_userdoc /etc/rc.d/
+chmod 555 /etc/rc.d/syncthing_userdoc
+rcctl enable syncthing_userdoc
+rcctl start syncthing_userdoc
+```
+**Firewall**:
+Add these rules to /etc/pf.conf to allow incoming sync connections
+from the LAN and local discovery:
+```sh
+# Syncthing — incoming from LAN
+pass in quick on egress proto tcp from 192.168.0.0/16 to any port 22000
+pass in quick on egress proto udp from 192.168.0.0/16 to any port 21027
+
+# Syncthing — outgoing to LAN
+pass out quick on egress proto tcp from any to any port 22000 user userdoc flags S/SA
+pass out quick on egress proto udp from any to any port 21027 user userdoc
+```
+**Reload**:
+```sh
+pfctl -f /etc/pf.conf
+```
+#### Configuration:
+
+Open the Syncthing GUI:
+```sh
+doas /usr/local/bin/dropQbsd/run_app userdoc /usr/local/bin/qutebrowser --temp-basedir http://127.0.0.1:8384
+```
+Settings → Default Folder Path: `/home/userdoc/Sync`
+Add remote devices by their device ID
+Share folders with read/write permissions as needed
+
+**Troubleshooting**:
+If remote devices show as disconnected:
+
+- Verify both devices have Sync Protocol Listen Addresses set to default
+- Verify the remote device is listening on TCP 22000: `nc -zv <remote-ip> 22000`
+- Delete and re-add the remote device after any hostname or IP changes
+- Check that `pf.conf` allows incoming TCP 22000 and UDP 21027 from LAN
 
 ### 7. Optional Configurations
 
