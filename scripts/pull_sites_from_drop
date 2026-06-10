@@ -1,48 +1,80 @@
 #!/bin/ksh
-# /home/userlan/bin/pull_sites_from_drop
+# ==========================================================
+#  dropQbsd — pull_sites_from_drop
+#
+#  Pulls the latest sites archive from the drop zone into
+#  userdoc's Sync directory. Verifies integrity, creates
+#  a sentinel for enforce_drop cleanup, and keeps the
+#  3 most recent archives locally.
+#
+#  Path: /usr/local/bin/dropQbsd/pull_sites_from_drop
+#  Permissions: chmod 755, root:wheel
+#
+#  Usage: pull_sites_from_drop (run as userdoc)
+# ==========================================================
+
 set -eu
 
 SRC="/home/drop/userweb_export"
 DST="/home/userdoc/Sync/Archivio/Archivio_siti"
 
-[ -d "$SRC" ] || { echo "Errore: $SRC non accessibile"; exit 1; }
+#-----------------------------------------------------------------------------
+# PRE-FLIGHT CHECKS
+#-----------------------------------------------------------------------------
+if [ ! -d "$SRC" ]; then
+	echo "Error: $SRC not accessible." >&2
+	exit 1
+fi
+
 mkdir -p "$DST"
 
-# 1. Trova il file più recente nella sorgente
+#-----------------------------------------------------------------------------
+# 1. FIND THE LATEST ARCHIVE
+#-----------------------------------------------------------------------------
 LATEST=$(ls -1t "$SRC"/sites_*.tar.gz 2>/dev/null | head -1)
 
 if [ -z "$LATEST" ]; then
-    echo "Nessun archivio trovato in $SRC"
-    exit 0
+	echo "No archive found in $SRC."
+	exit 0
 fi
 
 FILENAME=$(basename "$LATEST")
 
-# 2. Copia solo se non esiste già in destinazione
+#-----------------------------------------------------------------------------
+# 2. SKIP IF ALREADY PRESENT
+#-----------------------------------------------------------------------------
 if [ -f "$DST/$FILENAME" ]; then
-    echo "Il file $FILENAME è già presente in destinazione. Saltato."
-    exit 0
+	echo "File $FILENAME already present in destination. Skipped."
+	exit 0
 fi
 
-# 3. Copia con permessi utente (600 per file)
+#-----------------------------------------------------------------------------
+# 3. COPY AND SET PERMISSIONS
+#-----------------------------------------------------------------------------
 cp "$LATEST" "$DST/"
 chmod 600 "$DST/$FILENAME"
 
-# 4. Verifica integrità (tar -t controlla l'archivio senza estrarre)
+#-----------------------------------------------------------------------------
+# 4. VERIFY INTEGRITY
+#-----------------------------------------------------------------------------
 if tar -tzf "$DST/$FILENAME" >/dev/null 2>&1; then
-    echo "Archivio $FILENAME importato e verificato con successo."
+	echo "Archive $FILENAME imported and verified successfully."
 else
-    echo "ERRORE: Archivio $FILENAME corrotto!"
-    rm "$DST/$FILENAME"
-    exit 1
+	echo "ERROR: Archive $FILENAME is corrupt!"
+	rm "$DST/$FILENAME"
+	exit 1
 fi
 
-# 5. Creazione sentinella nella dogana
+#-----------------------------------------------------------------------------
+# 5. CREATE SENTINEL FOR enforce_drop
+#-----------------------------------------------------------------------------
 SENTINEL="${LATEST}.imported"
 touch "$SENTINEL" 2>/dev/null || true
 
-# 6. Pulizia locale: tieni solo gli ultimi 3 archivi
+#-----------------------------------------------------------------------------
+# 6. KEEP ONLY THE 3 MOST RECENT ARCHIVES LOCALLY
+#-----------------------------------------------------------------------------
 cd "$DST" || exit 1
-ls -1t sites_*.tar.gz 2>/dev/null | tail -n +4 | xargs -r rm
+ls -1t sites_*.tar.gz 2>/dev/null | tail -n +4 | xargs rm 2>/dev/null
 
-
+echo ">>> Sites sync completed."
