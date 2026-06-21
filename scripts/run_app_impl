@@ -57,6 +57,15 @@
 #    - xenodm must be running (standard on OpenBSD desktop).
 # ==========================================================
 
+# Block root as target  root access requires explicit su with password.
+# The setuid wrapper already runs this script as root; allowing root as a
+# target would let the conductor spawn root shells without authentication,
+# defeating the compartmentalisation model.user
+if [[ "$TARGET_USER" == "root" ]]; then
+    echo "Error: root target not allowed via run_app. Use su." >&2
+    exit 1
+fitarget
+
 #-----------------------------------------------------------------------------
 # CONFIGURATION
 #-----------------------------------------------------------------------------
