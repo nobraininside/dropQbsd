@@ -1,11 +1,11 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd - run_app
+#  dropQbsd - run_app_impl
 #
 #  Launches graphical applications as a domain user with
-#  X11 forwarding. The main user (conductor) runs this
-#  via doas to open apps inside userweb, usermail, or
-#  userdoc without switching login sessions.
+#  X11 forwarding. The main user (conductor) invokes this
+#  through a setuid wrapper that escalates to root, keeping
+#  the conductor's doas.conf clean of any privilege.
 #
 #  Two modes:
 #    Normal:  runtime directory under /tmp, cleaned on exit.
@@ -14,33 +14,45 @@
 #             and untrusted files.
 #
 #  How it works:
-#    1. Copies the X11 cookie from xenodm's auth directory
+#    1. Called by run_app (setuid C wrapper) as root.
+#    2. Copies the X11 cookie from xenodm's auth directory
 #       so the target user can connect to the display.
-#    2. Creates an isolated runtime directory (tmpfs if
+#    3. Creates an isolated runtime directory (tmpfs if
 #       --disposable) owned by the target user.
-#    3. Launches the app via doas -u with the correct
+#    4. Launches the app via su -l with the correct
 #       DISPLAY, XAUTHORITY, and XDG_RUNTIME_DIR.
-#    4. On exit, cleans up the runtime directory (normal)
+#    5. On exit, cleans up the runtime directory (normal)
 #       or unmounts and removes the tmpfs (disposable).
 #
-#  Path: /usr/local/bin/dropQbsd/run_app
-#  Permissions: chmod 755, root:wheel
+#  Security:
+#    - No doas rules for the conductor user. The setuid
+#      wrapper is the only path to root, and it runs only
+#      this script — nothing else.
+#    - su -l switches to the target user without permanent
+#      doas.conf rules for root to impersonate domains.
+#    - Domain users (userdoc, usermail, userweb) remain
+#      isolated from each other and from the conductor.
+#
+#  Paths:
+#    /usr/local/bin/dropQbsd/run_app       (setuid C wrapper)
+#    /usr/local/bin/dropQbsd/run_app_impl  (this script)
+#  Permissions:
+#    run_app:      4755 root:wheel
+#    run_app_impl: 0755 root:wheel
 #
 #  Usage:
-#    doas run_app [--disposable [size]] <target_user> <command> [args...]
+#    run_app [--disposable [size]] <target_user> <command> [args...]
 #
 #  Examples:
-#    doas /usr/local/bin/dropQbsd/run_app userweb qutebrowser --temp-basedir https://qwant.com
-#    doas /usr/local/bin/dropQbsd/run_app --disposable userweb ungoogled-chromium --temp-profile
-#    doas /usr/local/bin/dropQbsd/run_app --disposable userweb firefox --private-window
-#    doas /usr/local/bin/dropQbsd/run_app --disposable 250M userweb mupdf /tmp/sketchy.pdf
-#    doas /usr/local/bin/dropQbsd/run_app usermail claws-mail
+#    /usr/local/bin/dropQbsd/run_app userweb qutebrowser --temp-basedir https://qwant.com
+#    /usr/local/bin/dropQbsd/run_app --disposable userweb ungoogled-chromium --temp-profile
+#    /usr/local/bin/dropQbsd/run_app --disposable userweb firefox --private-window
+#    /usr/local/bin/dropQbsd/run_app --disposable 250M userweb mupdf /tmp/sketchy.pdf
+#    /usr/local/bin/dropQbsd/run_app usermail claws-mail
 #
 #  Prerequisites:
 #    - Target users (userweb, usermail, userdoc) must exist.
-#    - doas.conf must allow user to run this script:
-#        permit nopass user cmd /usr/local/bin/dropQbsd/run_app
-#    - doas.conf must allow root to doas without password:
+#    - doas.conf needs only:
 #        permit nopass root
 #    - xenodm must be running (standard on OpenBSD desktop).
 # ==========================================================
@@ -93,7 +105,10 @@ fi
 #-----------------------------------------------------------------------------
 # xenodm creates per-session cookies in AUTH_DIR named A:0-<random>.
 # Grab the first match — there should be exactly one per display.
-AUTH_SRC=$(ls "$AUTH_DIR"/A:0-* 2>/dev/null | head -n 1)
+# AUTH_SRC=$(ls "$AUTH_DIR"/A:0-* 2>/dev/null | head -n 1)
+#AUTH_SRC=$(find "$AUTH_DIR" -maxdepth 1 -name 'A:0-*' -print -quit 2>/dev/null)
+AUTH_SRC="/etc/X11/xenodm/authdir/authfiles/A:0-4jfi8C"
+
 
 if [[ -z "$AUTH_SRC" ]]; then
     echo "Error: No X11 authentication file found in $AUTH_DIR" >&2
@@ -145,13 +160,8 @@ else
     APP_HOME=$(eval echo ~"$TARGET_USER")
 fi
 
+su -l "$TARGET_USER" -c "env DISPLAY='$DISPLAY' XAUTHORITY='$AUTH_FILE' XDG_RUNTIME_DIR='$RUNDIR' HOME='$APP_HOME' $APP_CMD $*"
 
-doas -u "$TARGET_USER" env \
-    DISPLAY="$DISPLAY" \
-    XAUTHORITY="$AUTH_FILE" \
-    XDG_RUNTIME_DIR="$RUNDIR" \
-    HOME="$APP_HOME" \
-    "$APP_CMD" "$@"
 
 #-----------------------------------------------------------------------------
 # CLEANUP
