@@ -250,7 +250,7 @@ Set up Syncthing for `userdoc` with the Sync directory at `/home/userdoc/Sync`. 
 **Installation:**
 
 ```sh
-pkg_add syncthing
+/usr/local/bin/dropQbsd/admin/pkg_add_via_pf syncthing
 ```
 
 **Service setup:**
@@ -311,7 +311,7 @@ For a smoother, more integrated experience, dropQbsd includes `site_menu`: a dro
 **Installation:**
 
 ```sh
-pkg_add zenity pass xclip
+/usr/local/bin/dropQbsd/admin/pkg_add_via_pf zenity pass xclip
 ```
 
 **Initialize pass:**
@@ -426,7 +426,7 @@ coordinated colors are provided in `examples/`:
 Install in each domain:
 
 ```sh
-pkg_add xfe mc
+/usr/local/bin/dropQbsd/admin/pkg_add_via_pf xfe mc
 
 Launch via run_app:
 /usr/local/bin/dropQbsd/run_app userdoc xfe /home/userdoc
