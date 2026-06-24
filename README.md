@@ -89,7 +89,7 @@ Service IPs and mail server IPs are managed dynamically via PF tables, populated
 
 ```
 usermail → export_mail_to_drop → usermail_export → pull_mail_from_Drop → userdoc (3 backups)
-userweb  → export_sites_to_Drop → userweb_export  → pull_sites_from_drop  → userdoc (3 backups)
+userweb  → export_www_to_Drop → userweb_export  → pull_www_from_drop  → userdoc (3 backups)
 ```
 
 Export files are `root:drop 440` — no domain user can modify them. Integrity verified at each step.
@@ -228,7 +228,7 @@ Note: no `doas` prefix — `run_app` is setuid root, so `user` invokes it direct
 **Export websites (as userweb):**
 
 ```sh
-$ /usr/local/bin/dropQbsd/export_sites_to_drop
+$ /usr/local/bin/dropQbsd/export_www_to_drop
 ```
 
 **Export mail (as usermail):**
@@ -240,7 +240,7 @@ $ /usr/local/bin/dropQbsd/export_mail_to_drop
 **Pull into document storage (as userdoc):**
 
 ```sh
-$ /usr/local/bin/dropQbsd/pull_sites_from_drop
+$ /usr/local/bin/dropQbsd/pull_www_from_drop
 $ /usr/local/bin/dropQbsd/pull_mail_from_Drop
 ```
 
