@@ -69,8 +69,8 @@ The binary is the **blind gate**: it can do exactly one thing — call `run_app_
 **Disposable mode** mounts a tmpfs in RAM for the app's home directory. When the app exits, the tmpfs is unmounted and everything is destroyed. Nothing survives. Ideal for browsers and untrusted files.
 
 ```sh
-/usr/local/bin/dropQbsd/run_app --disposable userweb qutebrowser --temp-basedir
-/usr/local/bin/dropQbsd/run_app --disposable 1G userweb chromium https://example.com
+$ /usr/local/bin/dropQbsd/run_app --disposable userweb qutebrowser --temp-basedir
+$ /usr/local/bin/dropQbsd/run_app --disposable 1G userweb chromium https://example.com
 ```
 
 ### Network Isolation
@@ -167,19 +167,19 @@ dropQbsd is fully functional with just the base system. Several optional compone
 **Copy a file into the drop zone (original stays in place):**
 
 ```sh
-qcp ~/document.pdf
+$ /usr/local/bin/dropQbsd/qcp ~/document.pdf
 ```
 
 **Move a file into the drop zone (original is deleted):**
 
 ```sh
-qmv ~/document.pdf
+$ /usr/local/bin/dropQbsd/qmv ~/document.pdf
 ```
 
 **Import from the drop zone into ~/Downloads:**
 
 ```sh
-qimport document.pdf
+$ /usr/local/bin/dropQbsd/qimport document.pdf
 ```
 
 ### Launching Apps in Domains
@@ -187,31 +187,31 @@ qimport document.pdf
 **Disposable browser (tmpfs-backed, nothing survives):**
 
 ```sh
-/usr/local/bin/dropQbsd/run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir
+$ /usr/local/bin/dropQbsd/run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir
 ```
 
 **Disposable browser with custom tmpfs size (for heavy sessions):**
 
 ```sh
-/usr/local/bin/dropQbsd/run_app --disposable 1G userweb /usr/local/bin/qutebrowser --temp-basedir
+$ /usr/local/bin/dropQbsd/run_app --disposable 1G userweb /usr/local/bin/qutebrowser --temp-basedir
 ```
 
 **Open a site from the site menu (password auto-copied):**
 
 ```sh
-/usr/local/bin/dropQbsd/site_menu
+$ /usr/local/bin/dropQbsd/site_menu
 ```
 
 **Mail client in its isolated domain:**
 
 ```sh
-/usr/local/bin/dropQbsd/run_app usermail /usr/local/bin/claws-mail
+$ /usr/local/bin/dropQbsd/run_app usermail /usr/local/bin/claws-mail
 ```
 
 **File manager for documents:**
 
 ```sh
-/usr/local/bin/dropQbsd/run_app userdoc /usr/local/bin/thunar /home/userdoc
+$ /usr/local/bin/dropQbsd/run_app userdoc /usr/local/bin/thunar /home/userdoc
 ```
 
 **Tip:** Add these aliases to `~/.profile`:
@@ -228,20 +228,20 @@ Note: no `doas` prefix — `run_app` is setuid root, so `user` invokes it direct
 **Export websites (as userweb):**
 
 ```sh
-export_sites_to_Drop.sh
+$ /usr/local/bin/dropQbsd/export_sites_to_drop
 ```
 
 **Export mail (as usermail):**
 
 ```sh
-export_mail_to_drop
+$ /usr/local/bin/dropQbsd/export_mail_to_drop
 ```
 
 **Pull into document storage (as userdoc):**
 
 ```sh
-pull_sites_from_drop
-pull_mail_from_Drop
+$ /usr/local/bin/dropQbsd/pull_sites_from_drop
+$ /usr/local/bin/dropQbsd/pull_mail_from_Drop
 ```
 
 ### System Updates
@@ -249,25 +249,25 @@ pull_mail_from_Drop
 **Full update (patches + firmware + packages + orphan cleanup):**
 
 ```sh
-doas update_openbsd_via_pf
+# /usr/local/bin/dropQbsd/admin/update_openbsd_via_pf
 ```
 
 **Security patches only:**
 
 ```sh
-doas syspatch_via_pf
+# /usr/local/bin/dropQbsd/admin/syspatch_via_pf
 ```
 
 **Install a specific package:**
 
 ```sh
-doas pkg_add_via_pf firefox
+# /usr/local/bin/dropQbsd/admin/pkg_add_via_pf firefox
 ```
 
 **Major release upgrade:**
 
 ```sh
-doas sysupgrade_via_pf
+# /usr/local/bin/dropQbsd/admin/sysupgrade_via_pf
 ```
 
 ### Monitoring
@@ -275,28 +275,28 @@ doas sysupgrade_via_pf
 **Check quarantine:**
 
 ```sh
-ls -la /home/drop/_quarantine/
-cat /home/drop/_quarantine/*.txt
+$ ls -la /home/drop/_quarantine/
+$ cat /home/drop/_quarantine/*.txt
 ```
 
 **Logs:**
 
 ```sh
-tail /var/log/dropQbsd_drop.log
-tail /var/log/dropQbsd_sync.log
-tail /var/log/system_update_pf.log
+$ tail /var/log/dropQbsd_drop.log
+$ tail /var/log/dropQbsd_sync.log
+$ tail /var/log/system_update_pf.log
 ```
 
 **Live PF traffic:**
 
 ```sh
-doas tcpdump -n -e -ttt -i pflog0
+# tcpdump -n -e -ttt -i pflog0
 ```
 
 **Integrity verification:**
 
 ```sh
-doas /usr/local/bin/dropQbsd/admin/verify_integrity
+# /usr/local/bin/dropQbsd/admin/verify_integrity
 ```
 
 ---
