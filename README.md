@@ -318,9 +318,9 @@ $ tail /var/log/system_update_pf.log
 
 | Script | Run by | Purpose |
 | ------ | ------ | ------- |
-| `export_sites_to_Drop` | userweb | Compress websites into `userweb_export`, verify integrity |
+| `export_www_to_Drop` | userweb | Compress websites into `userweb_export`, verify integrity |
 | `export_mail_to_drop` | usermail | Compress mail into `usermail_export` |
-| `pull_sites_from_drop` | userdoc | Import latest site archive, verify, keep 3 backups |
+| `pull_www_from_drop` | userdoc | Import latest site archive, verify, keep 3 backups |
 | `pull_mail_from_Drop` | userdoc | Import latest mail archive, verify, keep 3 backups |
 
 ### Enforcement (cron)
