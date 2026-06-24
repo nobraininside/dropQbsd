@@ -1,26 +1,28 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd - run_app_impl
+#  dropQbsd — run_app_impl
 #
 #  Launches graphical applications as a domain user with
 #  X11 forwarding. The main user (conductor) invokes this
-#  through a setuid wrapper that escalates to root, keeping
-#  the conductor's doas.conf clean of any privilege.
+#  through a setuid wrapper (run_app) that escalates to root,
+#  keeping the conductor's doas.conf clean of any privilege.
 #
 #  Two modes:
-#    Normal:  runtime directory under /tmp, cleaned on exit.
-#    Disposable:  dedicated tmpfs mounted in RAM, destroyed
-#             on exit. Nothing survives. Ideal for browsers
-#             and untrusted files.
+#    Normal:    isolated runtime directory under /tmp,
+#               cleaned on exit.
+#    Disposable: dedicated tmpfs mounted in RAM, destroyed
+#               on exit. Nothing survives. Ideal for browsers
+#               and untrusted files.
 #
 #  How it works:
 #    1. Called by run_app (setuid C wrapper) as root.
-#    2. Copies the X11 cookie from xenodm's auth directory
+#    2. Locates the X11 cookie from xenodm's auth directory
 #       so the target user can connect to the display.
 #    3. Creates an isolated runtime directory (tmpfs if
-#       --disposable) owned by the target user.
+#       --disposable) owned by the target user. Uses
+#       mktemp -d in ALL modes to prevent symlink attacks.
 #    4. Launches the app via su -l with the correct
-#       DISPLAY, XAUTHORITY, and XDG_RUNTIME_DIR.
+#       DISPLAY, XAUTHORITY, XDG_RUNTIME_DIR, and HOME.
 #    5. On exit, cleans up the runtime directory (normal)
 #       or unmounts and removes the tmpfs (disposable).
 #
@@ -32,6 +34,8 @@
 #      doas.conf rules for root to impersonate domains.
 #    - Domain users (userdoc, usermail, userweb) remain
 #      isolated from each other and from the conductor.
+#    - All runtime directories use mktemp -d to prevent
+#      symlink attacks — no predictable paths.
 #
 #  Paths:
 #    /usr/local/bin/dropQbsd/run_app       (setuid C wrapper)
@@ -44,11 +48,11 @@
 #    run_app [--disposable [size]] <target_user> <command> [args...]
 #
 #  Examples:
-#    /usr/local/bin/dropQbsd/run_app userweb qutebrowser --temp-basedir https://qwant.com
-#    /usr/local/bin/dropQbsd/run_app --disposable userweb ungoogled-chromium --temp-profile
-#    /usr/local/bin/dropQbsd/run_app --disposable userweb firefox --private-window
-#    /usr/local/bin/dropQbsd/run_app --disposable 250M userweb mupdf /tmp/sketchy.pdf
-#    /usr/local/bin/dropQbsd/run_app usermail claws-mail
+#    run_app userweb qutebrowser --temp-basedir https://qwant.com
+#    run_app --disposable userweb ungoogled-chromium --temp-profile
+#    run_app --disposable 1G userweb firefox --private-window
+#    run_app --disposable 250M userweb mupdf /tmp/sketchy.pdf
+#    run_app usermail claws-mail
 #
 #  Prerequisites:
 #    - Target users (userweb, usermail, userdoc) must exist.
@@ -61,7 +65,6 @@
 # CONFIGURATION
 #-----------------------------------------------------------------------------
 AUTH_DIR="/etc/X11/xenodm/authdir/authfiles"
-BASE_RUNDIR="/tmp/runtime"
 DEFAULT_DISPOSABLE_SIZE="500M"
 
 #-----------------------------------------------------------------------------
@@ -92,6 +95,7 @@ TARGET_USER=$1
 APP_CMD=$2
 shift 2
 
+
 #-----------------------------------------------------------------------------
 # VERIFY TARGET USER EXISTS
 #-----------------------------------------------------------------------------
@@ -104,12 +108,12 @@ fi
 # ALLOWLIST: ONLY DOMAIN USERS PERMITTED
 #-----------------------------------------------------------------------------
 case "$TARGET_USER" in
-	userweb|usermail|userdoc)
-		;;
-	*)
-		echo "Error: '$TARGET_USER' is not a valid domain user." >&2
-		exit 1
-		;;
+    userweb|usermail|userdoc)
+        ;;
+    *)
+        echo "Error: '$TARGET_USER' is not a valid domain user." >&2
+        exit 1
+        ;;
 esac
 
 #-----------------------------------------------------------------------------
@@ -117,9 +121,9 @@ esac
 #-----------------------------------------------------------------------------
 # xenodm creates per-session cookies in AUTH_DIR named A:0-<random>.
 # Grab the first match — there should be exactly one per display.
-# AUTH_SRC=$(ls "$AUTH_DIR"/A:0-* 2>/dev/null | head -n 1)
-#AUTH_SRC=$(find "$AUTH_DIR" -maxdepth 1 -name 'A:0-*' -print -quit 2>/dev/null)
-AUTH_SRC="/etc/X11/xenodm/authdir/authfiles/A:0-4jfi8C"
+# Note: OpenBSD find(1) does not support -quit. We use head -1 instead.
+AUTH_SRC=$(find "$AUTH_DIR" -maxdepth 1 -name 'A:0-*' -print 2>/dev/null | head -1)
+
 
 
 if [[ -z "$AUTH_SRC" ]]; then
@@ -128,12 +132,13 @@ if [[ -z "$AUTH_SRC" ]]; then
 fi
 
 #-----------------------------------------------------------------------------
-# SET UP RUNTIME DIRECTORY (tmpfs if disposable, regular dir otherwise)
+# SET UP RUNTIME DIRECTORY
 #-----------------------------------------------------------------------------
+# ALWAYS use mktemp -d to prevent symlink attacks.
+# In disposable mode the directory becomes a tmpfs mount point.
+# In normal mode it's a plain directory under /tmp.
+# Both are cleaned on exit.
 if [[ "$DISPOSABLE" -eq 1 ]]; then
-    # Create a unique directory under /tmp and mount a tmpfs on it.
-    # The tmpfs lives entirely in RAM (backed by swap if needed).
-    # nodev and nosuid prevent device files and setuid binaries.
     RUNDIR=$(mktemp -d /tmp/disposable.XXXXXX)
     if ! mount -t mfs -o rw,nodev,nosuid,-s="$DISPOSABLE_SIZE" swap "$RUNDIR"; then
         echo "Error: Failed to mount tmpfs ($DISPOSABLE_SIZE). Not enough RAM?" >&2
@@ -143,11 +148,7 @@ if [[ "$DISPOSABLE" -eq 1 ]]; then
     chown "$TARGET_USER" "$RUNDIR"
     chmod 700 "$RUNDIR"
 else
-    RUNDIR="$BASE_RUNDIR-$TARGET_USER"
-    if ! mkdir -p "$RUNDIR" 2>/dev/null; then
-        echo "Error: Cannot create $RUNDIR. Insufficient permissions?" >&2
-        exit 1
-    fi
+    RUNDIR=$(mktemp -d /tmp/runtime.XXXXXX)
     chown "$TARGET_USER" "$RUNDIR"
     chmod 700 "$RUNDIR"
 fi
@@ -163,23 +164,31 @@ chmod 600 "$AUTH_FILE"
 #-----------------------------------------------------------------------------
 # LAUNCH APPLICATION AS TARGET USER
 #-----------------------------------------------------------------------------
-# HOME is set to RUNDIR so the app writes everything inside the isolated
-# directory. For disposable mode this means all data lives in the tmpfs
-# and is destroyed on exit.
+# HOME is set to RUNDIR for disposable mode so the app writes everything
+# inside the tmpfs — destroyed on exit.
+# For normal mode, HOME is the target user's real home directory.
 if [[ "$DISPOSABLE" -eq 1 ]]; then
     APP_HOME="$RUNDIR"
 else
     APP_HOME=$(eval echo ~"$TARGET_USER")
 fi
 
-su -l "$TARGET_USER" -c "env DISPLAY='$DISPLAY' XAUTHORITY='$AUTH_FILE' XDG_RUNTIME_DIR='$RUNDIR' HOME='$APP_HOME' $APP_CMD $*"
-
+# Pass arguments via positional parameters to avoid quoting issues
+# with $* inside a -c string.
+su -l "$TARGET_USER" -c '
+    export DISPLAY="$1"
+    export XAUTHORITY="$2"
+    export XDG_RUNTIME_DIR="$3"
+    export HOME="$4"
+    shift 4
+    exec "$@"
+' -- "$DISPLAY" "$AUTH_FILE" "$RUNDIR" "$APP_HOME" "$APP_CMD" "$@"
 
 #-----------------------------------------------------------------------------
 # CLEANUP
 #-----------------------------------------------------------------------------
 if [[ "$DISPOSABLE" -eq 1 ]]; then
-    # Unmount the tmpfs - all data written by the app is gone.
+    # Unmount the tmpfs — all data written by the app is gone.
     umount "$RUNDIR" 2>/dev/null
     rmdir "$RUNDIR" 2>/dev/null
 else
