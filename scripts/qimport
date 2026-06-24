@@ -1,51 +1,90 @@
 #!/bin/ksh
-# /usr/local/bin/qubsd/qimport <file_o_cartella_in_drop> [destinazione]
+# ==========================================================
+#  dropQbsd — qimport
+#
+#  Imports a file or directory from the /home/drop exchange
+#  zone into the conductor's local storage (default:
+#  ~/Downloads).
+#
+#  Cleanup is handled by enforce_drop on its regular cycle.
+#  No sentinel is created — the conductor does not write
+#  to the drop zone. Files are removed after the abandonment
+#  timeout (default: 30 minutes).
+#
+#  Path: /usr/local/bin/dropQbsd/qimport
+#  Permissions: chmod 755, root:wheel
+#
+#  Usage: qimport <file_or_directory_in_drop> [destination]
+# ==========================================================
+
+set -eu
 
 FILE_INPUT=$1
-FILE_DROP=$(realpath "$FILE_INPUT" 2>/dev/null)
+DEST=${2:-"$HOME/Downloads"}
+
+#-----------------------------------------------------------------------------
+# RESOLVE SOURCE PATH
+#-----------------------------------------------------------------------------
+FILE_DROP=$(realpath "$FILE_INPUT" 2>/dev/null) || true
 
 if [[ -z "$FILE_DROP" ]]; then
-    [[ "$FILE_INPUT" = /* ]] && FILE_DROP="$FILE_INPUT" || FILE_DROP="$PWD/$FILE_INPUT"
+    if [[ "$FILE_INPUT" = /* ]]; then
+        FILE_DROP="$FILE_INPUT"
+    else
+        FILE_DROP="$PWD/$FILE_INPUT"
+    fi
 fi
 
-DEST=$2
-
-# Verifica che il file provenga da DROP
+#-----------------------------------------------------------------------------
+# VALIDATE SOURCE IS INSIDE /home/drop
+#-----------------------------------------------------------------------------
 case "$FILE_DROP" in
     /home/drop/*) ;;
-    *) echo "Errore: puoi importare solo file/cartelle dal Drop. (Path rilevato: $FILE_DROP)"; exit 1 ;;
+    *)
+        echo "Error: can only import files from the drop zone." >&2
+        echo "  Path given: $FILE_DROP" >&2
+        exit 1
+        ;;
 esac
 
-# Imposta destinazione di default
-if [[ -z "$DEST" ]]; then
-    DEST="$HOME/Downloads"
+#-----------------------------------------------------------------------------
+# VERIFY SOURCE EXISTS
+#-----------------------------------------------------------------------------
+if [[ ! -e "$FILE_DROP" ]]; then
+    echo "Error: '$FILE_DROP' not found in the drop zone." >&2
+    exit 1
 fi
 
-# Verifica esistenza destinazione
+#-----------------------------------------------------------------------------
+# VERIFY DESTINATION
+#-----------------------------------------------------------------------------
 if [[ ! -d "$DEST" ]]; then
-    echo "Errore: destinazione '$DEST' non trovata."
+    echo "Error: destination '$DEST' does not exist." >&2
     exit 1
 fi
 
-# Copia ricorsiva
-if ! cp -pR "$FILE_DROP" "$DEST/"; then
-    echo "Errore: Copia fallita."
+if [[ ! -w "$DEST" ]]; then
+    echo "Error: destination '$DEST' is not writable." >&2
     exit 1
 fi
 
-# Gestione permessi e proprietà in destinazione
+#-----------------------------------------------------------------------------
+# COPY FROM DROP ZONE TO DESTINATION
+#-----------------------------------------------------------------------------
 FILENAME=$(basename "$FILE_DROP")
 TARGET="$DEST/$FILENAME"
 
-chown -R "$USER":"$USER" "$TARGET"
+if ! cp -pR "$FILE_DROP" "$DEST/"; then
+    echo "Error: copy failed." >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# SET LOCAL PERMISSIONS
+#-----------------------------------------------------------------------------
+chown -R "$USER:$USER" "$TARGET"
 find "$TARGET" -type d -exec chmod 700 {} +
 find "$TARGET" -type f -exec chmod 600 {} +
 
-# Creazione sentinella nella dogana
-SENTINEL="${FILE_DROP}.imported"
-touch "$SENTINEL" 2>/dev/null || true
+echo "Imported: $TARGET"
 
-# Se touch fallisce (directory senza permesso w), non è critico:
-# enforce_drop pulirà comunque i file vecchi
-
-echo "Importato in $TARGET con successo."
