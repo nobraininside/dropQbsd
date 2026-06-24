@@ -1,0 +1,43 @@
+#!/bin/ksh
+# ==========================================================
+#  dropQbsd — verify_integrity
+#
+#  Checks the integrity of critical dropQbsd scripts using
+#  signify(1). Run periodically via cron to detect tampering.
+#
+#  Setup (one-time, private key kept offline):
+#    signify -G -n -p /etc/tables/dropQbsd.pub -s /root/dropQbsd.sec
+#    sha256 /usr/local/bin/dropQbsd/run_app_impl \
+#           /usr/local/bin/dropQbsd/qmv \
+#           /usr/local/bin/dropQbsd/qcp \
+#           /usr/local/bin/dropQbsd/qimport \
+#           /usr/local/bin/dropQbsd/admin/enforce_drop \
+#           /usr/local/bin/dropQbsd/admin/enforce_sync \
+#      | signify -S -s /root/dropQbsd.sec -m - \
+#          -x /etc/tables/dropQbsd_scripts.sha256.sig
+#    rm /root/dropQbsd.sec
+#
+#  Path: /usr/local/bin/dropQbsd/admin/verify_integrity
+#  Permissions: chmod 700, root:wheel
+#
+#  Cron: */5 * * * * /usr/local/bin/dropQbsd/admin/verify_integrity
+# ==========================================================
+
+PUBKEY="/etc/tables/dropQbsd.pub"
+CHECKSUM_FILE="/etc/tables/dropQbsd_scripts.sha256.sig"
+SCRIPT_DIR="/usr/local/bin/dropQbsd"
+
+if [[ ! -f "$PUBKEY" ]] || [[ ! -f "$CHECKSUM_FILE" ]]; then
+    exit 0
+fi
+
+if ! signify -C -p "$PUBKEY" -x "$CHECKSUM_FILE" \
+    "$SCRIPT_DIR/run_app_impl" \
+    "$SCRIPT_DIR/qmv" \
+    "$SCRIPT_DIR/qcp" \
+    "$SCRIPT_DIR/qimport" \
+    "$SCRIPT_DIR/admin/enforce_drop" \
+    "$SCRIPT_DIR/admin/enforce_sync" \
+    >/dev/null 2>&1; then
+    logger -t dropQbsd "INTEGRITY VIOLATION: one or more scripts have been modified"
+fi
