@@ -3,9 +3,11 @@
 #  dropQbsd — pull_mail_from_Drop
 #
 #  Pulls the latest mail archive from the drop zone into
-#  userdoc's Sync directory. Verifies integrity, creates
-#  a sentinel for enforce_drop cleanup, and keeps only
-#  the most recent archive locally.
+#  userdoc's Sync directory. Verifies integrity and keeps
+#  only the most recent archive locally.
+#
+#  Cleanup of the source archive is handled by enforce_drop
+#  on its regular rotation cycle. No sentinel is created.
 #
 #  Path: /usr/local/bin/dropQbsd/pull_mail_from_Drop
 #  Permissions: chmod 755, root:wheel
@@ -14,6 +16,7 @@
 # ==========================================================
 
 set -eu
+# set -x # for debugging
 
 SRC="/home/drop/usermail_export"
 DST="/home/userdoc/Sync/Archivio/Archivio_email"
@@ -22,8 +25,8 @@ DST="/home/userdoc/Sync/Archivio/Archivio_email"
 # PRE-FLIGHT CHECKS
 #-----------------------------------------------------------------------------
 if [ ! -d "$SRC" ]; then
-	echo "Error: $SRC not accessible." >&2
-	exit 1
+    echo "Error: $SRC not accessible." >&2
+    exit 1
 fi
 
 mkdir -p "$DST"
@@ -31,21 +34,24 @@ mkdir -p "$DST"
 #-----------------------------------------------------------------------------
 # 1. FIND THE LATEST ARCHIVE
 #-----------------------------------------------------------------------------
-LATEST=$(ls -1t "$SRC"/mail_*.tar.gz 2>/dev/null | head -1)
+# Avoid xargs -0: OpenBSD xargs has no -r flag and runs the command
+# even with empty input, listing the current directory instead.
+FILES=$(find "$SRC" -maxdepth 1 -name 'mail_*.tar.gz' -type f -print 2>/dev/null)
 
-if [ -z "$LATEST" ]; then
-	echo "No archive found in $SRC."
-	exit 0
+if [ -z "$FILES" ]; then
+    echo "No archive found in $SRC."
+    exit 0
 fi
 
+LATEST=$(ls -1t $FILES | head -1)
 FILENAME=$(basename "$LATEST")
 
 #-----------------------------------------------------------------------------
 # 2. SKIP IF ALREADY PRESENT
 #-----------------------------------------------------------------------------
 if [ -f "$DST/$FILENAME" ]; then
-	echo "File $FILENAME already present in destination. Skipped."
-	exit 0
+    echo "File $FILENAME already present in destination. Skipped."
+    exit 0
 fi
 
 #-----------------------------------------------------------------------------
@@ -58,23 +64,24 @@ chmod 600 "$DST/$FILENAME"
 # 4. VERIFY INTEGRITY
 #-----------------------------------------------------------------------------
 if tar -tzf "$DST/$FILENAME" >/dev/null 2>&1; then
-	echo "Archive $FILENAME imported and verified successfully."
+    echo "Archive $FILENAME imported and verified successfully."
 else
-	echo "ERROR: Archive $FILENAME is corrupt!"
-	rm "$DST/$FILENAME"
-	exit 1
+    echo "ERROR: Archive $FILENAME is corrupt!" >&2
+    rm "$DST/$FILENAME"
+    exit 1
 fi
 
 #-----------------------------------------------------------------------------
-# 5. CREATE SENTINEL FOR enforce_drop
+# 5. KEEP ONLY THE LATEST ARCHIVE LOCALLY
 #-----------------------------------------------------------------------------
-SENTINEL="${LATEST}.imported"
-touch "$SENTINEL" 2>/dev/null || true
-
-#-----------------------------------------------------------------------------
-# 6. KEEP ONLY THE LATEST ARCHIVE LOCALLY
-#-----------------------------------------------------------------------------
-cd "$DST" || exit 1
-ls -1t mail_*.tar.gz 2>/dev/null | tail -n +2 | xargs rm 2>/dev/null
+(
+    cd "$DST" || exit 1
+    FILES=$(find . -maxdepth 1 -name 'mail_*.tar.gz' -type f -print 2>/dev/null)
+    if [ -n "$FILES" ]; then
+        echo "$FILES" | xargs ls -1t 2>/dev/null | tail -n +2 | xargs rm 2>/dev/null
+    fi
+)
 
 echo ">>> Mail sync completed."
+
+
