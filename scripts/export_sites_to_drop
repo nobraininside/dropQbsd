@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — export_sites_to_Drop
+#  dropQbsd — export_sites_to_drop
 #
 #  Compresses the userweb sites directory and places the
 #  archive in /home/drop/userweb_export for archival by
@@ -75,11 +75,14 @@ fi
 #-----------------------------------------------------------------------------
 # enforce_drop (cron, every 60s) will set the correct 440 permissions.
 # userweb cannot chmod here — the export directory is root:drop.
-cp "$ARCHIVE" "$DST/"
+if ! cp "$ARCHIVE" "$DST/"; then
+    echo "[ERROR] Failed to copy archive to drop zone." >&2
+    exit 1
+fi
 
 #-----------------------------------------------------------------------------
 # ROTATE OLD ARCHIVES (> 24 hours)
 #-----------------------------------------------------------------------------
-find "$DST" -type f -name 'sites_*.tar.gz' -mtime +0 -delete 2>/dev/null
+find "$DST" -type f -name 'sites_*.tar.gz' -mtime +1 -delete 2>/dev/null
 
 msg "Export completed successfully."
