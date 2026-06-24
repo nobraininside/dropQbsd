@@ -6,19 +6,19 @@
 #  Runs every minute via cron as root.
 #
 #  Responsibilities:
-#    1. Process sentinel files (*. delete both
-#       the sentinel and the corresponding original file.
-#       This confirms the import happened and cleans up.
-#    2. Enforce correct permissions (440 files, 570 dirs).
-#    3. Quarantine files with wrong GID (not 'drop' group)
+#    1. Enforce correct permissions (440 files, 570 dirs).
+#    2. Quarantine files with wrong GID (not 'drop' group)
 #       with an explanation ticket.
-#    4. Clean up abandoned files/dirs older than 30 minutes
-#       that have no sentinel.
-#    5. Grace period: skip files younger than 2 minutes to
+#    3. Clean up abandoned files/dirs older than 30 minutes.
+#    4. Grace period: skip files younger than 2 minutes to
 #       avoid races with qmv still writing.
-#    6. Sanitize export directories (userweb_export,
+#    5. Sanitize export directories (userweb_export,
 #       usermail_export) with SGID enforcement and old
 #       archive rotation.
+#
+#  No sentinel processing. Files are cleaned up by timeout
+#  only — this keeps the conductor (user) from needing
+#  write access to the drop zone.
 #
 #  Path: /usr/local/bin/dropQbsd/admin/enforce_drop
 #  Permissions: chmod 700, root:wheel
@@ -32,25 +32,22 @@
 
 LOCKDIR="/var/run/enforce_drop.lock"
 
-# Clean up stale lock file from older script versions (which used a file, not a dir)
+# Clean up stale lock file from older script versions
 if [ -f "$LOCKDIR" ]; then
-	rm -f "$LOCKDIR"
+    rm -f "$LOCKDIR"
 fi
 
 # Acquire non-blocking lock using mkdir (atomic on Unix)
 if ! mkdir "$LOCKDIR" 2>/dev/null; then
-	exit 0
+    exit 0
 fi
 trap 'rmdir "$LOCKDIR"' EXIT
 
 DROP_DIR="/home/drop"
 QUARANTINE_DIR="$DROP_DIR/_quarantine"
-LOG_FILE="/var/log/dropQbsd_drop.log" 
+LOG_FILE="/var/log/dropQbsd_drop.log"
 
-# Grace period (files younger than this are left alone)
 GRACE_MIN=2
-# Abandonment threshold (files older than this with no
-# sentinel are deleted)
 ABANDON_MIN=30
 
 #-----------------------------------------------------------------------------
@@ -58,9 +55,9 @@ ABANDON_MIN=30
 #-----------------------------------------------------------------------------
 DROP_GID=$(grep ^drop: /etc/group | cut -d: -f3)
 if [ -z "$DROP_GID" ]; then
-	echo "$(date '+%F %T') FATAL: group 'drop' not found in /etc/group" \
-		>> "$LOG_FILE"
-	exit 1
+    echo "$(date '+%F %T') FATAL: group 'drop' not found in /etc/group" \
+        >> "$LOG_FILE"
+    exit 1
 fi
 
 #-----------------------------------------------------------------------------
@@ -75,90 +72,68 @@ chmod 750 "$QUARANTINE_DIR"
 cd "$DROP_DIR" || exit 1
 
 #-----------------------------------------------------------------------------
-# LOG FUNCTION (file  cron, no stdout clutter)
+# LOG FUNCTION
 #-----------------------------------------------------------------------------
 log() {
-	echo "$(date '+%F %T')  $1" >> "$LOG_FILE"
+    echo "$(date '+%F %T')  $1" >> "$LOG_FILE"
 }
 
 #-----------------------------------------------------------------------------
 # COUNTERS FOR SUMMARY LOG
 #-----------------------------------------------------------------------------
-SENTINELS_PROCESSED=0
 ABANDONED_DELETED=0
 QUARANTINED=0
 PERMS_FIXED=0
+CYCLE_FILES=0
 
 #-----------------------------------------------------------------------------
 # 1. MAIN SANITIZATION LOOP
 #-----------------------------------------------------------------------------
-# Iterate over both regular and dot files. OpenBSD ksh lacks dotglob,
-# so we use two globs. '.' and '..' are skipped explicitly.
 for item in * .*; do
 
-	# Skip the current and parent directory entries
-	[[ "$item" == "." || "$item" == ".." ]] && continue
+    [[ "$item" == "." || "$item" == ".." ]] && continue
 
-	# Skip special directories and the instructions file
-	[[ "$item" == "_quarantine" ]] && continue
-	[[ "$item" == "ISTRUZIONI.txt" ]] && continue
-	[[ "$item" == *"_export" ]] && continue
+    # Skip special directories
+    [[ "$item" == "_quarantine" ]] && continue
+    [[ "$item" == "ISTRUZIONI.txt" ]] && continue
+    [[ "$item" == *"_export" ]] && continue
 
-	#---------------------------------------------------------------------
-	# 1a. SENTINEL PROCESSING (must happen first, before any other checks)
-	#---------------------------------------------------------------------
-	# A sentinel file (*.imported) signals that a domain has successfully
-	# imported the corresponding file. We delete both.
-	if [[ "$item" == *.imported ]]; then
-		ORIGINAL="${item%.imported}"
-		rm -f "$item"
-		if [ -e "$ORIGINAL" ]; then
-			rm -rf "$ORIGINAL"
-		fi
-		SENTINELS_PROCESSED=$((SENTINELS_PROCESSED + 1))
-		continue
+    #---------------------------------------------------------------------
+    # 1a. GRACE PERIOD — skip files younger than GRACE_MIN
+    # 1b. ABANDONED FILE CLEANUP — delete files older than ABANDON_MIN
+    #---------------------------------------------------------------------
+    # Use a single stat call instead of two find invocations.
+    FILE_MTIME=$(stat -f '%m' "$item" 2>/dev/null)
+    if [[ -n "$FILE_MTIME" ]]; then
+	NOW=$(date +%s)
+	AGE=$((NOW - FILE_MTIME))
+
+	if [ "$AGE" -lt $((GRACE_MIN * 60)) ]; then
+    	    continue
 	fi
 
-	#---------------------------------------------------------------------
-	# 1b. GRACE  skip files younger than GRACE_MIN
-	#---------------------------------------------------------------------
-	# Prevents interference with qmv while it's still writing or
-	# setting permissions. Uses find -mmin for precision.
-	if [[ -n $(find "$item" -maxdepth 0 -mmin -$GRACE_MIN 2>/dev/null) ]]; then
-		continue
+	if [ "$AGE" -gt $((ABANDON_MIN * 60)) ]; then
+    	    rm -rf "$item"
+    	    ABANDONED_DELETED=$((ABANDONED_DELETED + 1))
+    	    continue
 	fi
+    fi
 
-	#---------------------------------------------------------------------
-	# 1c. ABANDONED FILE CLEANUP
-	#---------------------------------------------------------------------
-	# Files older than ABANDON_MIN with no sentinel are forgotten
-	# artifacts. Delete them to keep the drop zone clean.
-	if [[ -n $(find "$item" -maxdepth 0 -mmin +$ABANDON_MIN 2>/dev/null) ]]; then
-		rm -rf "$item"
-		ABANDONED_DELETED=$((ABANDONED_DELETED + 1))
-		continue
-	fi
+    #---------------------------------------------------------------------
+    # 1c. GID VERIFICATION
+    #---------------------------------------------------------------------
+    FILE_GID=$(stat -f %g "$item" 2>/dev/null)
+    FILE_UID=$(stat -f %u "$item" 2>/dev/null)
 
-	#---------------------------------------------------------------------
-	# 1d. GID VERIFICATION
-	#---------------------------------------------------------------------
-	# Every file in /home/drop must belong to the 'drop' group.
-	# Files owned by root are exempt (they're placed by system scripts
-	# like export helpers and are implicitly trusted).
-	FILE_GID=$(stat -f %g "$item" 2>/dev/null)
-	FILE_UID=$(stat -f %u "$item" 2>/dev/null)
+    if [ "$FILE_GID" -ne "$DROP_GID" ] && [ "$FILE_UID" -ne 0 ]; then
+        TS=$(date +%s)
+        QUAR_NAME="${item}_${TS}"
 
-	if [ "$FILE_GID" -ne "$DROP_GID" ] && [ "$FILE_UID" -ne 0 ]; then
-		# Quarantine with timestamp for uniqueness and audit trail
-		TS=$(date +%s)
-		QUAR_NAME="${item}_${TS}"
+        mv "$item" "$QUARANTINE_DIR/$QUAR_NAME"
 
-		mv "$item" "$QUARANTINE_DIR/$QUAR_NAME"
-
-		# Write an explanation ticket alongside the quarantined file
-		cat <<EOF > "$QUARANTINE_DIR/${QUAR_NAME}.txt"
+        cat <<EOF > "$QUARANTINE_DIR/${QUAR_NAME}.txt"
 -----------------------------------------------------------
-QUARANTINE  dropQbsd enforce_drop
+QUARANTINE — dropQbsd enforce_drop
 -----------------------------------------------------------
 File:     "$item"
 Date:     $(date '+%Y-%m-%d %H:%M:%S')
@@ -178,82 +153,69 @@ Action required:
   If malicious or unknown, delete it.
 -----------------------------------------------------------
 EOF
-		QUARANTINED=$((QUARANTINED + 1))
-		continue
-	fi
+        QUARANTINED=$((QUARANTINED + 1))
+        continue
+    fi
 
-	#---------------------------------------------------------------------
-	# 1e. PERMISSION CORRECTION
-	#---------------------------------------------------------------------
-	# Enforce strict permissions: 570 for directories, 440 for files.
-	# These are the minimum permissions for the drop zone to function:
-	# directories need group execute (traverse), files are read-only.
-	if [ -d "$item" ]; then
-		CURRENT_PERM=$(stat -f %Lp "$item" 2>/dev/null)
-		if [ "$CURRENT_PERM" != "570" ]; then
-			chmod 570 "$item"
-			PERMS_FIXED=$((PERMS_FIXED + 1))
-		fi
-	elif [ -f "$item" ]; then
-		CURRENT_PERM=$(stat -f %Lp "$item" 2>/dev/null)
-		if [ "$CURRENT_PERM" != "440" ]; then
-			chmod 440 "$item"
-			PERMS_FIXED=$((PERMS_FIXED + 1))
-		fi
-	fi
+    #---------------------------------------------------------------------
+    # 1d. PERMISSION CORRECTION
+    #---------------------------------------------------------------------
+    # Extract octal mode from stat -r output (field 3) and mask to 07777
+    CURRENT_MODE=$(stat -r "$item" 2>/dev/null | awk '{print $3}')
+    CURRENT_PERM=$(printf '%o' $((CURRENT_MODE & 07777)))
+
+    if [ -d "$item" ]; then
+        if [ "$CURRENT_PERM" != "570" ]; then
+            chmod 570 "$item"
+            PERMS_FIXED=$((PERMS_FIXED + 1))
+        fi
+    elif [ -f "$item" ]; then
+        if [ "$CURRENT_PERM" != "440" ]; then
+            chmod 440 "$item"
+            PERMS_FIXED=$((PERMS_FIXED + 1))
+        fi
+    fi
+
+    CYCLE_FILES=$((CYCLE_FILES + 1))
 done
 
 #-----------------------------------------------------------------------------
 # 2. EXPORT DIRECTORY SANITIZATION
 #-----------------------------------------------------------------------------
-# Export directories (userweb_export, usermail_export) are the output
-# side of the archival pipeline. They need SGID (2770) so files created
-# inside inherit the 'drop' group, and strict 440 permissions so no
-# domain user can tamper with exported archives.
-#
-# Rotation policy:
-#   - Website archives: deleted after 1 day
-#   - Mail archives:    deleted after 2 hours
-# These are safety  pull scripts should consume them quickly.
 for exdir in "$DROP_DIR/userweb_export" "$DROP_DIR/usermail_export"; do
-	if [[ ! -d "$exdir" ]]; then
-		continue
-	fi
+    if [[ ! -d "$exdir" ]]; then
+        continue
+    fi
 
-	# Process sentinels inside export directories
-	for sentinel in "$exdir"/*.imported; do
-		[[ -f "$sentinel" ]] || continue
-		ORIGINAL="${sentinel%.imported}"
-		rm -f "$sentinel" "$ORIGINAL"
-	done
+    # Enforce ownership: root:drop
+    chown -R root:drop "$exdir" 2>/dev/null
 
-	# Enforce ownership: root:drop
-	chown -R root:drop "$exdir" 2>/dev/null
+    # Enforce SGID and permissions on directories (2770)
+    find "$exdir" -type d ! -perm 2770 -exec chmod 2770 {} + 2>/dev/null
 
-	# Enforce SGID and permissions on directories (2770)
-	find "$exdir" -type d ! -perm 2770 -exec chmod 2770 {} + 2>/dev/null
+    # Enforce read-only permissions on files (440)
+    find "$exdir" -type f ! -perm 440 -exec chmod 440 {} + 2>/dev/null
 
-	# Enforce read-only permissions on files (440)
-	find "$exdir" -type f ! -perm 440 -exec chmod 440 {} + 2>/dev/null
+    # Rotate old website archives (> 1 day)
+    find "$exdir" -type f -name 'sites_*.tar.gz' -mtime +1 -delete 2>/dev/null
 
-	# Rotate old website archives (> 1 day)
-	find "$exdir" -type f -name 'sites_*.tar.gz' -mtime +1 -delete 2>/dev/null
-
-	# Rotate old mail archives (> 2 hours)
-	find "$exdir" -type f -name 'mail_*.tar.gz' -mmin +120 -delete 2>/dev/null
+    # Rotate old mail archives (> 2 hours)
+    find "$exdir" -type f -name 'mail_*.tar.gz' -mmin +120 -delete 2>/dev/null
 done
 
 #-----------------------------------------------------------------------------
 # 3. LOG SUMMARY (only if something happened)
 #-----------------------------------------------------------------------------
-TOTAL_ACTIONS=$((SENTINELS_PROCESSED + ABANDONED_DELETED + QUARANTINED + PERMS_FIXED))
+TOTAL_ACTIONS=$((ABANDONED_DELETED + QUARANTINED + PERMS_FIXED))
 if [ "$TOTAL_ACTIONS" -gt 0 ]; then
-	log "Cycle complete:" \
-		"sentinels=$SENTINELS_PROCESSED" \
-		"abandoned=$ABANDONED_DELETED" \
-		"quarantined=$QUARANTINED" \
-		"perms_fixed=$PERMS_FIXED"
+    log "Cycle complete:" \
+        "abandoned=$ABANDONED_DELETED" \
+        "quarantined=$QUARANTINED" \
+        "perms_fixed=$PERMS_FIXED"
+fi
+
+if [ "$CYCLE_FILES" -gt 50 ]; then
+    log "WARNING: $CYCLE_FILES files in drop zone — possible abuse or stuck pipeline"
 fi
 
 exit 0
- 
