@@ -12,12 +12,12 @@
 ## 1. Create Users and Group
 
 ```sh
-groupadd drop
+# groupadd drop
 
-useradd -m -G drop userweb
-useradd -m -G drop usermail
-useradd -m -G drop userdoc
-usermod -G drop user
+# useradd -m -G drop userweb
+# useradd -m -G drop usermail
+# useradd -m -G drop userdoc
+# usermod -G drop user
 ```
 
 ---
@@ -25,17 +25,17 @@ usermod -G drop user
 ## 2. Create Directory Structure
 
 ```sh
-mkdir -p /usr/local/bin/dropQbsd/admin
-mkdir -p /home/drop/userweb_export
-mkdir -p /home/drop/usermail_export
-mkdir -p /home/drop/_quarantine
-mkdir -p /etc/tables
+# mkdir -p /usr/local/bin/dropQbsd/admin
+# mkdir -p /home/drop/userweb_export
+# mkdir -p /home/drop/usermail_export
+# mkdir -p /home/drop/_quarantine
+# mkdir -p /etc/tables
 
-chown root:drop /home/drop /home/drop/userweb_export /home/drop/usermail_export
-chmod 770 /home/drop
-chmod 2770 /home/drop/userweb_export /home/drop/usermail_export
-chmod 750 /home/drop/_quarantine
-chmod 755 /etc/tables
+# chown root:drop /home/drop /home/drop/userweb_export /home/drop/usermail_export
+# chmod 770 /home/drop
+# chmod 2770 /home/drop/userweb_export /home/drop/usermail_export
+# chmod 750 /home/drop/_quarantine
+# chmod 755 /etc/tables
 ```
 
 ---
@@ -45,23 +45,23 @@ chmod 755 /etc/tables
 Copy the `scripts/` directory from the repository to `/usr/local/bin/dropQbsd/`:
 
 ```sh
-cp -r scripts /usr/local/bin/dropQbsd
+# cp -r scripts /usr/local/bin/dropQbsd
 ```
 
 Set permissions:
 
 ```sh
-chmod 755 /usr/local/bin/dropQbsd/qmv
-chmod 755 /usr/local/bin/dropQbsd/qcp
-chmod 755 /usr/local/bin/dropQbsd/qimport
-chmod 755 /usr/local/bin/dropQbsd/run_app_impl
-chmod 755 /usr/local/bin/dropQbsd/site_menu
-chmod 755 /usr/local/bin/dropQbsd/export_sites_to_Drop.sh
-chmod 755 /usr/local/bin/dropQbsd/export_mail_to_drop
-chmod 755 /usr/local/bin/dropQbsd/pull_sites_from_drop
-chmod 755 /usr/local/bin/dropQbsd/pull_mail_from_Drop
-chmod 700 /usr/local/bin/dropQbsd/admin/*
-chown -R root:wheel /usr/local/bin/dropQbsd
+# chmod 755 /usr/local/bin/dropQbsd/qmv
+# chmod 755 /usr/local/bin/dropQbsd/qcp
+# chmod 755 /usr/local/bin/dropQbsd/qimport
+# chmod 755 /usr/local/bin/dropQbsd/run_app_impl
+# chmod 755 /usr/local/bin/dropQbsd/site_menu
+# chmod 755 /usr/local/bin/dropQbsd/export_sites_to_Drop.sh
+# chmod 755 /usr/local/bin/dropQbsd/export_mail_to_drop
+# chmod 755 /usr/local/bin/dropQbsd/pull_sites_from_drop
+# chmod 755 /usr/local/bin/dropQbsd/pull_mail_from_Drop
+# chmod 700 /usr/local/bin/dropQbsd/admin/*
+# chown -R root:wheel /usr/local/bin/dropQbsd
 ```
 
 ---
@@ -95,26 +95,26 @@ EOF
 **Verify the impl script shebang:**
 
 ```sh
-head -1 /usr/local/bin/dropQbsd/run_app_impl   # must be #!/bin/ksh
+# head -1 /usr/local/bin/dropQbsd/run_app_impl   # must be #!/bin/ksh
 ```
 
 **Compile statically and set the setuid bit:**
 
 ```sh
-doas cc -static -o /usr/local/bin/dropQbsd/run_app \
+# doas cc -static -o /usr/local/bin/dropQbsd/run_app \
     /usr/local/bin/dropQbsd/run_app_wrapper.c
 
-doas chown root:wheel /usr/local/bin/dropQbsd/run_app
-doas chmod 4755 /usr/local/bin/dropQbsd/run_app          # setuid root
-doas chown root:wheel /usr/local/bin/dropQbsd/run_app_impl
-doas chmod 755 /usr/local/bin/dropQbsd/run_app_impl
+# doas chown root:wheel /usr/local/bin/dropQbsd/run_app
+# doas chmod 4755 /usr/local/bin/dropQbsd/run_app          # setuid root
+# doas chown root:wheel /usr/local/bin/dropQbsd/run_app_impl
+# doas chmod 755 /usr/local/bin/dropQbsd/run_app_impl
 ```
 
 **Verify:**
 
 ```sh
 # From user:
-/usr/local/bin/dropQbsd/run_app userdoc xterm
+$ /usr/local/bin/dropQbsd/run_app userdoc xterm
 ```
 
 ---
@@ -124,8 +124,8 @@ doas chmod 755 /usr/local/bin/dropQbsd/run_app_impl
 Minimal — `user` gets no `doas` access at all:
 
 ```sh
-cp etc/doas.conf /etc/doas.conf
-chmod 440 /etc/doas.conf
+#  cp etc/doas.conf /etc/doas.conf
+# chmod 440 /etc/doas.conf
 ```
 
 ---
@@ -133,8 +133,8 @@ chmod 440 /etc/doas.conf
 ## 6. Install System Configuration Files
 
 ```sh
-cp etc/pf.conf /etc/pf.conf
-cp etc/profile /etc/profile
+# cp etc/pf.conf /etc/pf.conf
+# cp etc/profile /etc/profile
 ```
 
 Review the locale settings in `/etc/profile` — the example uses Italian regional formats. Adjust to your region or set all to `en_US.UTF-8`.
@@ -177,8 +177,8 @@ chmod 644 /etc/tables/services_hosts
 ### Updates IPs (auto-generated)
 
 ```sh
-touch /etc/tables/updates_ips
-chmod 644 /etc/tables/updates_ips
+# touch /etc/tables/updates_ips
+# chmod 644 /etc/tables/updates_ips
 ```
 
 ---
@@ -186,19 +186,19 @@ chmod 644 /etc/tables/updates_ips
 ## 8. Reload the Firewall
 
 ```sh
-pfctl -f /etc/pf.conf
+# pfctl -f /etc/pf.conf
 ```
 
 Populate the services table with your static IPs:
 
 ```sh
-pfctl -t services -T add 198.51.100.10
+# pfctl -t services -T add 198.51.100.10
 ```
 
 Run the mail server table update:
 
 ```sh
-/usr/local/bin/dropQbsd/admin/update_mailserver_table
+# /usr/local/bin/dropQbsd/admin/update_mailserver_table
 ```
 
 ---
@@ -216,8 +216,8 @@ Run the mail server table update:
 All scripts use an atomic `mkdir` lock to prevent overlapping runs. The lock directories live in `/var/run/` and are cleared on reboot. If a script is killed mid-run, remove its lock manually:
 
 ```sh
-rmdir /var/run/enforce_drop.lock
-rmdir /var/run/enforce_sync.lock
+# rmdir /var/run/enforce_drop.lock
+# rmdir /var/run/enforce_sync.lock
 ```
 
 ---
@@ -250,16 +250,16 @@ Set up Syncthing for `userdoc` with the Sync directory at `/home/userdoc/Sync`. 
 **Installation:**
 
 ```sh
-/usr/local/bin/dropQbsd/admin/pkg_add_via_pf syncthing
+# /usr/local/bin/dropQbsd/admin/pkg_add_via_pf syncthing
 ```
 
 **Service setup:**
 
 ```sh
-cp examples/rc.d/syncthing_userdoc /etc/rc.d/
-chmod 555 /etc/rc.d/syncthing_userdoc
-rcctl enable syncthing_userdoc
-rcctl start syncthing_userdoc
+# cp examples/rc.d/syncthing_userdoc /etc/rc.d/
+# chmod 555 /etc/rc.d/syncthing_userdoc
+# rcctl enable syncthing_userdoc
+# rcctl start syncthing_userdoc
 ```
 
 **Firewall:**
@@ -279,13 +279,13 @@ pass out quick on egress proto udp from any to any port 21027 user userdoc
 Reload:
 
 ```sh
-pfctl -f /etc/pf.conf
+# pfctl -f /etc/pf.conf
 ```
 
 **Configuration:**
 
 ```sh
-/usr/local/bin/dropQbsd/run_app userdoc /usr/local/bin/qutebrowser --temp-basedir http://127.0.0.1:8384
+$ /usr/local/bin/dropQbsd/run_app userdoc /usr/local/bin/qutebrowser --temp-basedir http://127.0.0.1:8384
 ```
 
 Settings → Default Folder Path: `/home/userdoc/Sync`
@@ -311,13 +311,13 @@ For a smoother, more integrated experience, dropQbsd includes `site_menu`: a dro
 **Installation:**
 
 ```sh
-/usr/local/bin/dropQbsd/admin/pkg_add_via_pf zenity pass xclip
+# /usr/local/bin/dropQbsd/admin/pkg_add_via_pf zenity pass xclip
 ```
 
 **Initialize pass:**
 
 ```sh
-pass init your-gpg-key-id
+$ pass init your-gpg-key-id
 ```
 
 **Configure sites:**
@@ -338,14 +338,14 @@ ERP (your_user_id)|https://erp.example.com|work/erp
 **Store passwords:**
 
 ```sh
-pass insert finance/bank
-pass insert work/erp
+$ pass insert finance/bank
+$ pass insert work/erp
 ```
 
 **Launch:**
 
 ```sh
-/usr/local/bin/dropQbsd/site_menu
+$ /usr/local/bin/dropQbsd/site_menu
 ```
 
 The site opens in a disposable browser (tmpfs-backed). Nothing survives after the browser closes.
@@ -360,10 +360,10 @@ dropQbsd can cryptographically verify that critical scripts have not been tamper
 
 ```sh
 # Generate key pair (keep the .sec key offline)
-signify -G -n -p /etc/tables/dropQbsd.pub -s /root/dropQbsd.sec
+$ signify -G -n -p /etc/tables/dropQbsd.pub -s /root/dropQbsd.sec
 
 # Sign the critical scripts
-sha256 /usr/local/bin/dropQbsd/run_app_impl \
+$ sha256 /usr/local/bin/dropQbsd/run_app_impl \
        /usr/local/bin/dropQbsd/qmv \
        /usr/local/bin/dropQbsd/qcp \
        /usr/local/bin/dropQbsd/qimport \
