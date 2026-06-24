@@ -124,7 +124,7 @@ $ /usr/local/bin/dropQbsd/run_app userdoc xterm
 Minimal — `user` gets no `doas` access at all:
 
 ```sh
-#  cp etc/doas.conf /etc/doas.conf
+# cp etc/doas.conf /etc/doas.conf
 # chmod 440 /etc/doas.conf
 ```
 
@@ -155,7 +155,7 @@ smtp.example.com
 ```
 
 ```sh
-chmod 644 /etc/tables/mailserver_hosts
+# chmod 644 /etc/tables/mailserver_hosts
 ```
 
 ### Services IPs
@@ -171,7 +171,7 @@ Create `/etc/tables/services_hosts` with static IPs and hostnames (prefix hostna
 ```
 
 ```sh
-chmod 644 /etc/tables/services_hosts
+# chmod 644 /etc/tables/services_hosts
 ```
 
 ### Updates IPs (auto-generated)
@@ -323,8 +323,8 @@ $ pass init your-gpg-key-id
 **Configure sites:**
 
 ```sh
-mkdir -p ~/.config/dropQbsd
-cp examples/sites.conf ~/.config/dropQbsd/sites.conf
+$ mkdir -p ~/.config/dropQbsd
+$ cp examples/sites.conf ~/.config/dropQbsd/sites.conf
 ```
 
 Edit `~/.config/dropQbsd/sites.conf` with your own sites. Format:
@@ -360,10 +360,10 @@ dropQbsd can cryptographically verify that critical scripts have not been tamper
 
 ```sh
 # Generate key pair (keep the .sec key offline)
-$ signify -G -n -p /etc/tables/dropQbsd.pub -s /root/dropQbsd.sec
+signify -G -n -p /etc/tables/dropQbsd.pub -s /root/dropQbsd.sec
 
 # Sign the critical scripts
-$ sha256 /usr/local/bin/dropQbsd/run_app_impl \
+sha256 /usr/local/bin/dropQbsd/run_app_impl \
        /usr/local/bin/dropQbsd/qmv \
        /usr/local/bin/dropQbsd/qcp \
        /usr/local/bin/dropQbsd/qimport \
@@ -381,7 +381,7 @@ The `verify_integrity` cron job (installed in step 9) checks these scripts every
 To verify manually:
 
 ```sh
-doas /usr/local/bin/dropQbsd/admin/verify_integrity
+# /usr/local/bin/dropQbsd/admin/verify_integrity
 ```
 
 ---
@@ -426,11 +426,11 @@ coordinated colors are provided in `examples/`:
 Install in each domain:
 
 ```sh
-/usr/local/bin/dropQbsd/admin/pkg_add_via_pf xfe mc
+# /usr/local/bin/dropQbsd/admin/pkg_add_via_pf xfe mc
 
 Launch via run_app:
-/usr/local/bin/dropQbsd/run_app userdoc xfe /home/userdoc
-/usr/local/bin/dropQbsd/run_app userdoc mc
+$ /usr/local/bin/dropQbsd/run_app userdoc xfe /home/userdoc
+$ /usr/local/bin/dropQbsd/run_app userdoc mc
 ```
 
 Xfe configuration files live in `~/.config/xfe/` inside each domain's home.
