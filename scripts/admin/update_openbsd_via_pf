@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ==========================================================
-#   update_openbsd_via_pf
+#  dropQbsd — update_openbsd_via_pf
 #
 #  Full OpenBSD system update through restrictive PF:
 #    1. System patches (syspatch)
@@ -8,47 +8,50 @@
 #    3. Package updates (pkg_add -u)
 #    4. Orphan cleanup (pkg_delete -a)
 #
+#  The <updates> table is populated once for all steps
+#  and flushed on exit to restore default-deny for root.
+#
 #  Path: /usr/local/bin/dropQbsd/admin/update_openbsd_via_pf
 #  Permissions: chmod 700, root:wheel
 #
 #  Usage: update_openbsd_via_pf
 #
 #  Note: This does NOT perform sysupgrade (major version bump).
-#        For release upgrades, run ensure_updates_table first,
-#        then sysupgrade manually.
+#        For release upgrades, run sysupgrade_via_pf.
 # ==========================================================
 
 ENSURE_SCRIPT="/usr/local/bin/dropQbsd/admin/ensure_updates_table"
 PKGADD_SCRIPT="/usr/local/bin/dropQbsd/admin/pkg_add_via_pf"
 LOGFILE="/var/log/system_update_pf.log"
+FLUSH_ON_EXIT=1
 
 #-----------------------------------------------------------------------------
 # LOG FUNCTION
 #-----------------------------------------------------------------------------
 log() {
-	msg="$1"
-	echo "$msg"
-	echo "$(date '+%F %T')  $msg" >> "$LOGFILE"
+    msg="$1"
+    echo "$msg"
+    echo "$(date '+%F %T')  $msg" >> "$LOGFILE"
 }
 
 #-----------------------------------------------------------------------------
 # PRIVILEGE CHECK
 #-----------------------------------------------------------------------------
 if [ "$(id -u)" -ne 0 ]; then
-	echo "Must run as root." >&2
-	exit 2
+    echo "Must run as root." >&2
+    exit 2
 fi
 
 #-----------------------------------------------------------------------------
 # DEPENDENCY CHECKS
 #-----------------------------------------------------------------------------
 if [ ! -x "$ENSURE_SCRIPT" ]; then
-	echo "FATAL: $ENSURE_SCRIPT not found or not executable." >&2
-	exit 1
+    echo "FATAL: $ENSURE_SCRIPT not found or not executable." >&2
+    exit 1
 fi
 if [ ! -x "$PKGADD_SCRIPT" ]; then
-	echo "FATAL: $PKGADD_SCRIPT not found or not executable." >&2
-	exit 1
+    echo "FATAL: $PKGADD_SCRIPT not found or not executable." >&2
+    exit 1
 fi
 
 #-----------------------------------------------------------------------------
@@ -62,12 +65,15 @@ log "=============================================="
 # TRAP
 #-----------------------------------------------------------------------------
 cleanup() {
-	log ""
-	log "Update interrupted (signal received)."
-	log "Partial updates may have been applied."
-	log "Re-run this script to complete."
+    log "Update interrupted (signal received)."
+    log "Partial updates may have been applied."
+    log "Re-run this script to complete."
+    if [ "$FLUSH_ON_EXIT" -eq 1 ]; then
+        pfctl -t updates -T flush 2>/dev/null
+        log "<updates> table flushed."
+    fi
 }
-trap cleanup INT TERM
+trap cleanup INT TERM EXIT
 
 #-----------------------------------------------------------------------------
 # 1. POPULATE PF TABLE (once for all steps)
@@ -79,26 +85,26 @@ log "Step 1/4: Preparing PF table for updates..."
 # 2. SYSTEM PATCHES
 #-----------------------------------------------------------------------------
 log "Step 2/4: Applying system patches (syspatch)..."
-syspatch >> "$LOGFILE" 2>&1
+syspatch
 RC_SP=$?
 if [ $RC_SP -eq 0 ]; then
-	log "  syspatch: OK"
+    log "  syspatch: OK"
 elif [ $RC_SP -eq 2 ]; then
-	log "  syspatch: no patches available (code  normal)"
+    log "  syspatch: no patches available (code 2 — normal)"
 else
-	log "  syspatch: exited with code $RC_ check log"
+    log "  syspatch: exited with code $RC_SP — check output"
 fi
 
 #-----------------------------------------------------------------------------
 # 3. FIRMWARE UPDATES
 #-----------------------------------------------------------------------------
 log "Step 3/4: Updating firmware (fw_update)..."
-fw_update >> "$LOGFILE" 2>&1
+fw_update
 RC_FW=$?
 if [ $RC_FW -eq 0 ]; then
-	log "  fw_update: OK"
+    log "  fw_update: OK"
 else
-	log "  fw_update: exited with code $RC_ check log"
+    log "  fw_update: exited with code $RC_FW — check output"
 fi
 
 #-----------------------------------------------------------------------------
@@ -109,13 +115,13 @@ log "Step 4/4: Updating packages (pkg_add -u)..."
 RC_PKG=$?
 
 if [ $RC_PKG -eq 0 ]; then
-	log "  Package update: OK"
+    log "  Package update: OK"
 
-	log "  Cleaning orphaned packages (pkg_delete -aI)..."
-	pkg_delete -aI >> "$LOGFILE" 2>&1
-	log "  Orphan cleanup: done"
+    log "  Cleaning orphaned packages (pkg_delete -a)..."
+    pkg_delete -a
+    log "  Orphan cleanup: done"
 else
-	log "  Package update: exited with code $RC_ skipping orphan cleanup"
+    log "  Package update: exited with code $RC_PKG — skipping orphan cleanup"
 fi
 
 #-----------------------------------------------------------------------------
@@ -130,4 +136,3 @@ log "Full log: $LOGFILE"
 log "----------------------------------------------"
 
 exit 0
- 
