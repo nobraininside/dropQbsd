@@ -26,16 +26,16 @@ DST="/home/drop/usermail_export"
 # PRE-FLIGHT CHECKS
 #-----------------------------------------------------------------------------
 if [ ! -d "$SRC" ]; then
-	echo "[ERROR] Source directory '$SRC' not found." >&2
-	exit 1
+    echo "[ERROR] Source directory '$SRC' not found." >&2
+    exit 1
 fi
 
 #-----------------------------------------------------------------------------
 # DISK SPACE CHECK
 #-----------------------------------------------------------------------------
 if [ "$(df -P /home | awk 'NR==2 {print $5+0}')" -gt 92 ]; then
-	echo "[ERROR] /home usage > 92%. Aborting." >&2
-	exit 1
+    echo "[ERROR] /home usage > 92%. Aborting." >&2
+    exit 1
 fi
 
 #-----------------------------------------------------------------------------
@@ -50,14 +50,15 @@ TMPDIR=$(mktemp -d /home/usermail/mail_exp.XXXXXX)
 trap 'rm -rf "$TMPDIR"' EXIT INT TERM
 
 ARCHIVE="$TMPDIR/mail_$(date +%Y%m%d_%H%M%S).tar.gz"
+FILENAME=$(basename "$ARCHIVE")
 nice -n 10 tar -czf "$ARCHIVE" -C "$SRC" .
 
 #-----------------------------------------------------------------------------
 # VERIFY ARCHIVE INTEGRITY
 #-----------------------------------------------------------------------------
 if ! tar -tzf "$ARCHIVE" >/dev/null 2>&1; then
-	echo "[ERROR] Archive corrupt after compression." >&2
-	exit 1
+    echo "[ERROR] Archive corrupt after compression." >&2
+    exit 1
 fi
 
 #-----------------------------------------------------------------------------
@@ -65,9 +66,14 @@ fi
 #-----------------------------------------------------------------------------
 # enforce_drop (cron, every 60s) will set the correct 440 permissions.
 # usermail cannot chmod here — the export directory is root:drop.
-cp "$ARCHIVE" "$DST/"
+if ! cp "$ARCHIVE" "$DST/"; then
+    echo "[ERROR] Failed to copy archive to drop zone." >&2
+    exit 1
+fi
 
 #-----------------------------------------------------------------------------
 # ROTATE OLD ARCHIVES (> 2 hours)
 #-----------------------------------------------------------------------------
 find "$DST" -type f -name 'mail_*.tar.gz' -mmin +120 -delete 2>/dev/null
+
+echo "Export completed: $FILENAME"
