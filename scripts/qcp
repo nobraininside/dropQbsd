@@ -1,34 +1,88 @@
 #!/bin/ksh
-# /usr/local/bin/qubsd/qmv
-# Uso: qmv <file_o_cartella>
+# ==========================================================
+#  dropQbsd — qcp
+#
+#  Copies a file or directory into the /home/drop exchange
+#  zone and sets correct permissions. The original is left
+#  in place — unlike qmv, nothing is deleted.
+#
+#  Security: uses a staging directory to eliminate the
+#  TOCTOU window where files sit in the drop zone with
+#  their original permissions.
+#
+#  Path: /usr/local/bin/dropQbsd/qcp
+#  Permissions: chmod 755, root:wheel
+#
+#  Usage: qcp <file_or_directory>
+# ==========================================================
+
+set -eu
 
 TARGET=$1
 DST="/home/drop"
 
-# Verifica che l'argomento sia stato fornito
+#-----------------------------------------------------------------------------
+# ARGUMENT VALIDATION
+#-----------------------------------------------------------------------------
 if [ -z "$TARGET" ]; then
-    echo "Uso: qcp <file_o_cartella>"
+    echo "Usage: qcp <file_or_directory>" >&2
     exit 1
 fi
 
-# Verifica che l'origine esista
 if [ ! -e "$TARGET" ]; then
-    echo "Errore: '$TARGET' non trovato."
+    echo "Error: '$TARGET' not found." >&2
     exit 1
 fi
 
-# Copia ricorsiva
-cp -pR "$TARGET" "$DST/"
+case "$(realpath "$TARGET")" in
+    /home/drop|/home/drop/*)
+        echo "Error: '$TARGET' is already inside the drop zone." >&2
+        exit 1
+        ;;
+esac
 
-# Ottieni il nome base dell'elemento spostato
+#-----------------------------------------------------------------------------
+# PREPARE STAGING AND COPY
+#-----------------------------------------------------------------------------
 NAME=$(basename "$TARGET")
 DEST_PATH="$DST/$NAME"
 
-# Applica gruppo e permessi in modo ricorsivo
-chgrp -R drop "$DEST_PATH"
+STAGING="$DST/.staging.$$.$(date +%s)"
+mkdir "$STAGING"
+chmod 700 "$STAGING"
 
-# Directory: 570 (rwx per gruppo, così possono creare sentinelle e attraversare)
-find "$DEST_PATH" -type d -exec chmod 570 {} +
-# File: 440 (sola lettura per proprietario e gruppo)
-find "$DEST_PATH" -type f -exec chmod 440 {} +
+cp -pR "$TARGET" "$STAGING/$NAME"
 
+# cp -pR preserved the source permissions. Re-apply write permission
+# on the staging directory so mv can remove files from it.
+chmod 700 "$STAGING"
+
+chgrp -R drop "$STAGING/$NAME"
+find "$STAGING/$NAME" -type d -exec chmod 570 {} +
+find "$STAGING/$NAME" -type f -exec chmod 440 {} +
+
+#-----------------------------------------------------------------------------
+# VERIFY COPY
+#-----------------------------------------------------------------------------
+SRC_COUNT=$(find "$TARGET" -type f 2>/dev/null | wc -l | tr -d ' ')
+DST_COUNT=$(find "$STAGING/$NAME" -type f 2>/dev/null | wc -l | tr -d ' ')
+
+if [ "$SRC_COUNT" -ne "$DST_COUNT" ]; then
+    echo "Error: copy verification failed (source: $SRC_COUNT files, dest: $DST_COUNT files)." >&2
+    rm -rf "$STAGING"
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# MOVE INTO PLACE
+#-----------------------------------------------------------------------------
+mv "$STAGING/$NAME" "$DEST_PATH"
+rmdir "$STAGING" 2>/dev/null || true
+
+# If rmdir failed, the staging directory wasn't empty.
+# Log it and clean up forcefully.
+if [ -d "$STAGING" ]; then
+    echo "Warning: staging directory not empty after  forcing cleanup." >&2
+    rm -rf "$STAGING"
+fi
+ 
