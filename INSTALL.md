@@ -390,7 +390,7 @@ doas /usr/local/bin/dropQbsd/admin/verify_integrity
 
 dropQbsd works with any window manager. Two recommendations:
 
-- **XFCE** — full desktop environment, familiar for users migrating from Windows/macOS. Lightweight by modern standards, well-supported on OpenBSD. Install: `pkg_add xfce xfce-extras`
+- **XFCE** — full desktop environment, familiar for users migrating from Windows/macOS. Lightweight by modern standards, well-supported on OpenBSD. Install: `/usr/local/bin/dropQbsd/admin/pkg_add_via_pf xfce xfce-extras`
 - **cwm** — OpenBSD's native stacking window manager. Minimal, keyboard-driven, zero dependencies beyond the base system. For a purer OpenBSD experience. Already installed — no packages needed.
 
 Both work with `run_app` without additional configuration. Launch apps in any domain from the same desktop — `run_app` handles the X11 cookie forwarding transparently.
