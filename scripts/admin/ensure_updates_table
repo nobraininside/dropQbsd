@@ -1,13 +1,16 @@
 #!/bin/ksh
 # ==========================================================
-#   ensure_updates_table
+#  dropQbsd — ensure_updates_table
 #
 #  Centralized PF table management for system updates.
 #  Populates the <updates> table with Fastly CDN blocks
 #  and any custom mirrors from /etc/installurl.
 #  Called by pkg_add_via_pf, syspatch_via_pf, and
-#  update_openbsd_via_ single source of truth for
+#  update_openbsd_via_pf — single source of truth for
 #  mirror IP ranges.
+#
+#  DNS resolution for custom mirrors is delegated to
+#  userweb — root never touches the network directly.
 #
 #  Path: /usr/local/bin/dropQbsd/admin/ensure_updates_table
 #  Permissions: chmod 700, root:wheel
@@ -15,24 +18,24 @@
 
 TABLE="updates"
 MIRROR_FILE="/etc/installurl"
-STATIC_BLOCKLIST="/etc/pkg_mirror_ips"
-LOGFILE="/var/log/qubsd_updates.log"
+STATIC_BLOCKLIST="/etc/tables/updates_ips"
+LOGFILE="/var/log/dropQbsd_updates.log"
 
 #-----------------------------------------------------------------------------
-# LOG FUNCTION (stdout + file)
+# LOG FUNCTION
 #-----------------------------------------------------------------------------
 log() {
-	msg="$1"
-	echo "$msg"
-	echo "$(date '+%F %T')  $msg" >> "$LOGFILE"
+    msg="$1"
+    echo "$msg"
+    echo "$(date '+%F %T')  $msg" >> "$LOGFILE"
 }
 
 #-----------------------------------------------------------------------------
 # PRIVILEGE CHECK
 #-----------------------------------------------------------------------------
 if [ "$(id -u)" -ne 0 ]; then
-	echo "Must run as root." >&2
-	exit 2
+    echo "Must run as root." >&2
+    exit 2
 fi
 
 #-----------------------------------------------------------------------------
@@ -41,14 +44,18 @@ fi
 # Fastly IP ranges sourced from: https://api.fastly.com/public-ip-list
 # Update these if OpenBSD changes CDN provider or Fastly expands ranges.
 if [ ! -s "$STATIC_BLOCKLIST" ]; then
-	log "Creating $STATIC_BLOCKLIST with Fastly CDN blocks..."
-	cat > "$STATIC_BLOCKLIST" <<'EOF'
+    log "Creating $STATIC_BLOCKLIST with Fastly CDN blocks..."
+    cat > "$STATIC_BLOCKLIST" <<'EOF'
+# dropQbsd — Fastly CDN IP ranges for OpenBSD package mirrors
+# Generated: $(date)
+# Source: https://api.fastly.com/public-ip-list
+# Verify periodically against the Fastly API.
 151.101.0.0/16
 199.232.0.0/16
 23.235.32.0/20
 104.156.80.0/20
 EOF
-	log "Done. Verify against https://api.fastly.com/public-ip-list periodically."
+    log "Done. Verify against https://api.fastly.com/public-ip-list periodically."
 fi
 
 #-----------------------------------------------------------------------------
@@ -61,43 +68,42 @@ pfctl -t "$TABLE" -T replace -f "$STATIC_BLOCKLIST"
 # RESOLVE CUSTOM MIRRORS FROM /etc/installurl
 #-----------------------------------------------------------------------------
 if [ -f "$MIRROR_FILE" ]; then
-	mirrors=$(sed -E 's|https?://([^/]+).*|\1|' "$MIRROR_FILE" | sort -u)
-	for mirror in $mirrors; do
-		case "$mirror" in
-			cdn.openbsd.org|*.fastly.net)
-				# Already covered by static Fastly blocks
-				;;
-			*)
-				log "  Custom mirror:  resolving..."
-				# 'host' is in  no bind dependency
-				ips=$(host -t A "$mirror" 2>/dev/null | \
-					grep 'has address' | \
-					awk '{print $NF}' | \
-					sort -u)
-				if [ -n "$ips" ]; then
-					for ip in $ips; do
-						pfctl -t "$TABLE" -T add "$ip" >/dev/null 2>&1 && \
-							log "    + $ip added"
-					done
-				else
-					log "    WARNING: no IPs resolved for $mirror"
-				fi
-				;;
-		esac
-	done
+    mirrors=$(sed -E 's|https?://([^/]+).*|\1|' "$MIRROR_FILE" | sort -u)
+    for mirror in $mirrors; do
+        case "$mirror" in
+            cdn.openbsd.org|*.fastly.net)
+                # Already covered by static Fastly blocks
+                ;;
+            *)
+                log "  Custom mirror: $mirror — resolving via userweb..."
+                # Delegate DNS to userweb (has network access under PF)
+                ips=$(su -l userweb -c "host -t A '$mirror' 2>/dev/null" | \
+                    grep 'has address' | \
+                    awk '{print $NF}' | \
+                    sort -u)
+                if [ -n "$ips" ]; then
+                    for ip in $ips; do
+                        pfctl -t "$TABLE" -T add "$ip" >/dev/null 2>&1 && \
+                            log "    + $ip added"
+                    done
+                else
+                    log "    WARNING: no IPs resolved for $mirror"
+                fi
+                ;;
+        esac
+    done
 else
-	log "WARNING: $MIRROR_FILE not  using static blocks only."
+    log "WARNING: $MIRROR_FILE not found — using static blocks only."
 fi
 
 #-----------------------------------------------------------------------------
 # SAFETY CHECK: TABLE MUST NOT BE EMPTY
 #-----------------------------------------------------------------------------
 if [ -z "$(pfctl -t "$TABLE" -T show)" ]; then
-	log "FATAL: PF table <$TABLE> is empty. Aborting."
-	log "Check DNS resolution and $STATIC_BLOCKLIST."
-	exit 3
+    log "FATAL: PF table <$TABLE> is empty. Aborting."
+    log "Check DNS resolution and $STATIC_BLOCKLIST."
+    exit 3
 fi
 
 log "PF table <$TABLE> ready ($(pfctl -t "$TABLE" -T show | wc -l | tr -d ' ') entries)."
 exit 0
- 
