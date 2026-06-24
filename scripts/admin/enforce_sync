@@ -1,10 +1,10 @@
 #!/bin/ksh
 # ==========================================================
-#   enforce_sync
+#  enforce_sync
 #
 #  Monitors and sanitizes the Sync directory permissions.
 #  Ensures all files and directories under /home/userdoc/Sync
-#  are owned by userdoc:user with correct permissions
+#  are owned by userdoc:userdoc with correct permissions
 #  (2770 for dirs, 660 for files).
 #
 #  Path: /usr/local/bin/dropQbsd/admin/enforce_sync
@@ -51,15 +51,15 @@ DIRS_WRONG=$(find "$TARGET" -type d \
 	! -mmin -$GRACE_MIN \
 	| wc -l | tr -d ' ')
 OWNER_WRONG=$(find "$TARGET" \
-	\( ! -user userdoc -o ! -group user \)  \
+	\( ! -user userdoc -o ! -group userdoc \)  \
 	! -mmin -$GRACE_MIN \
 	| wc -l | tr -d ' ')
 
 #-----------------------------------------------------------------------------
 # 2. FIX OWNER/GROUP (batch for efficiency)
 #-----------------------------------------------------------------------------
-find "$TARGET" \( ! -user userdoc -o ! -group user \) \
-	-exec chown userdoc:user {} +
+find "$TARGET" \( ! -user userdoc -o ! -group userdoc \) \
+	-exec chown userdoc:userdoc {} +
 
 #-----------------------------------------------------------------------------
 # 3. FIX DIRECTORY PERMISSIONS (2770)
