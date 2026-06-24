@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — pull_sites_from_drop
+#  dropQbsd — pull_www_from_drop
 #
 #  Pulls the latest sites archive from the drop zone into
 #  userdoc's Sync directory. Verifies integrity and keeps
@@ -9,17 +9,17 @@
 #  Cleanup of the source archive is handled by enforce_drop
 #  on its regular rotation cycle. No sentinel is created.
 #
-#  Path: /usr/local/bin/dropQbsd/pull_sites_from_drop
+#  Path: /usr/local/bin/dropQbsd/pull_www_from_drop
 #  Permissions: chmod 755, root:wheel
 #
-#  Usage: pull_sites_from_drop (run as userdoc)
+#  Usage: pull_www_from_drop (run as userdoc)
 # ==========================================================
 
 set -eu
 # set -x # for debugging
 
 SRC="/home/drop/userweb_export"
-DST="/home/userdoc/Sync/Archivio/Archivio_siti"
+DST="/home/userdoc/Sync/Archive"
 
 #-----------------------------------------------------------------------------
 # PRE-FLIGHT CHECKS
@@ -36,7 +36,7 @@ mkdir -p "$DST"
 #-----------------------------------------------------------------------------
 # Avoid xargs -0: OpenBSD xargs has no -r flag and runs the command
 # even with empty input, listing the current directory instead.
-FILES=$(find "$SRC" -maxdepth 1 -name 'sites_*.tar.gz' -type f -print 2>/dev/null)
+FILES=$(find "$SRC" -maxdepth 1 -name 'www_*.tar.gz' -type f -print 2>/dev/null)
 
 
 if [ -z "$FILES" ]; then
@@ -77,11 +77,11 @@ fi
 #-----------------------------------------------------------------------------
 (
     cd "$DST" || exit 1
-    FILES=$(find . -maxdepth 1 -name 'sites_*.tar.gz' -type f -print 2>/dev/null)
+    FILES=$(find . -maxdepth 1 -name 'www_*.tar.gz' -type f -print 2>/dev/null)
     if [ -n "$FILES" ]; then
         echo "$FILES" | xargs ls -1t 2>/dev/null | tail -n +2 | xargs rm 2>/dev/null
     fi
 )
 
-echo ">>> Sites sync completed."
+echo ">>> www sync completed."
 
