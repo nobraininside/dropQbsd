@@ -2,7 +2,7 @@
 # ==========================================================
 #  dropQbsd — export_sites_to_drop
 #
-#  Compresses the userweb sites directory and places the
+#  Compresses the userweb www directory and places the
 #  archive in /home/drop/userweb_export for archival by
 #  userdoc.
 #
@@ -11,17 +11,17 @@
 #  directory is owned by root:drop, so userweb cannot
 #  chmod files there.
 #
-#  Path: /usr/local/bin/dropQbsd/export_sites_to_Drop.sh
+#  Path: /usr/local/bin/dropQbsd/export_www_to_drop
 #  Permissions: chmod 755, root:wheel
 #
-#  Usage: export_sites_to_Drop.sh [-v]   (run as userweb)
+#  Usage: export_www_to_drop [-v]   (run as userweb)
 #    -v   Verbose output
 # ==========================================================
 
 set -eu
 umask 002
 
-SRC="/home/userweb/Documents/sites"
+SRC="/home/userweb/www"
 DST="/home/drop/userweb_export"
 
 #-----------------------------------------------------------------------------
@@ -58,7 +58,7 @@ mkdir -p "$DST"
 TMPDIR=$(mktemp -d /home/userweb/tmp_export.XXXXXX)
 trap 'rm -rf "$TMPDIR"' EXIT INT TERM
 
-ARCHIVE="$TMPDIR/sites_$(date +%Y%m%d_%H%M%S).tar.gz"
+ARCHIVE="$TMPDIR/www_$(date +%Y%m%d_%H%M%S).tar.gz"
 msg "Compressing: $ARCHIVE"
 tar -czf "$ARCHIVE" -C "$SRC" .
 
@@ -83,6 +83,6 @@ fi
 #-----------------------------------------------------------------------------
 # ROTATE OLD ARCHIVES (> 24 hours)
 #-----------------------------------------------------------------------------
-find "$DST" -type f -name 'sites_*.tar.gz' -mtime +1 -delete 2>/dev/null
+find "$DST" -type f -name 'www_*.tar.gz' -mtime +1 -delete 2>/dev/null
 
 msg "Export completed successfully."
