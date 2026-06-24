@@ -41,10 +41,10 @@ No domain can delete another domain's files. No domain can modify files once pla
 
 **Import workflow:**
 
-1. `qmv` moves a file into `/home/drop`, sets group to `drop`, permissions to `440`
-2. `qcp` copies a file into `/home/drop` without deleting the original
-3. `qimport` (run by `user`) copies the file out and leaves a `.imported` sentinel
-4. `enforce_drop` sees the sentinel, deletes both it and the original — cleanup is automatic, nobody needs delete permissions
+1. `qmv` moves a file into `/home/drop` via an atomic staging directory. Permissions are locked before the file is visible to other domains.
+2. `qcp` copies a file into `/home/drop` without deleting the original.
+3. `qimport` (run by `user`) copies the file out into `~/Downloads`.
+4. `enforce_drop` removes abandoned files after 30 minutes. No sentinels, no domain write access to the drop zone — cleanup is purely time-based.
 
 ### The Conductor — `run_app` Architecture
 
@@ -60,11 +60,11 @@ No domain can delete another domain's files. No domain can modify files once pla
 
 1. `user` invokes `run_app` — the **only** file `user` ever touches directly
 2. `run_app` calls `setuid(0)`, escalates to root, then `execv` transforms into `run_app_impl` passing all arguments through
-3. `run_app_impl` (now running as root) locates the X11 cookie, creates an isolated runtime directory (or tmpfs in disposable mode), sets `HOME`, `DISPLAY`, `XAUTHORITY`, `XDG_RUNTIME_DIR`, and launches the application via `su -l`
+3. `run_app_impl` (now running as root) locates the X11 cookie from xenodm's auth directory, creates an isolated runtime directory (or tmpfs in disposable mode), sets `HOME`, `DISPLAY`, `XAUTHORITY`, `XDG_RUNTIME_DIR`, and launches the application via `su -l`
 
 The binary is the **blind gate**: it can do exactly one thing — call `run_app_impl`. No parsing, no branching, no logic. Immutable after compilation. If you need to add a domain, change paths, or tweak cleanup behavior, you edit `run_app_impl` — a plain ksh script. No recompilation. The attack surface stays frozen at 10 lines of C.
 
-**`doas.conf` is minimal** — only `permit nopass root`. `user` has no `doas` access at all. The compartmentalization is sealed: `user` cannot escalate to root through any path except the blind gate, and the blind gate can only launch domain applications. This is not a policy — it's enforced by the Unix permission model.
+**`doas.conf` is minimal** — only `permit nopass root`. `user` has no `doas` access at all. The compartmentalization is sealed: `user` cannot escalate to root through any path except the blind gate, and the blind gate can only launch domain applications.
 
 **Disposable mode** mounts a tmpfs in RAM for the app's home directory. When the app exits, the tmpfs is unmounted and everything is destroyed. Nothing survives. Ideal for browsers and untrusted files.
 
@@ -73,31 +73,17 @@ The binary is the **blind gate**: it can do exactly one thing — call `run_app_
 /usr/local/bin/dropQbsd/run_app --disposable 1G userweb chromium https://example.com
 ```
 
-### Site Menu (Password Manager Integration)
-
-`site_menu` reads a list of sites from `~/.config/dropQbsd/sites.conf` and presents a dropdown menu. Selecting a site copies the password to clipboard via `pass` and opens the site in a disposable browser.
-
-Example `sites.conf`:
-```sh
-# Label|URL|pass_entry (optional)
-Bank (my_user_id)|https://bank.example.com|finance/bank
-ERP (my_user_id)|https://enterprise_resource.com|work/erp
-Linkedin (my_user_id)|https://linkedin.com|social/linkedin
-```
-
-If the GPG passphrase has expired, a warning dialog appears telling the user to re-enter it in a terminal. The clipboard is automatically cleared after 10 seconds.
-
-Requires: zenity, pass, xclip.
-
 ### Network Isolation
 
 `pf.conf` enforces strict per-domain rules:
 
 - **Default deny** — nothing gets out unless explicitly allowed
-- userweb reaches ports 80/443 only
-- usermail reaches only IPs in the `<mailserver>` table, only on mail ports
-- userdoc reaches LAN subnets and Syncthing ports only
-- Root has no permanent web access — only IPs in the `<updates>` table, populated on-demand
+- `userweb` reaches ports 80/443 only, blocked from LAN and localhost
+- `usermail` reaches only IPs in the `<mailserver>` table, only on mail ports
+- `userdoc` reaches LAN subnets and Syncthing ports only
+- Root has no permanent network access — only IPs in the `<updates>` table, populated on-demand
+
+Service IPs and mail server IPs are managed dynamically via PF tables, populated from configuration files in `/etc/tables/`. No provider IPs are exposed in the public repository.
 
 ### Archival Pipeline
 
@@ -106,29 +92,41 @@ usermail → export_mail_to_drop → usermail_export → pull_mail_from_Drop →
 userweb  → export_sites_to_Drop → userweb_export  → pull_sites_from_drop  → userdoc (3 backups)
 ```
 
-Export files are `root:drop 440` — no domain user can modify them. Only `root` (via `enforce_drop`) can delete them. Integrity verified at each step.
+Export files are `root:drop 440` — no domain user can modify them. Integrity verified at each step.
 
 ### What You Get
 
 - **Compartmentalization without virtualization.** Same security model as Qubes, zero overhead.
-- **Blind-gate privilege escalation.** `run_app` is a 10-line setuid binary that can only call `run_app_impl`. Logic stays in auditable ksh. Attack surface is frozen — modify behavior without touching the privileged binary.
+- **Blind-gate privilege escalation.** `run_app` is a 10-line setuid binary that can only call `run_app_impl`. Logic stays in auditable ksh. Attack surface is frozen.
 - **Disposable browsers.** tmpfs-backed, nothing survives exit. No persistent profiles.
-- **Site launcher with password integration.** One click to open a site with password auto-copied, clipboard auto-cleared.
 - **Automated archival.** Email and websites compressed, verified, pulled across domains on schedule.
 - **Quarantine with audit trail.** Policy violations are isolated with an explanation ticket, not silently accepted.
 - **Root web access on-demand.** `ensure_updates_table` populates the PF table, `pkg_add_via_pf` and `syspatch_via_pf` do their job. No telemetry. No background phoning home.
 - **Reinstallable in 30 minutes.** No databases, no daemons, no state you can't reconstruct from scripts and `/etc`.
+- **Integrity verification.** Critical scripts are checksummed and verified via `signify(1)` on a cron schedule.
+- **Dynamic PF tables.** Mail server and service IPs are managed via `/etc/tables/` — no provider details in the repository.
+
+### Optional Components
+
+dropQbsd is fully functional with just the base system. Several optional components are available for a smoother experience — see [INSTALL.md](INSTALL.md) for setup instructions:
+
+- **Syncthing** — LAN file synchronization for the document domain
+- **Site Menu + pass** — password manager integration with one-click site launching
+- **Integrity verification** — cryptographic checksums via `signify(1)`
+- **Desktop environment** — XFCE or cwm, with coordinated color schemes and file managers per domain
+
+---
 
 ### Security Model
 
 #### What dropQbsd Protects Against
 
 - **Malware propagation between domains.** A compromised browser cannot read your email or access your documents.
-- **Network pivoting.** A compromised web domain cannot reach your mail server or LAN.
+- **Network pivoting.** A compromised web domain cannot reach your mail server or LAN. RFC 1918 addresses are explicitly blocked for `userweb`.
 - **Persistent browser compromise.** Disposable tmpfs profiles mean the attacker starts from zero each session.
 - **Accidental data leakage.** Files can only move through the drop zone, which is policed every 60 seconds.
 - **Silent policy violations.** Quarantine catches and explains every non-conforming file.
-- **Privilege escalation via `doas`.** `user` has no `doas` access. The only path to root is the blind-gate `run_app` binary, which can only launch domain applications — not arbitrary commands.
+- **Privilege escalation via `doas`.** `user` has no `doas` access. The only path to root is the blind-gate `run_app` binary, which can only launch domain applications.
 
 #### What dropQbsd Does NOT Protect Against
 
@@ -159,219 +157,6 @@ Export files are `root:drop 440` — no domain user can modify them. Only `root`
 | Threat model | Malware, network attacks, data leaks | Targeted state actors, kernel exploits |
 
 **Choose dropQbsd** if you want compartmentalization without the weight of virtualization. **Choose Qubes OS** if your threat model includes kernel exploits or targeted input sniffing.
-
----
-
-## Installation
-
-### Prerequisites
-
-- OpenBSD (any supported release)
-- No additional packages required — everything is in the base system
-
-### 1. Create Users and Group
-
-```sh
-groupadd drop
-
-useradd -m -G drop userweb
-useradd -m -G drop usermail
-useradd -m -G drop userdoc
-usermod -G drop user
-```
-
-### 2. Create Directory Structure
-
-```sh
-mkdir -p /usr/local/bin/dropQbsd/admin
-mkdir -p /home/drop/userweb_export
-mkdir -p /home/drop/usermail_export
-mkdir -p /home/drop/_quarantine
-
-chown root:drop /home/drop /home/drop/userweb_export /home/drop/usermail_export
-chmod 750 /home/drop
-chmod 2770 /home/drop/userweb_export /home/drop/usermail_export
-chmod 750 /home/drop/_quarantine
-```
-
-### 3. Install Scripts
-
-Copy the `scripts/` directory from the repository to `/usr/local/bin/dropQbsd/`:
-
-```sh
-cp -r scripts /usr/local/bin/dropQbsd
-```
-
-Set permissions:
-
-```sh
-chmod 755 /usr/local/bin/dropQbsd/qmv
-chmod 755 /usr/local/bin/dropQbsd/qcp
-chmod 755 /usr/local/bin/dropQbsd/qimport
-chmod 755 /usr/local/bin/dropQbsd/run_app_impl
-chmod 755 /usr/local/bin/dropQbsd/site_menu
-chmod 755 /usr/local/bin/dropQbsd/export_sites_to_Drop.sh
-chmod 755 /usr/local/bin/dropQbsd/export_mail_to_drop
-chmod 755 /usr/local/bin/dropQbsd/pull_sites_from_drop
-chmod 755 /usr/local/bin/dropQbsd/pull_mail_from_Drop
-chmod 700 /usr/local/bin/dropQbsd/admin/*
-chown -R root:wheel /usr/local/bin/dropQbsd
-```
-
-### 4. Build the `run_app` Blind Gate
-
-This is the core of dropQbsd's privilege model. `run_app` is split into three files:
-
-| File | Purpose |
-|------|---------|
-| `run_app_wrapper.c` | C source — 10 lines, compiled once |
-| `run_app` | Compiled setuid binary — the immutable gate `user` invokes |
-| `run_app_impl` | ksh script — all the logic, editable without recompilation |
-
-**Create the wrapper source:**
-
-```sh
-cat > /usr/local/bin/dropQbsd/run_app_wrapper.c << 'EOF'
-#include <unistd.h>
-#include <stdlib.h>
-
-int main(int argc, char *argv[]) {
-    if (setuid(0) != 0)
-        _exit(1);
-    execv("/usr/local/bin/dropQbsd/run_app_impl", argv);
-    _exit(1);
-}
-EOF
-```
-
-**Verify the impl script shebang:**
-
-```sh
-head -1 /usr/local/bin/dropQbsd/run_app_impl   # must be #!/bin/ksh
-```
-
-**Compile statically and set the setuid bit:**
-
-```sh
-doas cc -static -o /usr/local/bin/dropQbsd/run_app \
-    /usr/local/bin/dropQbsd/run_app_wrapper.c
-
-doas chown root:wheel /usr/local/bin/dropQbsd/run_app
-doas chmod 4755 /usr/local/bin/dropQbsd/run_app          # setuid root
-doas chown root:wheel /usr/local/bin/dropQbsd/run_app_impl
-doas chmod 755 /usr/local/bin/dropQbsd/run_app_impl
-```
-
-**Why this matters:** `run_app` is 10 lines of C with zero logic — it cannot do anything except `execv` into `run_app_impl`. There is no parsing, no branching, no attack surface. All the actual logic lives in `run_app_impl`, a plain ksh script you can modify anytime without touching the privileged binary. Adding a domain, changing paths, tweaking cleanup — edit the script and you're done. The blind gate stays frozen.
-
-**Verify:**
-
-```sh
-# From user:
-/usr/local/bin/dropQbsd/run_app userdoc xterm
-```
-
-### 5. Configure doas.conf
-
-Minimal — `user` gets no `doas` access at all:
-
-```sh
-echo 'permit nopass root' > /etc/doas.conf
-```
-
-The only path to root is through the blind-gate `run_app` binary, which can only launch domain applications. Compartmentalization is sealed.
-
-### 6. Install System Configuration Files
-
-```sh
-cp etc/pf.conf /etc/pf.conf
-cp etc/profile /etc/profile
-```
-
-Create `/etc/mailserver_ips` with your mail server IPs (one per line). `/etc/pkg_mirror_ips` is auto-generated on first update if missing.
-
-Review the locale settings in `/etc/profile` before applying — the example uses Italian regional formats. Adjust to your region or set all to en_US.UTF-8.
-
-Reload the firewall:
-
-```sh
-pfctl -f /etc/pf.conf
-```
-
-### 7. Configure Cron (root)
-
-```sh
-* * * * * /usr/local/bin/dropQbsd/admin/enforce_drop
-* * * * * /usr/local/bin/dropQbsd/admin/enforce_sync
-```
-
-Both scripts use an atomic mkdir lock to prevent overlapping runs.
-
-### 8. Syncthing (optional)
-
-Set up Syncthing for `userdoc` with the Sync directory at `/home/userdoc/Sync`. The `enforce_sync` script maintains correct permissions automatically.
-
-**Installation:**
-
-```sh
-pkg_add syncthing
-```
-
-**Service setup:**
-
-Copy the `rc.d` script from `examples/rc.d/syncthing_userdoc` to `/etc/rc.d/` and enable it:
-
-```sh
-cp examples/rc.d/syncthing_userdoc /etc/rc.d/
-chmod 555 /etc/rc.d/syncthing_userdoc
-rcctl enable syncthing_userdoc
-rcctl start syncthing_userdoc
-```
-
-**Firewall:**
-
-Add these rules to `/etc/pf.conf` to allow incoming sync connections from the LAN and local discovery:
-
-```sh
-# Syncthing — incoming from LAN
-pass in quick on egress proto tcp from 192.168.0.0/16 to any port 22000
-pass in quick on egress proto udp from 192.168.0.0/16 to any port 21027
-
-# Syncthing — outgoing to LAN
-pass out quick on egress proto tcp from any to any port 22000 user userdoc flags S/SA
-pass out quick on egress proto udp from any to any port 21027 user userdoc
-```
-
-**Reload:**
-
-```sh
-pfctl -f /etc/pf.conf
-```
-
-**Configuration:**
-
-Open the Syncthing GUI:
-
-```sh
-/usr/local/bin/dropQbsd/run_app userdoc /usr/local/bin/qutebrowser --temp-basedir http://127.0.0.1:8384
-```
-
-Settings → Default Folder Path: `/home/userdoc/Sync`
-Add remote devices by their device ID
-Share folders with read/write permissions as needed
-
-**Troubleshooting:**
-
-If remote devices show as disconnected:
-
-- Verify both devices have Sync Protocol Listen Addresses set to default
-- Verify the remote device is listening on TCP 22000: `nc -zv <remote-ip> 22000`
-- Delete and re-add the remote device after any hostname or IP changes
-- Check that `pf.conf` allows incoming TCP 22000 and UDP 21027 from LAN
-
-### 9. Optional Configurations
-
-Example configuration files for Thunar custom actions, Midnight Commander templates, and more are provided in the `examples/` directory.
 
 ---
 
@@ -508,6 +293,12 @@ tail /var/log/system_update_pf.log
 doas tcpdump -n -e -ttt -i pflog0
 ```
 
+**Integrity verification:**
+
+```sh
+doas /usr/local/bin/dropQbsd/admin/verify_integrity
+```
+
 ---
 
 ## Scripts Reference
@@ -516,13 +307,12 @@ doas tcpdump -n -e -ttt -i pflog0
 
 | Script | Run by | Purpose |
 | ------ | ------ | ------- |
-| `qmv` | Any user | Move file/directory into `/home/drop`, set group and permissions |
+| `qmv` | Any user | Move file/directory into `/home/drop` via atomic staging, set group and permissions |
 | `qcp` | Any user | Copy file/directory into `/home/drop` without deleting the original |
-| `qimport` | user | Copy from drop zone to `~/Downloads`, create `.imported` sentinel |
+| `qimport` | user | Copy from drop zone to `~/Downloads` |
 | `run_app` | user (setuid root) | Blind-gate binary. Escalates to root, execs `run_app_impl`. The only privileged entry point `user` can touch. |
 | `run_app_impl` | root (via `run_app`) | ksh script with all launch logic — X11 cookie, runtime dir, tmpfs, `su -l`. Editable without recompilation. |
 | `run_app_wrapper.c` | — (source only) | 10-line C source. Kept for reference; only needed if OpenBSD ABI breaks. |
-| `site_menu` | user | Dropdown menu of sites with `pass` integration, opens in disposable browser |
 
 ### Export/Import Pipeline
 
@@ -537,37 +327,31 @@ doas tcpdump -n -e -ttt -i pflog0
 
 | Script | Run by | Frequency | Purpose |
 | ------ | ------ | --------- | ------- |
-| `enforce_drop` | root | Every minute | Process sentinels, fix permissions, quarantine violations, clean abandoned files |
+| `enforce_drop` | root | Every minute | Fix permissions, quarantine violations, clean abandoned files, rate-limit monitoring |
 | `enforce_sync` | root | Every minute | Fix owner/group/permissions in Sync directory |
+
+### PF Table Management (cron)
+
+| Script | Run by | Purpose |
+| ------ | ------ | ------- |
+| `update_mailserver_table` | root | Resolve mail server hostnames via `userweb` DNS, populate `<mailserver>` table |
+| `update_services_table` | root | Populate `<services>` table from `/etc/tables/services_hosts` (static IPs and hostnames) |
 
 ### System Updates (root only)
 
 | Script | Purpose |
 | ------ | ------- |
 | `ensure_updates_table` | Populate PF `<updates>` table with Fastly CDN blocks and custom mirrors |
-| `pkg_add_via_pf` | Install/update packages through restrictive PF |
+| `pkg_add_via_pf` | Install/update packages through restrictive PF; flushes `<updates>` on exit |
 | `syspatch_via_pf` | Apply security patches through restrictive PF |
 | `sysupgrade_via_pf` | Upgrade to next OpenBSD release through restrictive PF (reboots) |
 | `update_openbsd_via_pf` | Full update: syspatch + fw_update + pkg_add -u + pkg_delete -a |
 
-### Maintenance: Modifying `run_app_impl`
+### Integrity
 
-To add a domain, change paths, or tweak launch behavior, edit only `run_app_impl`:
-
-```sh
-doas vim /usr/local/bin/dropQbsd/run_app_impl
-```
-
-No recompilation needed. The blind-gate `run_app` binary always execs into `run_app_impl`, whatever it contains.
-
-**After recompiling the wrapper** (only needed after a major OpenBSD upgrade that breaks the ABI):
-
-```sh
-doas cc -static -o /usr/local/bin/dropQbsd/run_app \
-    /usr/local/bin/dropQbsd/run_app_wrapper.c
-doas chmod 4755 /usr/local/bin/dropQbsd/run_app   # re-apply setuid — every cc wipes it
-ls -la /usr/local/bin/dropQbsd/run_app             # must show -rwsr-xr-x
-```
+| Script | Run by | Purpose |
+| ------ | ------ | ------- |
+| `verify_integrity` | root (cron) | Verify SHA256 checksums of critical scripts via `signify(1)` |
 
 ### Recovery
 
@@ -576,6 +360,7 @@ The entire system state is in four places:
 - **Scripts** in `/usr/local/bin/dropQbsd/`
 - **Users and groups** in `/etc/passwd`, `/etc/group`
 - **PF rules** in `/etc/pf.conf`
+- **PF table configs** in `/etc/tables/`
 - **Cron jobs** in `/var/cron/tabs/root`
 
 **To rebuild from scratch:**
@@ -585,6 +370,7 @@ The entire system state is in four places:
 - Run the user/group creation commands
 - Compile the `run_app` blind gate and set the setuid bit
 - Copy `pf.conf` and reload
+- Populate `/etc/tables/` with your provider IPs
 - Add cron jobs
 
 Thirty minutes. No databases to restore. No daemon state to reconstruct.
@@ -654,3 +440,4 @@ dropQbsd offers a different path: an auditable, telemetry-free, compartmentalize
 ## License
 
 ISC. See [LICENSE](https://github.com/nobraininside/dropQbsd/blob/main/LICENSE).
+```
