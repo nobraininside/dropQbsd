@@ -33,11 +33,12 @@ All belong to the `drop` group. Home directories are `chmod 700` — no cross-do
 
 The **only bridge** between domains. A shared directory with strict rules:
 
+- `/home/drop` is `1770 root:drop` — sticky bit prevents cross-domain deletion
 - Files in transit: `440` (read-only for owner and group)
-- Directories in transit: `570` (group can traverse and create sentinels)
+- Directories in transit: `570` (group can traverse)
 - Export directories: SGID `2770`, owned by `root:drop`
 
-No domain can delete another domain's files. No domain can modify files once placed. A cron job (`enforce_drop`) runs every 60 seconds, correcting permissions, quarantining violations, and cleaning abandoned artifacts.
+No domain can delete another domain's files (enforced by sticky bit on `/home/drop`). No domain can modify files once placed (enforced by 440 permissions). A cron job (`enforce_drop`) runs every 60 seconds, correcting permissions, quarantining violations, and cleaning abandoned artifacts.
 
 **Import workflow:**
 
