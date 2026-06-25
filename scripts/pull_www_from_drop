@@ -79,7 +79,7 @@ fi
     cd "$DST" || exit 1
     FILES=$(find . -maxdepth 1 -name 'www_*.tar.gz' -type f -print 2>/dev/null)
     if [ -n "$FILES" ]; then
-        echo "$FILES" | xargs ls -1t 2>/dev/null | tail -n +2 | xargs rm 2>/dev/null
+        echo "$FILES" | xargs ls -1t 2>/dev/null | tail -n +4 | xargs rm 2>/dev/null
     fi
 )
 
