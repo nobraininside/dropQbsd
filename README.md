@@ -89,8 +89,8 @@ Service IPs and mail server IPs are managed dynamically via PF tables, populated
 ### Archival Pipeline
 
 ```
-usermail → export_mail_to_drop → usermail_export → pull_mail_from_Drop → userdoc (3 backups)
-userweb  → export_www_to_Drop → userweb_export  → pull_www_from_drop  → userdoc (3 backups)
+usermail → export_mail_to_drop → usermail_export → pull_mail_from_drop → userdoc (1 backup)
+userweb  → export_www_to_drop → userweb_export  → pull_www_from_drop  → userdoc (3 backups)
 ```
 
 Export files are `root:drop 440` — no domain user can modify them. Integrity verified at each step.
