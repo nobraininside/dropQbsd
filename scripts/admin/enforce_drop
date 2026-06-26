@@ -197,7 +197,7 @@ for exdir in "$DROP_DIR/userweb_export" "$DROP_DIR/usermail_export"; do
     find "$exdir" -type f ! -perm 440 -exec chmod 440 {} + 2>/dev/null
 
     # Rotate old website archives (> 1 day)
-    find "$exdir" -type f -name 'www_*.tar.gz' -mtime +1 -delete 2>/dev/null
+    find "$exdir" -type f -name 'www_*.tar.gz' -mmin +120 -delete 2>/dev/null
 
     # Rotate old mail archives (> 2 hours)
     find "$exdir" -type f -name 'mail_*.tar.gz' -mmin +120 -delete 2>/dev/null
