@@ -181,6 +181,40 @@ Create `/etc/tables/services_hosts` with static IPs and hostnames (prefix hostna
 # chmod 644 /etc/tables/updates_ips
 ```
 
+Sì, va documentato. Aggiungo una sezione in INSTALL.md, dopo "Configure PF Tables" e prima di "Reload the Firewall":
+
+
+### How PF Tables Work
+
+dropQbsd uses three PF tables to manage network access without exposing
+provider IPs in the firewall rules:
+
+| Table | Config file | Update script | Purpose |
+|-------|-------------|---------------|---------|
+| `<mailserver>` | `/etc/tables/mailserver_hosts` | `update_mailserver_table` | Mail server IPs for `usermail` |
+| `<services>` | `/etc/tables/services_hosts` | `update_services_table` | External services (SSH, cPanel, GitHub) for `userweb` |
+| `<updates>` | `/etc/tables/updates_ips` | `ensure_updates_table` | OpenBSD mirror IPs for system updates |
+
+**Adding an IP to a table:**
+
+```sh
+# One-time (persists until reboot or manual flush):
+doas pfctl -t services -T add 198.51.100.10
+
+# Permanent (add to config file, survives reboot):
+echo '198.51.100.10' | doas tee -a /etc/tables/services_hosts
+doas /usr/local/bin/dropQbsd/admin/update_services_table
+```
+
+**Adding a hostname (resolved automatically):**
+
+```sh
+echo '@difesadigitale.xyz' | doas tee -a /etc/tables/services_hosts
+doas /usr/local/bin/dropQbsd/admin/update_services_table
+```
+
+Hostnames prefixed with `@` are resolved via `userweb` DNS each time the update script runs (every 5 minutes via cron). This keeps IPs current without manual intervention.
+
 ---
 
 ## 8. Reload the Firewall
