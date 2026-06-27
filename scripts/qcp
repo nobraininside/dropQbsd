@@ -58,7 +58,7 @@ cp -pR "$TARGET" "$STAGING/$NAME"
 chmod 700 "$STAGING"
 
 chgrp -R drop "$STAGING/$NAME"
-find "$STAGING/$NAME" -type d -exec chmod 570 {} +
+find "$STAGING/$NAME" -type d -exec chmod 700 {} +
 find "$STAGING/$NAME" -type f -exec chmod 440 {} +
 
 #-----------------------------------------------------------------------------
