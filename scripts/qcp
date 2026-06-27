@@ -3,12 +3,19 @@
 #  dropQbsd — qcp
 #
 #  Copies a file or directory into the /home/drop exchange
-#  zone and sets correct permissions. The original is left
-#  in place — unlike qmv, nothing is deleted.
+#  zone and sets correct permissions atomically. The original
+#  is left in place — unlike qmv, nothing is deleted.
 #
-#  Security: uses a staging directory to eliminate the
-#  TOCTOU window where files sit in the drop zone with
-#  their original permissions.
+#  Workflow:
+#    1. Copy to a staging location inside /home/drop with
+#       restricted permissions from the start.
+#    2. Set group and staging permissions (700 dirs — owner
+#       needs write to move files out of staging).
+#    3. Verify the copy succeeded.
+#    4. Move from staging into the drop zone proper.
+#    5. Apply final permissions (570 dirs — group can
+#       traverse; 440 files — read-only).
+#    6. Original left in place.
 #
 #  Path: /usr/local/bin/dropQbsd/qcp
 #  Permissions: chmod 755, root:wheel
@@ -25,7 +32,7 @@ DST="/home/drop"
 # ARGUMENT VALIDATION
 #-----------------------------------------------------------------------------
 if [ -z "$TARGET" ]; then
-    echo "Usage: qcp <file_or_directory>" >&2
+    echo "Usage: qmv <file_or_directory>" >&2
     exit 1
 fi
 
@@ -34,6 +41,10 @@ if [ ! -e "$TARGET" ]; then
     exit 1
 fi
 
+# Refuse to operate on anything already inside /home/drop.
+# This prevents accidental deletion of files in the exchange zone
+# and blocks a confused-deputy attack where a compromised domain
+# tries to qmv files it shouldn't touch.
 case "$(realpath "$TARGET")" in
     /home/drop|/home/drop/*)
         echo "Error: '$TARGET' is already inside the drop zone." >&2
@@ -41,48 +52,80 @@ case "$(realpath "$TARGET")" in
         ;;
 esac
 
+# Refuse to operate on system-critical paths.
+# This is a safety net — it should never trigger under normal use,
+# but prevents catastrophic damage from bugs or malicious input.
+case "$(realpath "$TARGET")" in
+    /|/bin|/sbin|/usr|/etc|/var|/home|/root|/tmp)
+        echo "Error: refusing to move system path '$TARGET'." >&2
+        exit 1
+        ;;
+esac
+
 #-----------------------------------------------------------------------------
-# PREPARE STAGING AND COPY
+# PREPARE STAGING NAME
 #-----------------------------------------------------------------------------
 NAME=$(basename "$TARGET")
 DEST_PATH="$DST/$NAME"
 
+#-----------------------------------------------------------------------------
+# COPY TO STAGING WITH RESTRICTED PERMISSIONS FROM THE START
+#-----------------------------------------------------------------------------
+# Strategy: copy into a staging location, lock permissions immediately,
+# then atomically rename into place. This eliminates the TOCTOU window
+# where files sit in /home/drop with original (potentially open) permissions
+# before enforce_drop's next cycle.
+
 STAGING="$DST/.staging.$$.$(date +%s)"
 mkdir "$STAGING"
-chmod 700 "$STAGING"
+chmod 700 "$STAGING"          # nobody else can enter during setup
 
+# Copy into staging
 cp -pR "$TARGET" "$STAGING/$NAME"
 
 # cp -pR preserved the source permissions. Re-apply write permission
 # on the staging directory so mv can remove files from it.
 chmod 700 "$STAGING"
 
+# Set group ownership on the contents
 chgrp -R drop "$STAGING/$NAME"
+
+# Staging permissions: directories need 700 so the owner can move
+# them out of staging (write permission required on the directory
+# itself for mv to unlink it from the parent).
+# Files are set to 440 — read-only, ready for the drop zone.
 find "$STAGING/$NAME" -type d -exec chmod 700 {} +
 find "$STAGING/$NAME" -type f -exec chmod 440 {} +
 
 #-----------------------------------------------------------------------------
-# VERIFY COPY
+# VERIFY THE COPY SUCCEEDED BEFORE DELETING THE ORIGINAL
 #-----------------------------------------------------------------------------
+# Compare file count between source and staging copy.
+# This catches partial copies from disk-full or I/O errors.
 SRC_COUNT=$(find "$TARGET" -type f 2>/dev/null | wc -l | tr -d ' ')
 DST_COUNT=$(find "$STAGING/$NAME" -type f 2>/dev/null | wc -l | tr -d ' ')
 
 if [ "$SRC_COUNT" -ne "$DST_COUNT" ]; then
     echo "Error: copy verification failed (source: $SRC_COUNT files, dest: $DST_COUNT files)." >&2
+    echo "Original '$TARGET' has NOT been deleted." >&2
     rm -rf "$STAGING"
     exit 1
 fi
 
 #-----------------------------------------------------------------------------
-# MOVE INTO PLACE
+# MOVE STAGING INTO PLACE AND APPLY FINAL PERMISSIONS
 #-----------------------------------------------------------------------------
-mv "$STAGING/$NAME" "$DEST_PATH"
-rmdir "$STAGING" 2>/dev/null || true
-
-# If rmdir failed, the staging directory wasn't empty.
-# Log it and clean up forcefully.
-if [ -d "$STAGING" ]; then
-    echo "Warning: staging directory not empty after  forcing cleanup." >&2
-    rm -rf "$STAGING"
+# Once in /home/drop, directories need 570 (owner rwx, group rx) so all
+# domains in the drop group can traverse them. Files stay at 440 (read-only
+# for owner and group). enforce_drop will also enforce these on its next
+# cycle, but we apply them immediately so other domains can access the
+# files without waiting.
+if mv "$STAGING/$NAME" "$DEST_PATH"; then
+    find "$DEST_PATH" -type d -exec chmod 570 {} +
+    find "$DEST_PATH" -type f -exec chmod 440 {} +
+    rmdir "$STAGING" 2>/dev/null || true
+else
+    echo "Error: move from staging failed. Staging left at $STAGING" >&2
+    exit 1
 fi
- 
+
