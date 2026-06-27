@@ -13,9 +13,13 @@
 #  Workflow:
 #    1. Copy to a staging location inside /home/drop with
 #       restricted permissions from the start.
-#    2. Set group and final permissions.
+#    2. Set group and staging permissions (700 dirs — owner
+#       needs write to move files out of staging).
 #    3. Verify the copy succeeded.
-#    4. Only then delete the original.
+#    4. Move from staging into the drop zone proper.
+#    5. Apply final permissions (570 dirs — group can
+#       traverse; 440 files — read-only).
+#    6. Only then delete the original.
 #
 #  Path: /usr/local/bin/dropQbsd/qmv
 #  Permissions: chmod 755, root:wheel
@@ -87,15 +91,20 @@ cp -pR "$TARGET" "$STAGING/$NAME"
 # on the staging directory so mv can remove files from it.
 chmod 700 "$STAGING"
 
-# Lock permissions inside staging immediately — before anyone can see them
+# Set group ownership on the contents
 chgrp -R drop "$STAGING/$NAME"
+
+# Staging permissions: directories need 700 so the owner can move
+# them out of staging (write permission required on the directory
+# itself for mv to unlink it from the parent).
+# Files are set to 440 — read-only, ready for the drop zone.
 find "$STAGING/$NAME" -type d -exec chmod 700 {} +
 find "$STAGING/$NAME" -type f -exec chmod 440 {} +
 
 #-----------------------------------------------------------------------------
 # VERIFY THE COPY SUCCEEDED BEFORE DELETING THE ORIGINAL
 #-----------------------------------------------------------------------------
-# Compare file count and total size between source and staging copy.
+# Compare file count between source and staging copy.
 # This catches partial copies from disk-full or I/O errors.
 SRC_COUNT=$(find "$TARGET" -type f 2>/dev/null | wc -l | tr -d ' ')
 DST_COUNT=$(find "$STAGING/$NAME" -type f 2>/dev/null | wc -l | tr -d ' ')
@@ -108,21 +117,23 @@ if [ "$SRC_COUNT" -ne "$DST_COUNT" ]; then
 fi
 
 #-----------------------------------------------------------------------------
-# MOVE STAGING INTO PLACE (atomic on same filesystem)
+# MOVE STAGING INTO PLACE AND APPLY FINAL PERMISSIONS
 #-----------------------------------------------------------------------------
-mv "$STAGING/$NAME" "$DEST_PATH"
-rmdir "$STAGING" 2>/dev/null || true
-
-# If rmdir failed, the staging directory wasn't empty.
-# Log it and clean up forcefully.
-if [ -d "$STAGING" ]; then
-    echo "Warning: staging directory not empty after  forcing cleanup." >&2
-    rm -rf "$STAGING"
+# Once in /home/drop, directories need 570 (owner rwx, group rx) so all
+# domains in the drop group can traverse them. Files stay at 440 (read-only
+# for owner and group). enforce_drop will also enforce these on its next
+# cycle, but we apply them immediately so other domains can access the
+# files without waiting.
+if mv "$STAGING/$NAME" "$DEST_PATH"; then
+    find "$DEST_PATH" -type d -exec chmod 570 {} +
+    find "$DEST_PATH" -type f -exec chmod 440 {} +
+    rmdir "$STAGING" 2>/dev/null || true
+else
+    echo "Error: move from staging failed. Staging left at $STAGING" >&2
+    exit 1
 fi
-
 
 #-----------------------------------------------------------------------------
 # DELETE THE ORIGINAL — ONLY NOW, AFTER EVERYTHING SUCCEEDED
 #-----------------------------------------------------------------------------
 rm -rf "$TARGET"
-
