@@ -32,7 +32,7 @@
 # mkdir -p /etc/tables
 
 # chown root:drop /home/drop /home/drop/userweb_export /home/drop/usermail_export
-# chmod 1770 /home/drop
+# chmod 770 /home/drop
 # chmod 2770 /home/drop/userweb_export /home/drop/usermail_export
 # chmod 750 /home/drop/_quarantine
 # chmod 755 /etc/tables
