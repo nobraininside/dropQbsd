@@ -173,6 +173,16 @@ else
     APP_HOME=$(eval echo ~"$TARGET_USER")
 fi
 
+# In disposable mode, HOME is a tmpfs that gets destroyed on exit.
+# To preserve downloaded files, symlink ~/Downloads to the real
+# /home/$TARGET_USER/Downloads so files survive browser close.
+if [[ "$DISPOSABLE" -eq 1 ]]; then
+    REAL_DOWNLOADS="/home/$TARGET_USER/Downloads"
+    mkdir -p "$REAL_DOWNLOADS"
+    chown "$TARGET_USER" "$REAL_DOWNLOADS"
+    su -l "$TARGET_USER" -c "ln -sfn '$REAL_DOWNLOADS' '$RUNDIR/Downloads'"
+fi
+
 # Pass arguments via positional parameters to avoid quoting issues
 # with $* inside a -c string.
 su -l "$TARGET_USER" -c '
