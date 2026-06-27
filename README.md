@@ -38,7 +38,7 @@ The **only bridge** between domains. A shared directory with strict rules:
 - Directories in transit: `570` (group can traverse)
 - Export directories: SGID `2770`, owned by `root:drop`
 
-No domain can delete another domain's files (enforced by sticky bit on `/home/drop`). No domain can modify files once placed (enforced by 440 permissions). A cron job (`enforce_drop`) runs every 60 seconds, correcting permissions, quarantining violations, and cleaning abandoned artifacts.
+No domain can delete another domain's files. No domain can modify files once placed (enforced by 440 permissions). Cleanup is handled by `enforce_drop` on its regular cycle. A cron job (`enforce_drop`) runs every 60 seconds, correcting permissions, quarantining violations, and cleaning abandoned artifacts.
 
 **Import workflow:**
 
