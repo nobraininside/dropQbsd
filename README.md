@@ -443,5 +443,5 @@ dropQbsd offers a different path: an auditable, telemetry-free, compartmentalize
 ISC. See [LICENSE](https://github.com/nobraininside/dropQbsd/blob/main/LICENSE).
 
 ## Technical deep-dive: 
-See [dropQbsd: Compartmentalization without virtualization](https://blog.nicolabaudo.fr/dropqbsd-compartmentalization-without-virtualization/)
+See [dropQbsd - Compartmentalization without virtualization](https://blog.nicolabaudo.fr/dropqbsd-compartmentalization-without-virtualization/).
 ```
