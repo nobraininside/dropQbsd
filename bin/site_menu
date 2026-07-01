@@ -9,7 +9,7 @@
 #    - Opens the site in a disposable browser (tmpfs-backed,
 #      nothing survives exit).
 #
-#  Path: /usr/local/bin/dropQbsd/site_menu
+#  Path: /opt/dropQbsd/bin/site_menu
 #  Permissions: chmod 755, root:wheel
 #
 #  Requires: zenity, pass, xclip, and a browser
@@ -43,7 +43,7 @@ BROWSER="${BROWSER:-/usr/local/bin/ungoogled-chromium}"
 BROWSER_FLAGS="${BROWSER_FLAGS:---temp-profile}"
 
 # Path to the run_app blind gate (setuid, no doas needed)
-RUN_APP="${RUN_APP:-/usr/local/bin/dropQbsd/run_app}"
+RUN_APP="${RUN_APP:-/opt/dropQbsd/bin/run_app}"
 
 # Clipboard clear PID tracker — prevents stale background processes
 CLIPBOARD_PID_FILE="/tmp/dropQbsd_clipboard_clear.pid"
