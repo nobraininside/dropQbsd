@@ -19,7 +19,7 @@ set -eu
 # set -x # for debugging
 
 SRC="/home/drop/userweb_export"
-DST="/home/userdoc/Sync/Archivio/Archivio_siti"
+DST="/home/userdoc/Sync/Archive"
 
 #-----------------------------------------------------------------------------
 # PRE-FLIGHT CHECKS
