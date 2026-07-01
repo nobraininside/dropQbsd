@@ -1,0 +1,13 @@
+#!/bin/ksh
+# ==========================================================
+#  dropQbsd — xterm_userweb
+#
+#  Opens an xterm as userweb with the dropQbsd document
+#  domain color scheme (darkblue background)
+#
+#  Path: /opt/dropQbsd/bin/xterm_userweb
+#  Permissions: chmod 755, root:wheel
+# ==========================================================
+
+/opt/dropQbsd/bin/run_app userweb xterm -bg darkblue -fg white -fa "DejaVu Sans Mono" -fs 11 -u8 -e ksh -c "cd /home/userweb && ENV=~/.kshrc exec ksh" "$@"
+
