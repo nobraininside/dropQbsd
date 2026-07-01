@@ -10,7 +10,7 @@
 #  Run update_openbsd_via_pf first to ensure all patches
 #  and packages are current.
 #
-#  Path: /usr/local/bin/dropQbsd/admin/sysupgrade_via_pf
+#  Path: /opt/dropQbsd/admin/sysupgrade_via_pf
 #  Permissions: chmod 700, root:wheel
 #
 #  Usage: sysupgrade_via_pf
@@ -19,7 +19,7 @@
 #  reboots automatically on success.
 # ==========================================================
 
-ENSURE_SCRIPT="/usr/local/bin/dropQbsd/admin/ensure_updates_table"
+ENSURE_SCRIPT="/opt/dropQbsd/libexec/ensure_updates_table"
 LOGFILE="/var/log/sysupgrade_pf.log"
 FLUSH_ON_EXIT=1
 
@@ -62,3 +62,4 @@ RC=$?
 log "sysupgrade exited with code $RC — no reboot occurred."
 log "=== sysupgrade_via_pf finished ==="
 exit $RC
+
