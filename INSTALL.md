@@ -25,7 +25,7 @@
 ## 2. Create Directory Structure
 
 ```sh
-# mkdir -p /usr/local/bin/dropQbsd/admin
+# mkdir -p /opt/dropQbsd/{bin,libexec,admin,src,tables}
 # mkdir -p /home/drop/userweb_export
 # mkdir -p /home/drop/usermail_export
 # mkdir -p /home/drop/_quarantine
@@ -42,26 +42,19 @@
 
 ## 3. Install Scripts
 
-Copy the `scripts/` directory from the repository to `/usr/local/bin/dropQbsd/`:
+Copy the repository directories to `/opt/dropQbsd/`:
 
 ```sh
-# cp -r scripts /usr/local/bin/dropQbsd
+# cp -r bin libexec admin src tables /opt/dropQbsd/
 ```
 
 Set permissions:
 
 ```sh
-# chmod 755 /usr/local/bin/dropQbsd/qmv
-# chmod 755 /usr/local/bin/dropQbsd/qcp
-# chmod 755 /usr/local/bin/dropQbsd/qimport
-# chmod 755 /usr/local/bin/dropQbsd/run_app_impl
-# chmod 755 /usr/local/bin/dropQbsd/site_menu
-# chmod 755 /usr/local/bin/dropQbsd/export_sites_to_Drop.sh
-# chmod 755 /usr/local/bin/dropQbsd/export_mail_to_drop
-# chmod 755 /usr/local/bin/dropQbsd/pull_sites_from_drop
-# chmod 755 /usr/local/bin/dropQbsd/pull_mail_from_Drop
-# chmod 700 /usr/local/bin/dropQbsd/admin/*
-# chown -R root:wheel /usr/local/bin/dropQbsd
+# chmod 755 /opt/dropQbsd/bin/*
+# chmod 755 /opt/dropQbsd/libexec/*
+# chmod 700 /opt/dropQbsd/admin/*
+# chown -R root:wheel /opt/dropQbsd
 ```
 
 ---
@@ -72,49 +65,31 @@ This is the core of dropQbsd's privilege model. `run_app` is split into three fi
 
 | File | Purpose |
 |------|---------|
-| `run_app_wrapper.c` | C source — 10 lines, compiled once |
-| `run_app` | Compiled setuid binary — the immutable gate `user` invokes |
-| `run_app_impl` | ksh script — all the logic, editable without recompilation |
-
-**Create the wrapper source:**
-
-```sh
-cat > /usr/local/bin/dropQbsd/run_app_wrapper.c << 'EOF'
-#include <unistd.h>
-#include <stdlib.h>
-
-int main(int argc, char *argv[]) {
-    if (setuid(0) != 0)
-        _exit(1);
-    execv("/usr/local/bin/dropQbsd/run_app_impl", argv);
-    _exit(1);
-}
-EOF
-```
+| `src/run_app_wrapper.c` | C source — 10 lines, compiled once |
+| `bin/run_app` | Compiled setuid binary — the immutable gate `user` invokes |
+| `libexec/run_app_impl` | ksh script — all the logic, editable without recompilation |
 
 **Verify the impl script shebang:**
 
 ```sh
-# head -1 /usr/local/bin/dropQbsd/run_app_impl   # must be #!/bin/ksh
+# head -1 /opt/dropQbsd/libexec/run_app_impl   # must be #!/bin/ksh
 ```
 
 **Compile statically and set the setuid bit:**
 
 ```sh
-# doas cc -static -o /usr/local/bin/dropQbsd/run_app \
-    /usr/local/bin/dropQbsd/run_app_wrapper.c
-
-# doas chown root:wheel /usr/local/bin/dropQbsd/run_app
-# doas chmod 4755 /usr/local/bin/dropQbsd/run_app          # setuid root
-# doas chown root:wheel /usr/local/bin/dropQbsd/run_app_impl
-# doas chmod 755 /usr/local/bin/dropQbsd/run_app_impl
+# cc -static -o /opt/dropQbsd/bin/run_app /opt/dropQbsd/src/run_app_wrapper.c
+# chown root:wheel /opt/dropQbsd/bin/run_app
+# chmod 4755 /opt/dropQbsd/bin/run_app          # setuid root
+# chown root:wheel /opt/dropQbsd/libexec/run_app_impl
+# chmod 755 /opt/dropQbsd/libexec/run_app_impl
 ```
 
 **Verify:**
 
 ```sh
 # From user:
-$ /usr/local/bin/dropQbsd/run_app userdoc xterm
+$ /opt/dropQbsd/bin/run_app userdoc xterm
 ```
 
 ---
@@ -138,6 +113,13 @@ Minimal — `user` gets no `doas` access at all:
 ```
 
 Review the locale settings in `/etc/profile` — the example uses Italian regional formats. Adjust to your region or set all to `en_US.UTF-8`.
+
+Add dropQbsd to the PATH for all users:
+
+```sh
+# echo 'PATH="/opt/dropQbsd/bin:$PATH"' >> /etc/profile
+# echo 'export PATH' >> /etc/profile
+```
 
 ---
 
@@ -181,13 +163,9 @@ Create `/etc/tables/services_hosts` with static IPs and hostnames (prefix hostna
 # chmod 644 /etc/tables/updates_ips
 ```
 
-Sì, va documentato. Aggiungo una sezione in INSTALL.md, dopo "Configure PF Tables" e prima di "Reload the Firewall":
-
-
 ### How PF Tables Work
 
-dropQbsd uses three PF tables to manage network access without exposing
-provider IPs in the firewall rules:
+dropQbsd uses three PF tables to manage network access without exposing provider IPs in the firewall rules:
 
 | Table | Config file | Update script | Purpose |
 |-------|-------------|---------------|---------|
@@ -199,18 +177,18 @@ provider IPs in the firewall rules:
 
 ```sh
 # One-time (persists until reboot or manual flush):
-doas pfctl -t services -T add 198.51.100.10
+# pfctl -t services -T add 198.51.100.10
 
 # Permanent (add to config file, survives reboot):
-echo '198.51.100.10' | doas tee -a /etc/tables/services_hosts
-doas /usr/local/bin/dropQbsd/admin/update_services_table
+# echo '198.51.100.10' >> /etc/tables/services_hosts
+# /opt/dropQbsd/libexec/update_services_table
 ```
 
 **Adding a hostname (resolved automatically):**
 
 ```sh
-echo '@difesadigitale.xyz' | doas tee -a /etc/tables/services_hosts
-doas /usr/local/bin/dropQbsd/admin/update_services_table
+# echo '@difesadigitale.xyz' >> /etc/tables/services_hosts
+# /opt/dropQbsd/libexec/update_services_table
 ```
 
 Hostnames prefixed with `@` are resolved via `userweb` DNS each time the update script runs (every 5 minutes via cron). This keeps IPs current without manual intervention.
@@ -232,19 +210,49 @@ Populate the services table with your static IPs:
 Run the mail server table update:
 
 ```sh
-# /usr/local/bin/dropQbsd/admin/update_mailserver_table
+# /opt/dropQbsd/libexec/update_mailserver_table
 ```
 
 ---
 
 ## 9. Configure Cron (root)
 
+All cron jobs run as root. Jobs that need to act on behalf of a domain user use `su -l <user> -c` to switch to that user's environment. There is no per-user crontab — everything is managed centrally in root's crontab for auditability and simplicity.
+
 ```sh
-* * * * * /usr/local/bin/dropQbsd/admin/enforce_drop
-* * * * * /usr/local/bin/dropQbsd/admin/enforce_sync
-*/15 * * * * /usr/local/bin/dropQbsd/admin/update_mailserver_table
-*/5 * * * * /usr/local/bin/dropQbsd/admin/update_services_table
-*/5 * * * * /usr/local/bin/dropQbsd/admin/verify_integrity
+# dropQbsd — root crontab
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/opt/dropQbsd/bin
+SHELL=/bin/sh
+HOME=/root
+
+# --- OpenBSD system maintenance ---
+0       *       *       *       *       /usr/bin/newsyslog
+30      1       *       *       *       /bin/sh /etc/daily
+30      3       *       *       6       /bin/sh /etc/weekly
+30      5       1       *       *       /bin/sh /etc/monthly
+
+# --- dropQbsd: drop zone and sync enforcement ---
+*       *       *       *       *       /opt/dropQbsd/libexec/enforce_drop
+*       *       *       *       *       /opt/dropQbsd/libexec/enforce_sync
+
+# --- dropQbsd: PF table updates ---
+*/15    *       *       *       *       /opt/dropQbsd/libexec/update_mailserver_table
+*/5     *       *       *       *       /opt/dropQbsd/libexec/update_services_table
+
+# --- dropQbsd: integrity verification ---
+*/5     *       *       *       *       /opt/dropQbsd/libexec/verify_integrity
+
+# --- dropQbsd: mail archival (daily at 20:10) ---
+10      20      *       *       *       su -l usermail -c /opt/dropQbsd/libexec/export_mail_to_drop > /dev/null 2>&1
+
+# --- dropQbsd: website archival (every 2 hours, 8:00–20:00) ---
+0       8,10,12,14,16,18,20 * * *     su -l userweb -c /opt/dropQbsd/libexec/export_www_to_drop > /dev/null 2>&1
+
+# --- dropQbsd: mail pull (15 min after export) ---
+25      20      *       *       *       su -l userdoc -c /opt/dropQbsd/libexec/pull_mail_from_drop > /dev/null 2>&1
+
+# --- dropQbsd: website pull (15 min after each export) ---
+15      8,10,12,14,16,18,20 * * *     su -l userdoc -c /opt/dropQbsd/libexec/pull_www_from_drop > /dev/null 2>&1
 ```
 
 All scripts use an atomic `mkdir` lock to prevent overlapping runs. The lock directories live in `/var/run/` and are cleared on reboot. If a script is killed mid-run, remove its lock manually:
@@ -284,7 +292,7 @@ Set up Syncthing for `userdoc` with the Sync directory at `/home/userdoc/Sync`. 
 **Installation:**
 
 ```sh
-# /usr/local/bin/dropQbsd/admin/pkg_add_via_pf syncthing
+# /opt/dropQbsd/admin/pkg_add_via_pf syncthing
 ```
 
 **Service setup:**
@@ -319,7 +327,7 @@ Reload:
 **Configuration:**
 
 ```sh
-$ /usr/local/bin/dropQbsd/run_app userdoc /usr/local/bin/qutebrowser --temp-basedir http://127.0.0.1:8384
+$ /opt/dropQbsd/bin/run_app userdoc /usr/local/bin/qutebrowser --temp-basedir http://127.0.0.1:8384
 ```
 
 Settings → Default Folder Path: `/home/userdoc/Sync`
@@ -345,7 +353,7 @@ For a smoother, more integrated experience, dropQbsd includes `site_menu`: a dro
 **Installation:**
 
 ```sh
-# /usr/local/bin/dropQbsd/admin/pkg_add_via_pf zenity pass xclip
+# /opt/dropQbsd/admin/pkg_add_via_pf zenity pass xclip
 ```
 
 **Initialize pass:**
@@ -379,7 +387,7 @@ $ pass insert work/erp
 **Launch:**
 
 ```sh
-$ /usr/local/bin/dropQbsd/site_menu
+$ /opt/dropQbsd/bin/site_menu
 ```
 
 The site opens in a disposable browser (tmpfs-backed). Nothing survives after the browser closes.
@@ -394,20 +402,20 @@ dropQbsd can cryptographically verify that critical scripts have not been tamper
 
 ```sh
 # Generate key pair (keep the .sec key offline)
-signify -G -n -p /etc/tables/dropQbsd.pub -s /root/dropQbsd.sec
+# signify -G -n -p /opt/dropQbsd/tables/dropQbsd.pub -s /root/dropQbsd.sec
 
 # Sign the critical scripts
-sha256 /usr/local/bin/dropQbsd/run_app_impl \
-       /usr/local/bin/dropQbsd/qmv \
-       /usr/local/bin/dropQbsd/qcp \
-       /usr/local/bin/dropQbsd/qimport \
-       /usr/local/bin/dropQbsd/admin/enforce_drop \
-       /usr/local/bin/dropQbsd/admin/enforce_sync \
+# sha256 /opt/dropQbsd/libexec/run_app_impl \
+         /opt/dropQbsd/bin/qmv \
+         /opt/dropQbsd/bin/qcp \
+         /opt/dropQbsd/bin/qimport \
+         /opt/dropQbsd/libexec/enforce_drop \
+         /opt/dropQbsd/libexec/enforce_sync \
     | signify -S -s /root/dropQbsd.sec -m - \
-        -x /etc/tables/dropQbsd_scripts.sha256.sig
+        -x /opt/dropQbsd/tables/dropQbsd_scripts.sha256.sig
 
 # Remove the private key — keep it offline
-rm /root/dropQbsd.sec
+# rm /root/dropQbsd.sec
 ```
 
 The `verify_integrity` cron job (installed in step 9) checks these scripts every 5 minutes and logs any modifications via `logger`.
@@ -415,7 +423,7 @@ The `verify_integrity` cron job (installed in step 9) checks these scripts every
 To verify manually:
 
 ```sh
-# /usr/local/bin/dropQbsd/admin/verify_integrity
+# /opt/dropQbsd/libexec/verify_integrity
 ```
 
 ---
@@ -424,7 +432,7 @@ To verify manually:
 
 dropQbsd works with any window manager. Two recommendations:
 
-- **XFCE** — full desktop environment, familiar for users migrating from Windows/macOS. Lightweight by modern standards, well-supported on OpenBSD. Install: `/usr/local/bin/dropQbsd/admin/pkg_add_via_pf xfce xfce-extras`
+- **XFCE** — full desktop environment, familiar for users migrating from Windows/macOS. Lightweight by modern standards, well-supported on OpenBSD. Install: `/opt/dropQbsd/admin/pkg_add_via_pf xfce xfce-extras`
 - **cwm** — OpenBSD's native stacking window manager. Minimal, keyboard-driven, zero dependencies beyond the base system. For a purer OpenBSD experience. Already installed — no packages needed.
 
 Both work with `run_app` without additional configuration. Launch apps in any domain from the same desktop — `run_app` handles the X11 cookie forwarding transparently.
@@ -447,9 +455,7 @@ We recommend two file managers, both lightweight and OpenBSD-native:
 - **Xfe** (X File Explorer) — graphical, dual-pane, familiar interface
 - **Midnight Commander (`mc`)** — terminal-based, fast, ideal for remote sessions
 
-Each domain user should use a distinct color scheme for immediate visual
-feedback about which domain you're working in. Example templates with
-coordinated colors are provided in `examples/`:
+Each domain user should use a distinct color scheme for immediate visual feedback about which domain you're working in. Example templates with coordinated colors are provided in `examples/`:
 
 | Domain | Xfe background | mc skin |
 |--------|---------------|---------|
@@ -460,15 +466,17 @@ coordinated colors are provided in `examples/`:
 Install in each domain:
 
 ```sh
-# /usr/local/bin/dropQbsd/admin/pkg_add_via_pf xfe mc
-
-Launch via run_app:
-$ /usr/local/bin/dropQbsd/run_app userdoc xfe /home/userdoc
-$ /usr/local/bin/dropQbsd/run_app userdoc mc
+# /opt/dropQbsd/admin/pkg_add_via_pf xfe mc
 ```
 
-Xfe configuration files live in `~/.config/xfe/` inside each domain's home.
-Copy the example color schemes from `examples/xfe/`` and adjust to taste.
+Launch via `run_app`:
+
+```sh
+$ /opt/dropQbsd/bin/run_app userdoc xfe /home/userdoc
+$ /opt/dropQbsd/bin/run_app userdoc mc
+```
+
+Xfe configuration files live in `~/.config/xfe/` inside each domain's home. Copy the example color schemes from `examples/xfe/` and adjust to taste.
 
 ---
 
@@ -481,34 +489,38 @@ After a full installation, your system will have:
 ├── pf.conf                    # Firewall rules (from etc/pf.conf)
 ├── doas.conf                  # Privilege escalation (from etc/doas.conf)
 ├── profile                    # Shell profile (from etc/profile)
-├── tables/
-│   ├── mailserver_hosts       # Mail server hostnames
-│   ├── services_hosts         # Service IPs and hostnames
-│   └── updates_ips            # Fastly CDN blocks (auto-generated)
+└── tables/
+    ├── mailserver_hosts       # Mail server hostnames
+    ├── services_hosts         # Service IPs and hostnames
+    └── updates_ips            # Fastly CDN blocks (auto-generated)
 
-/usr/local/bin/dropQbsd/
-├── run_app                    # setuid blind gate (compiled)
-├── run_app_impl               # Launch logic (ksh)
-├── run_app_wrapper.c          # C source (reference)
-├── qmv                        # Move files into drop zone
-├── qcp                        # Copy files into drop zone
-├── qimport                    # Import files from drop zone
-├── site_menu                  # Password manager launcher
-├── export_sites_to_Drop.sh    # Website archival
-├── export_mail_to_drop        # Mail archival
-├── pull_sites_from_drop       # Website import
-├── pull_mail_from_Drop        # Mail import
-└── admin/
-    ├── enforce_drop           # Drop zone policing
-    ├── enforce_sync           # Sync directory sanitization
-    ├── ensure_updates_table   # Populate <updates> PF table
-    ├── pkg_add_via_pf         # Package management
-    ├── syspatch_via_pf        # Security patches
-    ├── sysupgrade_via_pf      # Major release upgrade
-    ├── update_openbsd_via_pf  # Full system update
-    ├── update_mailserver_table # Mail server PF table
-    ├── update_services_table  # Services PF table
-    └── verify_integrity       # Script integrity check
+/opt/dropQbsd/
+├── bin/                       # User-facing commands
+│   ├── run_app                # setuid blind gate (compiled)
+│   ├── qmv                    # Move files into drop zone
+│   ├── qcp                    # Copy files into drop zone
+│   ├── qimport                # Import files from drop zone
+│   └── site_menu              # Password manager launcher
+├── libexec/                   # Internal logic (cron, export/pull, enforcement)
+│   ├── run_app_impl           # Launch logic (ksh)
+│   ├── enforce_drop           # Drop zone policing
+│   ├── enforce_sync           # Sync directory sanitization
+│   ├── export_www_to_drop     # Website archival
+│   ├── export_mail_to_drop    # Mail archival
+│   ├── pull_www_from_drop     # Website import
+│   ├── pull_mail_from_drop    # Mail import
+│   ├── ensure_updates_table   # Populate <updates> PF table
+│   ├── update_mailserver_table # Mail server PF table
+│   ├── update_services_table  # Services PF table
+│   └── verify_integrity       # Script integrity check
+├── admin/                     # System administration tools
+│   ├── pkg_add_via_pf         # Package management
+│   ├── syspatch_via_pf        # Security patches
+│   ├── sysupgrade_via_pf      # Major release upgrade
+│   └── update_openbsd_via_pf  # Full system update
+├── src/
+│   └── run_app_wrapper.c      # C source (reference)
+└── tables/                    # Integrity verification keys
 
 /home/
 ├── drop/                      # Exchange zone (root:drop, 770)
@@ -521,3 +533,5 @@ After a full installation, your system will have:
 └── userdoc/                   # Document domain home (700)
     └── Sync/                  # Syncthing root (optional)
 ```
+
+
