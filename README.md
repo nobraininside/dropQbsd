@@ -1,8 +1,3 @@
----
-
-## `README.md`
-
-```markdown
 # dropQbsd
 
 > Compartmentalization without virtualization. Just Unix, done right.
