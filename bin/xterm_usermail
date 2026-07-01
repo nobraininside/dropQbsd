@@ -1,0 +1,13 @@
+#!/bin/ksh
+# ==========================================================
+#  dropQbsd — xterm_usermail
+#
+#  Opens an xterm as usermail with the dropQbsd document
+#  domain color scheme (darkorchid3 background)
+#
+#  Path: /opt/dropQbsd/bin/xterm_usermail
+#  Permissions: chmod 755, root:wheel
+# ==========================================================
+
+/opt/dropQbsd/bin/run_app usermail xterm -bg darkorchid3 -fg white -fa "DejaVu Sans Mono" -fs 11 -u8 -e ksh -c "cd /home/usermail && ENV=~/.kshrc exec ksh" "$@"
+
