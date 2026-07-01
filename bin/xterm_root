@@ -1,0 +1,13 @@
+#!/bin/ksh
+# ==========================================================
+#  dropQbsd — xterm_root
+#
+#  Opens an xterm as root with the dropQbsd document
+#  domain color scheme (darkred background)
+#
+#  Path: /opt/dropQbsd/bin/xterm_root
+#  Permissions: chmod 755, root:wheel
+# ==========================================================
+
+exec xterm -bg darkred -fg white -fa "DejaVu Sans Mono" -fs 11 -u8 -c "cd /root && ENV=~/.kshrc exec ksh" -e su
+
