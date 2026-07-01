@@ -20,10 +20,10 @@
 #  only — this keeps the conductor (user) from needing
 #  write access to the drop zone.
 #
-#  Path: /usr/local/bin/dropQbsd/admin/enforce_drop
+#  Path: /opt/dropQbsd/libexec/enforce_drop
 #  Permissions: chmod 700, root:wheel
 #
-#  Cron: * * * * * /usr/local/bin/dropQbsd/admin/enforce_drop
+#  Cron: * * * * * /opt/dropQbsd/libexec/enforce_drop
 #
 #  Note: OpenBSD ksh has no 'dotglob'. We iterate over
 #  both '*' and '.*' to catch dotfiles, skipping '.' and
@@ -182,26 +182,27 @@ done
 #-----------------------------------------------------------------------------
 # 2. EXPORT DIRECTORY SANITIZATION
 #-----------------------------------------------------------------------------
+# Rotation happens FIRST — before chown/chmod — so that mtime is not
+# reset by permission fixes, which would prevent files from ever aging out.
 for exdir in "$DROP_DIR/userweb_export" "$DROP_DIR/usermail_export"; do
     if [[ ! -d "$exdir" ]]; then
         continue
     fi
 
-    # Enforce ownership: root:drop
-    chown -R root:drop "$exdir" 2>/dev/null
+    # Rotate old archives
+    find "$exdir" -type f -name 'www_*.tar.gz' -mmin +120 -delete 2>/dev/null
+    find "$exdir" -type f -name 'mail_*.tar.gz' -mmin +120 -delete 2>/dev/null
+
+    # Fix ownership (only files that need it — preserves mtime on clean files)
+    find "$exdir" \( ! -user root -o ! -group drop \) -exec chown root:drop {} + 2>/dev/null
 
     # Enforce SGID and permissions on directories (2770)
     find "$exdir" -type d ! -perm 2770 -exec chmod 2770 {} + 2>/dev/null
 
     # Enforce read-only permissions on files (440)
     find "$exdir" -type f ! -perm 440 -exec chmod 440 {} + 2>/dev/null
-
-    # Rotate old website archives (> 1 day)
-    find "$exdir" -type f -name 'www_*.tar.gz' -mmin +120 -delete 2>/dev/null
-
-    # Rotate old mail archives (> 2 hours)
-    find "$exdir" -type f -name 'mail_*.tar.gz' -mmin +120 -delete 2>/dev/null
 done
+
 
 #-----------------------------------------------------------------------------
 # 3. LOG SUMMARY (only if something happened)
