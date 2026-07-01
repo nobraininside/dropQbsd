@@ -12,10 +12,10 @@
 #
 #  Hostnames are read from /etc/tables/mailserver_hosts.
 #
-#  Path: /usr/local/bin/dropQbsd/admin/update_mailserver_table
+#  Path: /opt/dropQbsd/libexec/update_mailserver_table
 #  Permissions: chmod 700, root:wheel
 #
-#  Cron: */15 * * * * /usr/local/bin/dropQbsd/admin/update_mailserver_table
+#  Cron: */15 * * * * /opt/dropQbsd/libexec/update_mailserver_table
 # ==========================================================
 
 HOSTS_FILE="/etc/tables/mailserver_hosts"
