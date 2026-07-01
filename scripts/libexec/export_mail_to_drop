@@ -10,7 +10,7 @@
 #  directory is owned by root:drop, so usermail cannot
 #  chmod files there.
 #
-#  Path: /usr/local/bin/dropQbsd/export_mail_to_drop
+#  Path: /opt/dropQbsd/libexec/export_mail_to_drop
 #  Permissions: chmod 755, root:wheel
 #
 #  Usage: export_mail_to_drop (run as usermail)
@@ -77,3 +77,4 @@ fi
 find "$DST" -type f -name 'mail_*.tar.gz' -mmin +120 -delete 2>/dev/null
 
 echo "Export completed: $FILENAME"
+
