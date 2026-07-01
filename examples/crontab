@@ -1,0 +1,37 @@
+#  root crontab
+# All cron jobs run as root. Domain-specific jobs use su -l to switch
+# to the appropriate user. There is no per-user  everything
+# is managed centrally for auditability and simplicity.
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/opt/dropQbsd/bin
+SHELL=/bin/sh
+HOME=/root
+
+# --- OpenBSD system maintenance ---
+0       *       *       *       *       /usr/bin/newsyslog
+30      1       *       *       *       /bin/sh /etc/daily
+30      3       *       *       6       /bin/sh /etc/weekly
+30      5       1       *       *       /bin/sh /etc/monthly
+
+# --- dropQbsd: drop zone and sync enforcement ---
+*       *       *       *       *       /opt/dropQbsd/libexec/enforce_drop
+*       *       *       *       *       /opt/dropQbsd/libexec/enforce_sync
+
+# --- dropQbsd: PF table updates ---
+*/15    *       *       *       *       /opt/dropQbsd/libexec/update_mailserver_table
+*/5     *       *       *       *       /opt/dropQbsd/libexec/update_services_table
+
+# --- dropQbsd: integrity verification ---
+*/5     *       *       *       *       /opt/dropQbsd/libexec/verify_integrity
+
+# --- dropQbsd: mail archival (daily at 20:10) ---
+10      20      *       *       *       su -l usermail -c /opt/dropQbsd/libexec/export_mail_to_drop > /dev/null 2>&1
+
+# --- dropQbsd: website archival (every 2 hours, 8:20:00) ---
+0       8,10,12,14,16,18,20 * * *     su -l userweb -c /opt/dropQbsd/libexec/export_www_to_drop > /dev/null 2>&1
+
+# --- dropQbsd: mail pull (15 min after export) ---
+25      20      *       *       *       su -l userdoc -c /opt/dropQbsd/libexec/pull_mail_from_drop > /dev/null 2>&1
+
+# --- dropQbsd: website pull (15 min after each export) ---
+15      8,10,12,14,16,18,20 * * *     su -l userdoc -c /opt/dropQbsd/libexec/pull_www_from_drop > /dev/null 2>&1 
