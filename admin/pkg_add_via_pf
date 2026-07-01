@@ -7,14 +7,14 @@
 #  with mirror IPs, runs pkg_add, and leaves the table
 #  populated (harmless on an isolated system).
 #
-#  Path: /usr/local/bin/dropQbsd/admin/pkg_add_via_pf
+#  Path: /opt/dropQbsd/admin/pkg_add_via_pf
 #  Permissions: chmod 700, root:wheel
 #
 #  Usage: pkg_add_via_pf pkg1 [pkg2 ...]
 #         pkg_add_via_pf -u          # update all packages
 # ==========================================================
 
-ENSURE_SCRIPT="/usr/local/bin/dropQbsd/admin/ensure_updates_table"
+ENSURE_SCRIPT="/opt/dropQbsd/libexec/ensure_updates_table"
 LOGFILE="/var/log/pkg_add_pf.log"
 
 #-----------------------------------------------------------------------------
