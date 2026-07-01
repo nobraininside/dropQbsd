@@ -11,7 +11,7 @@
 #  to the drop zone. Files are removed after the abandonment
 #  timeout (default: 30 minutes).
 #
-#  Path: /usr/local/bin/dropQbsd/qimport
+#  Path: /opt/dropQbsd/bin/qimport
 #  Permissions: chmod 755, root:wheel
 #
 #  Usage: qimport <file_or_directory_in_drop> [destination]
