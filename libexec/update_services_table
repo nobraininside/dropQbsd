@@ -1,0 +1,65 @@
+#!/bin/ksh
+# ==========================================================
+#  dropQbsd — update_services_table
+#
+#  Populates the <services> PF table from
+#  /etc/tables/services_hosts. Supports both static IPs
+#  and hostnames (prefixed with @, resolved via userweb).
+#
+#  Root never touches the network directly — DNS
+#  resolution is delegated to userweb via su.
+#
+#  Uses host(1) from the OpenBSD base system.
+#
+#  Format:
+#    # Comments
+#    37.58.52.209           # static IP
+#    @ssh.github.com        # hostname, resolved each run
+#
+#  Path: /opt/dropQbsd/libexec/update_services_table
+#  Permissions: chmod 700, root:wheel
+#
+#  Cron: */5 * * * * /opt/dropQbsd/libexec/update_services_table
+# ==========================================================
+
+CONFIG_FILE="/etc/tables/services_hosts"
+PF_TABLE="services"
+
+#-----------------------------------------------------------------------------
+# PRE-FLIGHT
+#-----------------------------------------------------------------------------
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    exit 0
+fi
+
+#-----------------------------------------------------------------------------
+# FLUSH AND REPOPULATE
+#-----------------------------------------------------------------------------
+pfctl -t "$PF_TABLE" -T flush 2>/dev/null
+
+while IFS= read -r line; do
+    [[ "$line" == \#* ]] && continue
+    [[ -z "$line" ]] && continue
+
+    line="${line%%#*}"
+    line=$(echo "$line" | sed 's/^ *//;s/ *$//')
+    [[ -z "$line" ]] && continue
+
+    if [[ "$line" == @* ]]; then
+        # Hostname entry — resolve via userweb (has DNS access)
+        HOSTNAME="${line#@}"
+        RESOLVED=$(su -l userweb -c "host '$HOSTNAME' 2>/dev/null" \
+            | sed -n 's/.* has address //p' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+        if [[ -n "$RESOLVED" ]]; then
+            for ip in $RESOLVED; do
+                pfctl -t "$PF_TABLE" -T add "$ip" 2>/dev/null
+            done
+        fi
+    else
+        # Static IP/CIDR entry — add as-is
+        pfctl -t "$PF_TABLE" -T add "$line" 2>/dev/null
+    fi
+done < "$CONFIG_FILE"
+
+
