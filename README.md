@@ -1,4 +1,3 @@
-# dropQbsd
 
 > Compartmentalization without virtualization. Just Unix, done right.
 
