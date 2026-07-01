@@ -1,6 +1,6 @@
-#!/bin/ksh
+##!/bin/ksh
 # ==========================================================
-#  dropQbsd — qmv
+#  dropQbsd - qmv
 #
 #  Moves a file or directory into the /home/drop exchange
 #  zone and sets correct permissions atomically.
@@ -21,7 +21,7 @@
 #       traverse; 440 files — read-only).
 #    6. Only then delete the original.
 #
-#  Path: /usr/local/bin/dropQbsd/qmv
+#  Path: /opt/dropQbsd/bin/qmv
 #  Permissions: chmod 755, root:wheel
 #
 #  Usage: qmv <file_or_directory>
@@ -134,6 +134,6 @@ else
 fi
 
 #-----------------------------------------------------------------------------
-# DELETE THE ORIGINAL — ONLY NOW, AFTER EVERYTHING SUCCEEDED
+# DELETE THE ORIGINAL - ONLY NOW, AFTER EVERYTHING SUCCEEDED
 #-----------------------------------------------------------------------------
 rm -rf "$TARGET"
