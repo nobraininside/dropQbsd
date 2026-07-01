@@ -7,10 +7,10 @@
 #  are owned by userdoc:userdoc with correct permissions
 #  (2770 for dirs, 660 for files).
 #
-#  Path: /usr/local/bin/dropQbsd/admin/enforce_sync
+#  Path: /opt/dropQbsd/libexec/enforce_sync
 #  Permissions: chmod 700, root:wheel
 #
-#  Cron: * * * * * /usr/local/bin/dropQbsd/admin/enforce_sync
+#  Cron: * * * * * /opt/dropQbsd/libexec/enforce_sync
 #
 #  Note: Syncthing writes to temp files and renames atomically,
 #  so races with this script are unlikely. For extra safety,
@@ -85,3 +85,4 @@ if [ "$TOTAL_WRONG" -gt 0 ]; then
 fi
 
 exit 0
+ 
