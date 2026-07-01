@@ -38,8 +38,8 @@
 #      symlink attacks — no predictable paths.
 #
 #  Paths:
-#    /usr/local/bin/dropQbsd/run_app       (setuid C wrapper)
-#    /usr/local/bin/dropQbsd/run_app_impl  (this script)
+#    /opt/dropQbsd/bin/run_app       (setuid C wrapper)
+#    /opt/dropQbsd/libexec/run_app_impl  (this script)
 #  Permissions:
 #    run_app:      4755 root:wheel
 #    run_app_impl: 0755 root:wheel
@@ -173,6 +173,7 @@ else
     APP_HOME=$(eval echo ~"$TARGET_USER")
 fi
 
+# DOWNLOADS BRIDGE (disposable mode only)
 # In disposable mode, HOME is a tmpfs that gets destroyed on exit.
 # To preserve downloaded files, symlink ~/Downloads to the real
 # /home/$TARGET_USER/Downloads so files survive browser close.
@@ -204,3 +205,4 @@ if [[ "$DISPOSABLE" -eq 1 ]]; then
 else
     rm -rf "$RUNDIR"
 fi
+
