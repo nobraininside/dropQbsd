@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — pull_mail_from_drop
+#  dropQbsd — pull_mail_from_Drop
 #
 #  Pulls the latest mail archive from the drop zone into
 #  userdoc's Sync directory. Verifies integrity and keeps
@@ -9,17 +9,17 @@
 #  Cleanup of the source archive is handled by enforce_drop
 #  on its regular rotation cycle. No sentinel is created.
 #
-#  Path: /usr/local/bin/dropQbsd/pull_mail_from_drop
+#  Path: /opt/dropQbsd/libexec/pull_mail_from_Drop
 #  Permissions: chmod 755, root:wheel
 #
-#  Usage: pull_mail_from_drop (run as userdoc)
+#  Usage: pull_mail_from_Drop (run as userdoc)
 # ==========================================================
 
 set -eu
 # set -x # for debugging
 
 SRC="/home/drop/usermail_export"
-DST="/home/userdoc/Sync/Archive"
+DST="/home/userdoc/Sync/Archivio/Archivio_email"
 
 #-----------------------------------------------------------------------------
 # PRE-FLIGHT CHECKS
@@ -82,6 +82,6 @@ fi
     fi
 )
 
-echo ">>> mail sync completed."
+echo ">>> Mail sync completed."
 
 
