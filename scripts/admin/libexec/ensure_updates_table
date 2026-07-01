@@ -12,7 +12,7 @@
 #  DNS resolution for custom mirrors is delegated to
 #  userweb — root never touches the network directly.
 #
-#  Path: /usr/local/bin/dropQbsd/admin/ensure_updates_table
+#  Path: /opt/dropQbsd/libexec/ensure_updates_table
 #  Permissions: chmod 700, root:wheel
 # ==========================================================
 
