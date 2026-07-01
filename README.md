@@ -1,3 +1,8 @@
+---
+
+## `README.md`
+
+```markdown
 # dropQbsd
 
 > Compartmentalization without virtualization. Just Unix, done right.
@@ -44,7 +49,7 @@ No domain can modify files once placed (enforced by 440 permissions). Cleanup is
 
 1. `qmv` moves a file into `/home/drop` via an atomic staging directory. Permissions are locked before the file is visible to other domains.
 2. `qcp` copies a file into `/home/drop` without deleting the original.
-3. `qimport` (run by `user`) copies the file out into `~/Downloads`.
+3. `qimport` copies the file out into `~/Downloads`.
 4. `enforce_drop` removes abandoned files after 30 minutes. No sentinels, no domain write access to the drop zone — cleanup is purely time-based.
 
 ### The Conductor — `run_app` Architecture
@@ -53,9 +58,9 @@ No domain can modify files once placed (enforced by 440 permissions). Cleanup is
 
 | File | Type | Role |
 |------|------|------|
-| `run_app` | Compiled binary (setuid root) | Immutable gate — 10 lines of C, no logic, no attack surface |
-| `run_app_impl` | ksh script | All the logic — maintainable without recompilation |
-| `run_app_wrapper.c` | C source | Kept for reference; only needed if OpenBSD ABI breaks |
+| `bin/run_app` | Compiled binary (setuid root) | Immutable gate — 10 lines of C, no logic, no attack surface |
+| `libexec/run_app_impl` | ksh script | All the logic — maintainable without recompilation |
+| `src/run_app_wrapper.c` | C source | Kept for reference; only needed if OpenBSD ABI breaks |
 
 **How it works:**
 
@@ -70,9 +75,11 @@ The binary is the **blind gate**: it can do exactly one thing — call `run_app_
 **Disposable mode** mounts a tmpfs in RAM for the app's home directory. When the app exits, the tmpfs is unmounted and everything is destroyed. Nothing survives. Ideal for browsers and untrusted files.
 
 ```sh
-$ /usr/local/bin/dropQbsd/run_app --disposable userweb qutebrowser --temp-basedir
-$ /usr/local/bin/dropQbsd/run_app --disposable 1G userweb chromium https://example.com
+$ /opt/dropQbsd/bin/run_app --disposable userweb qutebrowser --temp-basedir
+$ /opt/dropQbsd/bin/run_app --disposable 1G userweb chromium https://example.com
 ```
+
+Downloads made in disposable mode are bridged to the real `/home/$USER/Downloads` via symlink — files survive browser exit.
 
 ### Network Isolation
 
@@ -90,7 +97,7 @@ Service IPs and mail server IPs are managed dynamically via PF tables, populated
 
 ```
 usermail → export_mail_to_drop → usermail_export → pull_mail_from_drop → userdoc (1 backup)
-userweb  → export_www_to_drop → userweb_export  → pull_www_from_drop  → userdoc (3 backups)
+userweb  → export_www_to_drop  → userweb_export  → pull_www_from_drop  → userdoc (3 backups)
 ```
 
 Export files are `root:drop 440` — no domain user can modify them. Integrity verified at each step.
@@ -99,7 +106,7 @@ Export files are `root:drop 440` — no domain user can modify them. Integrity v
 
 - **Compartmentalization without virtualization.** Same security model as Qubes, zero overhead.
 - **Blind-gate privilege escalation.** `run_app` is a 10-line setuid binary that can only call `run_app_impl`. Logic stays in auditable ksh. Attack surface is frozen.
-- **Disposable browsers.** tmpfs-backed, nothing survives exit. No persistent profiles.
+- **Disposable browsers.** tmpfs-backed, nothing survives exit. No persistent profiles. Downloads survive via symlink bridge.
 - **Automated archival.** Email and websites compressed, verified, pulled across domains on schedule.
 - **Quarantine with audit trail.** Policy violations are isolated with an explanation ticket, not silently accepted.
 - **Root web access on-demand.** `ensure_updates_table` populates the PF table, `pkg_add_via_pf` and `syspatch_via_pf` do their job. No telemetry. No background phoning home.
@@ -168,19 +175,19 @@ dropQbsd is fully functional with just the base system. Several optional compone
 **Copy a file into the drop zone (original stays in place):**
 
 ```sh
-$ /usr/local/bin/dropQbsd/qcp ~/document.pdf
+$ qcp ~/document.pdf
 ```
 
 **Move a file into the drop zone (original is deleted):**
 
 ```sh
-$ /usr/local/bin/dropQbsd/qmv ~/document.pdf
+$ qmv ~/document.pdf
 ```
 
 **Import from the drop zone into ~/Downloads:**
 
 ```sh
-$ /usr/local/bin/dropQbsd/qimport document.pdf
+$ qimport document.pdf
 ```
 
 ### Launching Apps in Domains
@@ -188,61 +195,61 @@ $ /usr/local/bin/dropQbsd/qimport document.pdf
 **Disposable browser (tmpfs-backed, nothing survives):**
 
 ```sh
-$ /usr/local/bin/dropQbsd/run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir
+$ run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir
 ```
 
 **Disposable browser with custom tmpfs size (for heavy sessions):**
 
 ```sh
-$ /usr/local/bin/dropQbsd/run_app --disposable 1G userweb /usr/local/bin/qutebrowser --temp-basedir
+$ run_app --disposable 1G userweb /usr/local/bin/qutebrowser --temp-basedir
 ```
 
 **Open a site from the site menu (password auto-copied):**
 
 ```sh
-$ /usr/local/bin/dropQbsd/site_menu
+$ site_menu
 ```
 
 **Mail client in its isolated domain:**
 
 ```sh
-$ /usr/local/bin/dropQbsd/run_app usermail /usr/local/bin/claws-mail
+$ run_app usermail /usr/local/bin/claws-mail
 ```
 
 **File manager for documents:**
 
 ```sh
-$ /usr/local/bin/dropQbsd/run_app userdoc /usr/local/bin/thunar /home/userdoc
+$ run_app userdoc /usr/local/bin/thunar /home/userdoc
 ```
 
 **Tip:** Add these aliases to `~/.profile`:
 
 ```sh
-alias run='/usr/local/bin/dropQbsd/run_app'
-alias runweb='/usr/local/bin/dropQbsd/run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir'
+alias run='/opt/dropQbsd/bin/run_app'
+alias runweb='/opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir'
 ```
 
-Note: no `doas` prefix — `run_app` is setuid root, so `user` invokes it directly.
+Note: no `doas` prefix — `run_app` is setuid root, so `user` invokes it directly. Commands in `/opt/dropQbsd/bin/` are available to all users via PATH.
 
 ### Archiving
 
 **Export websites (as userweb):**
 
 ```sh
-$ /usr/local/bin/dropQbsd/export_www_to_drop
+$ export_www_to_drop
 ```
 
 **Export mail (as usermail):**
 
 ```sh
-$ /usr/local/bin/dropQbsd/export_mail_to_drop
+$ export_mail_to_drop
 ```
 
 **Pull into document storage (as userdoc):**
 
 ```sh
-$ /usr/local/bin/dropQbsd/pull_www_from_drop
-$ /usr/local/bin/dropQbsd/pull_mail_from_drop
+$ pull_www_from_drop
+$ pull_mail_from_drop
 ```
 
 ### System Updates
@@ -250,25 +257,25 @@ $ /usr/local/bin/dropQbsd/pull_mail_from_drop
 **Full update (patches + firmware + packages + orphan cleanup):**
 
 ```sh
-# /usr/local/bin/dropQbsd/admin/update_openbsd_via_pf
+# /opt/dropQbsd/admin/update_openbsd_via_pf
 ```
 
 **Security patches only:**
 
 ```sh
-# /usr/local/bin/dropQbsd/admin/syspatch_via_pf
+# /opt/dropQbsd/admin/syspatch_via_pf
 ```
 
 **Install a specific package:**
 
 ```sh
-# /usr/local/bin/dropQbsd/admin/pkg_add_via_pf firefox
+# /opt/dropQbsd/admin/pkg_add_via_pf firefox
 ```
 
 **Major release upgrade:**
 
 ```sh
-# /usr/local/bin/dropQbsd/admin/sysupgrade_via_pf
+# /opt/dropQbsd/admin/sysupgrade_via_pf
 ```
 
 ### Monitoring
@@ -297,7 +304,7 @@ $ tail /var/log/system_update_pf.log
 **Integrity verification:**
 
 ```sh
-# /usr/local/bin/dropQbsd/admin/verify_integrity
+# /opt/dropQbsd/libexec/verify_integrity
 ```
 
 ---
@@ -310,10 +317,13 @@ $ tail /var/log/system_update_pf.log
 | ------ | ------ | ------- |
 | `qmv` | Any user | Move file/directory into `/home/drop` via atomic staging, set group and permissions |
 | `qcp` | Any user | Copy file/directory into `/home/drop` without deleting the original |
-| `qimport` | user | Copy from drop zone to `~/Downloads` |
+| `qimport` | Any user | Copy from drop zone to `~/Downloads` |
 | `run_app` | user (setuid root) | Blind-gate binary. Escalates to root, execs `run_app_impl`. The only privileged entry point `user` can touch. |
 | `run_app_impl` | root (via `run_app`) | ksh script with all launch logic — X11 cookie, runtime dir, tmpfs, `su -l`. Editable without recompilation. |
 | `run_app_wrapper.c` | — (source only) | 10-line C source. Kept for reference; only needed if OpenBSD ABI breaks. |
+
+Hai ragione, il README si è tagliato. Ecco la parte mancante, dalla sezione "Export/Import Pipeline" in poi:
+
 
 ### Export/Import Pipeline
 
@@ -356,9 +366,9 @@ $ tail /var/log/system_update_pf.log
 
 ### Recovery
 
-The entire system state is in four places:
+The entire system state is in a few places:
 
-- **Scripts** in `/usr/local/bin/dropQbsd/`
+- **Scripts** in `/opt/dropQbsd/`
 - **Users and groups** in `/etc/passwd`, `/etc/group`
 - **PF rules** in `/etc/pf.conf`
 - **PF table configs** in `/etc/tables/`
@@ -367,7 +377,7 @@ The entire system state is in four places:
 **To rebuild from scratch:**
 
 - Install OpenBSD
-- Copy the scripts
+- Copy the scripts to `/opt/dropQbsd/`
 - Run the user/group creation commands
 - Compile the `run_app` blind gate and set the setuid bit
 - Copy `pf.conf` and reload
@@ -440,8 +450,9 @@ dropQbsd offers a different path: an auditable, telemetry-free, compartmentalize
 
 ## License
 
-ISC. See [LICENSE](https://github.com/nobraininside/dropQbsd/blob/main/LICENSE).
+ISC. See [LICENSE](LICENSE).
 
-## Technical deep-dive: 
+## Technical deep-dive
+
 See [dropQbsd - Compartmentalization without virtualization](https://blog.nicolabaudo.fr/dropqbsd-compartmentalization-without-virtualization/).
-```
+
