@@ -6,13 +6,13 @@
 #  PF ruleset. Populates the <updates> table, runs syspatch,
 #  flushes the table on exit to restore default-deny for root.
 #
-#  Path: /usr/local/bin/dropQbsd/admin/syspatch_via_pf
+#  Path: /opt/dropQbsd/admin/syspatch_via_pf
 #  Permissions: chmod 700, root:wheel
 #
 #  Usage: syspatch_via_pf
 # ==========================================================
 
-ENSURE_SCRIPT="/usr/local/bin/dropQbsd/admin/ensure_updates_table"
+ENSURE_SCRIPT="/opt/dropQbsd/libexec/ensure_updates_table"
 LOGFILE="/var/log/syspatch_pf.log"
 FLUSH_ON_EXIT=1   # Set to 0 to keep the <updates> table populated after run
 
@@ -77,3 +77,4 @@ fi
 
 log "=== syspatch_via_pf finished ==="
 exit $RC
+
