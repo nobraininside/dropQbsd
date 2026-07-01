@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — export_sites_to_drop
+#  dropQbsd — export_www_to_drop
 #
 #  Compresses the userweb www directory and places the
 #  archive in /home/drop/userweb_export for archival by
@@ -11,7 +11,7 @@
 #  directory is owned by root:drop, so userweb cannot
 #  chmod files there.
 #
-#  Path: /usr/local/bin/dropQbsd/export_www_to_drop
+#  Path: /opt/dropQbsd/libexec/export_www_to_drop
 #  Permissions: chmod 755, root:wheel
 #
 #  Usage: export_www_to_drop [-v]   (run as userweb)
@@ -86,3 +86,4 @@ fi
 find "$DST" -type f -name 'www_*.tar.gz' -mtime +1 -delete 2>/dev/null
 
 msg "Export completed successfully."
+
