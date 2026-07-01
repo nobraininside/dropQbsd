@@ -9,7 +9,7 @@
 #  Cleanup of the source archive is handled by enforce_drop
 #  on its regular rotation cycle. No sentinel is created.
 #
-#  Path: /usr/local/bin/dropQbsd/pull_www_from_drop
+#  Path: /opt/dropQbsd/libexec/pull_www_from_drop
 #  Permissions: chmod 755, root:wheel
 #
 #  Usage: pull_www_from_drop (run as userdoc)
@@ -19,7 +19,7 @@ set -eu
 # set -x # for debugging
 
 SRC="/home/drop/userweb_export"
-DST="/home/userdoc/Sync/Archive"
+DST="/home/userdoc/Sync/Archivio/Archivio_siti"
 
 #-----------------------------------------------------------------------------
 # PRE-FLIGHT CHECKS
