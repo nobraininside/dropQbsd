@@ -11,7 +11,7 @@
 #  The <updates> table is populated once for all steps
 #  and flushed on exit to restore default-deny for root.
 #
-#  Path: /usr/local/bin/dropQbsd/admin/update_openbsd_via_pf
+#  Path: /opt/dropQbsd/admin/update_openbsd_via_pf
 #  Permissions: chmod 700, root:wheel
 #
 #  Usage: update_openbsd_via_pf
@@ -20,8 +20,8 @@
 #        For release upgrades, run sysupgrade_via_pf.
 # ==========================================================
 
-ENSURE_SCRIPT="/usr/local/bin/dropQbsd/admin/ensure_updates_table"
-PKGADD_SCRIPT="/usr/local/bin/dropQbsd/admin/pkg_add_via_pf"
+ENSURE_SCRIPT="/opt/dropQbsd/libexec/ensure_updates_table"
+PKGADD_SCRIPT="/opt/dropQbsd/admin/pkg_add_via_pf"
 LOGFILE="/var/log/system_update_pf.log"
 FLUSH_ON_EXIT=1
 
@@ -136,3 +136,4 @@ log "Full log: $LOGFILE"
 log "----------------------------------------------"
 
 exit 0
+
