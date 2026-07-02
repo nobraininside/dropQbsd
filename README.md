@@ -193,6 +193,15 @@ $ /opt/dropQbsd/bin/qimport /home/drop/document.pdf
 $ /opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir
 ```
 
+**Tip:** Each browser needs a different flag for temporary profiles:
+- `qutebrowser`: `--temp-basedir`
+- `Chromium / ungoogled-chromium`: `--temp-profile`
+- `Firefox`: `--private-window` (no persistent profile in private mode)
+
+Disposable mode already destroys everything on exit — these flags add an
+extra layer by preventing the browser from writing to disk at all during
+the session.
+
 **Disposable browser with custom tmpfs size (for heavy sessions):**
 
 ```sh
