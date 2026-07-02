@@ -30,7 +30,7 @@
 .thunar
  .frame.standard-view
   .view:selected {
-    background-color: #801B7C;  /* Falu red */
+    background-color: #00008B;  /* Dark blue */
     color: #FFFFFF;
     border-top: 1px solid transparent;
     border-bottom: 1px solid transparent;
