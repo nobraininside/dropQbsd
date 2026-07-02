@@ -185,7 +185,7 @@ $ /opt/dropQbsd/bin/qmv ~/document.pdf
 $ /opt/dropQbsd/bin/qimport /home/drop/document.pdf
 ```
 
-### Launching Apps in Domains
+### Launching Apps in Domains (as `user`)
 
 **Disposable browser (tmpfs-backed, nothing survives):**
 
