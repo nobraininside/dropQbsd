@@ -405,9 +405,9 @@ Thirty minutes. No databases to restore. No daemon state to reconstruct.
 
 ## Philosophy
 
-dropQbsd is not a distribution. It's a configuration. It doesn't fork OpenBSD — it sits on top, using tools battle-tested for decades.
+**dropQbsd** is not a distribution. It's a configuration. It doesn't fork OpenBSD — it sits on top, using tools battle-tested for decades.
 
-The goal is not to add layers of abstraction but to remove them. If Unix users and permissions already provide isolation, why add a hypervisor? If cron and find can police a shared directory, why run a daemon? If ksh and pfctl can manage network access for updates, why build a package manager wrapper? If a 10-line setuid C binary can gate privilege escalation, why give `user` a `doas` ticket to the whole system?
+The goal is not to add layers of abstraction but to remove them. If Unix users and permissions already provide isolation, why add a hypervisor? If `cron` and `find` can police a shared directory, why run a daemon? If `ksh` and `pfctl` can manage network access for updates, why build a package manager wrapper? If a 10-line setuid C binary can gate privilege escalation, why give `user` a `doas` ticket to the whole system?
 
 Complexity is the enemy of security. dropQbsd keeps it simple, auditable, and boring — exactly what you want from a security tool.
 
