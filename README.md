@@ -170,19 +170,19 @@ dropQbsd is fully functional with just the base system. Several optional compone
 **Copy a file into the drop zone (original stays in place):**
 
 ```sh
-$ qcp ~/document.pdf
+$ /opt/dropQbsd/bin/qcp ~/document.pdf
 ```
 
 **Move a file into the drop zone (original is deleted):**
 
 ```sh
-$ qmv ~/document.pdf
+$ /opt/dropQbsd/bin/qmv ~/document.pdf
 ```
 
 **Import from the drop zone into ~/Downloads:**
 
 ```sh
-$ qimport document.pdf
+$ /opt/dropQbsd/bin/qimport /home/drop/document.pdf
 ```
 
 ### Launching Apps in Domains
@@ -190,64 +190,71 @@ $ qimport document.pdf
 **Disposable browser (tmpfs-backed, nothing survives):**
 
 ```sh
-$ run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir
+$ /opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir
 ```
 
 **Disposable browser with custom tmpfs size (for heavy sessions):**
 
 ```sh
-$ run_app --disposable 1G userweb /usr/local/bin/qutebrowser --temp-basedir
+$ /opt/dropQbsd/bin/run_app --disposable 1G userweb /usr/local/bin/qutebrowser --temp-basedir
 ```
 
 **Open a site from the site menu (password auto-copied):**
 
 ```sh
-$ site_menu
+$ /opt/dropQbsd/bin/site_menu
 ```
 
 **Mail client in its isolated domain:**
 
 ```sh
-$ run_app usermail /usr/local/bin/claws-mail
+$ /opt/dropQbsd/bin/run_app usermail /usr/local/bin/claws-mail
 ```
 
 **File manager for documents:**
 
 ```sh
-$ run_app userdoc /usr/local/bin/thunar /home/userdoc
+$ /opt/dropQbsd/bin/run_app userdoc /usr/local/bin/thunar /home/userdoc
 ```
 
-**Tip:** Add these aliases to `~/.profile`:
-
+Aliases for common commands are provided in `/etc/profile` and available
+to all users:
 ```sh
 alias run='/opt/dropQbsd/bin/run_app'
 alias runweb='/opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir'
+alias runmail='/opt/dropQbsd/bin/run_app usermail /usr/local/bin/claws-mail'
+alias rundoc='/opt/dropQbsd/bin/run_app userdoc /usr/local/bin/thunar /home/userdoc'
 ```
 
 Note: no `doas` prefix — `run_app` is setuid root, so `user` invokes it directly. Commands in `/opt/dropQbsd/bin/` are available to all users via PATH.
 
 ### Archiving
 
-**Export websites (as userweb):**
+Export and pull operations are automated via root's crontab. To run them manually:
+
+**Export www (as userweb):**
 
 ```sh
-$ export_www_to_drop
+$ /opt/dropQbsd/libexec/export_www_to_drop
 ```
 
 **Export mail (as usermail):**
 
 ```sh
-$ export_mail_to_drop
+$ /opt/dropQbsd/libexec/export_mail_to_drop
 ```
 
 **Pull into document storage (as userdoc):**
 
 ```sh
-$ pull_www_from_drop
-$ pull_mail_from_drop
+$ /opt/dropQbsd/libexec/pull_www_from_drop
+$ /opt/dropQbsd/libexec/pull_mail_from_drop
 ```
 
 ### System Updates
+
+All update commands are run as root. Root has no permanent network access —
+the `<updates>` PF table is populated on demand by each script.
 
 **Full update (patches + firmware + packages + orphan cleanup):**
 
