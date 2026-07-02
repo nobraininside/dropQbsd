@@ -1,0 +1,38 @@
+/* ================================================
+ *  dropQbsd — gtk.css (userweb)
+ *
+ *  Thunar color scheme for the document domain.
+ *  Background: darkblue (#00008B).
+ *
+ *  Copy to: /home/userweb/.config/gtk-3.0/gtk.css
+ *  Permissions: chmod 600, userweb:userweb
+ * ================================================ */
+
+.thunar
+ .frame.standard-view
+  .view {
+    background-color: #00008B;  /* darkblue */
+    color: #FFFFFF;
+    padding: 14px;
+    font-size: 14px;
+}
+
+.thunar
+ .frame.standard-view
+  .view:hover {
+    background-color: #00B7EB;  /* cyan */
+    color: #FFFFFF;
+    border-top: 1px solid transparent;
+    border-bottom: 1px solid transparent;
+    background-clip: padding-box;
+}
+
+.thunar
+ .frame.standard-view
+  .view:selected {
+    background-color: #00B7EB;  /* cyan */
+    color: #FFFFFF;
+    border-top: 1px solid transparent;
+    border-bottom: 1px solid transparent;
+    background-clip: padding-box;
+}
