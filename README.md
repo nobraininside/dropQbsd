@@ -362,13 +362,16 @@ They can also be run manually by their respective domain users.
 
 ### System Updates (root only)
 
-| Script | Purpose |
-| ------ | ------- |
-| `ensure_updates_table` | Populate PF `<updates>` table with Fastly CDN blocks and custom mirrors |
-| `pkg_add_via_pf` | Install/update packages through restrictive PF; flushes `<updates>` on exit |
-| `syspatch_via_pf` | Apply security patches through restrictive PF |
-| `sysupgrade_via_pf` | Upgrade to next OpenBSD release through restrictive PF (reboots) |
-| `update_openbsd_via_pf` | Full update: syspatch + fw_update + pkg_add -u + pkg_delete -a |
+All update commands are run as root. Root has no permanent network access —
+the `<updates>` PF table is populated on demand by each script.
+
+| Script | Run by | Purpose |
+| ------ | ------ | ------- |
+| `ensure_updates_table` | root | Populate PF `<updates>` table with Fastly CDN blocks and custom mirrors |
+| `pkg_add_via_pf` | root | Install/update packages through restrictive PF; flushes `<updates>` on exit |
+| `syspatch_via_pf` | root | Apply security patches through restrictive PF |
+| `sysupgrade_via_pf` | root | Upgrade to next OpenBSD release through restrictive PF (reboots) |
+| `update_openbsd_via_pf` | root | Full update: syspatch + fw_update + pkg_add -u + pkg_delete -a |
 
 ### Integrity
 
