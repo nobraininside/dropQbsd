@@ -22,7 +22,7 @@ Each domain — web, mail, documents — runs as a dedicated user. They share no
 
 | User | Role | Network |
 |------|------|---------|
-| `user` | Conductor — orchestrates, imports/exports, administers | Minimal (updates only) |
+| `user` | Conductor — orchestrates, imports/exports, administers | None (no direct network access) |
 | `userweb` | Web browser — isolated from mail and LAN | HTTP/HTTPS only |
 | `usermail` | Email client — isolated from web | Mail servers only |
 | `userdoc` | Documents, sync, LAN storage — no direct internet | LAN + Syncthing |
