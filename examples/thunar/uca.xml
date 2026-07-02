@@ -1,65 +1,68 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
+==========================================================
   dropQbsd — Thunar Custom Actions
-  Place in: ~/.config/Thunar/uca.xml
 
   Adds right-click menu entries for:
     qimport — Import file from /home/drop into ~/Downloads
-    qcp     — Copy file into /home/drop (original stays in place)
-    qmv     — Move file into /home/drop (original is deleted)
+    qcp     — Copy file into /home/drop (original stays)
+    qmv     — Move file into /home/drop (original deleted)
 
-  Requires: dropQbsd scripts installed in /usr/local/bin/dropQbsd/
+  Place in: ~/.config/Thunar/uca.xml
+  Requires: dropQbsd scripts installed in /opt/dropQbsd/bin
+==========================================================
 -->
+
 <actions>
 <action>
-	<icon>folder-download</icon>
-	<name>qimport (Drop > Downloads)</name>
-	<submenu>dropQbsd</submenu>
-	<unique-id>1780153704581037-1</unique-id>
-	<command>/usr/local/bin/dropQbsd/qimport %f</command>
-	<description>Import from Drop to Downloads</description>
-	<range>*</range>
-	<patterns>*</patterns>
-	<startup-notify/>
-	<directories/>
-	<audio-files/>
-	<image-files/>
-	<other-files/>
-	<text-files/>
-	<video-files/>
+    <icon>folder-download</icon>
+    <name>qimport (Drop &gt; Downloads)</name>
+    <submenu>dropQbsd</submenu>
+    <unique-id>1780153704581037-1</unique-id>
+    <command>/opt/dropQbsd/bin/qimport %f</command>
+    <description>Import from Drop to Downloads</description>
+    <range>*</range>
+    <patterns>*</patterns>
+    <startup-notify/>
+    <directories/>
+    <audio-files/>
+    <image-files/>
+    <other-files/>
+    <text-files/>
+    <video-files/>
 </action>
 <action>
-	<icon>folder-publicshare</icon>
-	<name>qcp (Copy to Drop)</name>
-	<submenu>dropQbsd</submenu>
-	<unique-id>1780153802217419-2</unique-id>
-	<command>/usr/local/bin/dropQbsd/qcp %f</command>
-	<description>Copy to Drop (original stays in place)</description>
-	<range>*</range>
-	<patterns>*</patterns>
-	<startup-notify/>
-	<directories/>
-	<audio-files/>
-	<image-files/>
-	<other-files/>
-	<text-files/>
-	<video-files/>
+    <icon>folder-publicshare</icon>
+    <name>qcp (Copy to Drop)</name>
+    <submenu>dropQbsd</submenu>
+    <unique-id>1780153802217419-2</unique-id>
+    <command>/opt/dropQbsd/bin/qcp %f</command>
+    <description>Copy to Drop (original stays in place)</description>
+    <range>*</range>
+    <patterns>*</patterns>
+    <startup-notify/>
+    <directories/>
+    <audio-files/>
+    <image-files/>
+    <other-files/>
+    <text-files/>
+    <video-files/>
 </action>
 <action>
-	<icon>stock_folder-move</icon>
-	<name>qmv (Move to Drop)</name>
-	<submenu>dropQbsd</submenu>
-	<unique-id>1780153953429549-3</unique-id>
-	<command>/usr/local/bin/dropQbsd/qmv %f</command>
-	<description>Move to Drop (original is deleted)</description>
-	<range>*</range>
-	<patterns>*</patterns>
-	<startup-notify/>
-	<directories/>
-	<audio-files/>
-	<image-files/>
-	<other-files/>
-	<text-files/>
-	<video-files/>
+    <icon>stock_folder-move</icon>
+    <name>qmv (Move to Drop)</name>
+    <submenu>dropQbsd</submenu>
+    <unique-id>1780153953429549-3</unique-id>
+    <command>/opt/dropQbsd/bin/qmv %f</command>
+    <description>Move to Drop (original is deleted)</description>
+    <range>*</range>
+    <patterns>*</patterns>
+    <startup-notify/>
+    <directories/>
+    <audio-files/>
+    <image-files/>
+    <other-files/>
+    <text-files/>
+    <video-files/>
 </action>
 </actions>
