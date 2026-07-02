@@ -116,7 +116,7 @@ dropQbsd is fully functional with just the base system. Several optional compone
 - **Syncthing** — LAN file synchronization for the document domain
 - **Site Menu + pass** — password manager integration with one-click site launching
 - **Integrity verification** — cryptographic checksums via `signify(1)`
-- **Desktop environment** — XFCE or cwm, with coordinated color schemes and file managers per domain
+- **Color schemes** — coordinated skins for Midnight Commander, Xfe, Thunar and related editors per domain
 
 ---
 
