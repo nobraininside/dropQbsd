@@ -453,7 +453,7 @@ The budget shifts from remediating breaches and renewing licenses to training pe
 
 ### A Challenge to DPOs and Security Consultants
 
-If you advise clients on GDPR compliance while deploying them on Windows, ask yourself: have you implemented privacy by design, or have you implemented privacy by document? Can you audit the operating system your client entrusts with personal data? Do you know what telemetry leaves the building at 3 AM?
+If you advise clients on GDPR compliance while deploying them on Windows, macOS, or even some mainstream Linux distributions, ask yourself: have you implemented privacy by design, or have you implemented privacy by document? Can you audit the operating system your client entrusts with personal data? Do you know what telemetry leaves the building at 3 AM?
 
 If the answer to any of these is no, the paperwork is a fig leaf.
 
