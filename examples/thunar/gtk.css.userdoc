@@ -1,0 +1,38 @@
+/* ==========================================================
+ *  dropQbsd — gtk.css (userdoc)
+ *
+ *  Thunar color scheme for the document domain.
+ *  Background: dark green (#006400).
+ *
+ *  Copy to: /home/userdoc/.config/gtk-3.0/gtk.css
+ *  Permissions: chmod 600, userdoc:userdoc
+ * ========================================================== */
+
+.thunar
+ .frame.standard-view
+  .view {
+    background-color: #006400;  /* Pakistan Green (darkgreen) */
+    color: #FFFFFF;
+    padding: 14px;
+    font-size: 14px;
+}
+
+.thunar
+ .frame.standard-view
+  .view:hover {
+    background-color: #133969;  /* India Green */
+    color: #FFFFFF;
+    border-top: 1px solid transparent;
+    border-bottom: 1px solid transparent;
+    background-clip: padding-box;
+}
+
+.thunar
+ .frame.standard-view
+  .view:selected {
+    background-color: #8bafdc;  /* Taupe Gray */
+    color: #FFFFFF;
+    border-top: 1px solid transparent;
+    border-bottom: 1px solid transparent;
+    background-clip: padding-box;
+}
