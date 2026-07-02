@@ -245,13 +245,13 @@ HOME=/root
 # --- dropQbsd: mail archival (daily at 20:10) ---
 10      20      *       *       *       su -l usermail -c /opt/dropQbsd/libexec/export_mail_to_drop > /dev/null 2>&1
 
-# --- dropQbsd: website archival (every 2 hours, 8:00–20:00) ---
+# --- dropQbsd: www archival (every 2 hours, 8:00–20:00) ---
 0       8,10,12,14,16,18,20 * * *     su -l userweb -c /opt/dropQbsd/libexec/export_www_to_drop > /dev/null 2>&1
 
 # --- dropQbsd: mail pull (15 min after export) ---
 25      20      *       *       *       su -l userdoc -c /opt/dropQbsd/libexec/pull_mail_from_drop > /dev/null 2>&1
 
-# --- dropQbsd: website pull (15 min after each export) ---
+# --- dropQbsd: www pull (15 min after each export) ---
 15      8,10,12,14,16,18,20 * * *     su -l userdoc -c /opt/dropQbsd/libexec/pull_www_from_drop > /dev/null 2>&1
 ```
 
@@ -505,9 +505,9 @@ After a full installation, your system will have:
 │   ├── run_app_impl           # Launch logic (ksh)
 │   ├── enforce_drop           # Drop zone policing
 │   ├── enforce_sync           # Sync directory sanitization
-│   ├── export_www_to_drop     # Website archival
+│   ├── export_www_to_drop     # www archival
 │   ├── export_mail_to_drop    # Mail archival
-│   ├── pull_www_from_drop     # Website import
+│   ├── pull_www_from_drop     # www import
 │   ├── pull_mail_from_drop    # Mail import
 │   ├── ensure_updates_table   # Populate <updates> PF table
 │   ├── update_mailserver_table # Mail server PF table
@@ -524,7 +524,7 @@ After a full installation, your system will have:
 
 /home/
 ├── drop/                      # Exchange zone (root:drop, 770)
-│   ├── userweb_export/        # Website archives (SGID 2770)
+│   ├── userweb_export/        # www archives (SGID 2770)
 │   ├── usermail_export/       # Mail archives (SGID 2770)
 │   └── _quarantine/           # Policy violations
 ├── user/                      # Conductor home
