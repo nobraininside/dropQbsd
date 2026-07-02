@@ -333,8 +333,6 @@ $ tail /var/log/system_update_pf.log
 | `run_app_impl` | root (via `run_app`) | ksh script with all launch logic — X11 cookie, runtime dir, tmpfs, `su -l`. Editable without recompilation. |
 | `run_app_wrapper.c` | — (source only) | 10-line C source. Kept for reference; only needed if OpenBSD ABI breaks. |
 
-Hai ragione, il README si è tagliato. Ecco la parte mancante, dalla sezione "Export/Import Pipeline" in poi:
-
 
 ### Export/Import Pipeline
 
