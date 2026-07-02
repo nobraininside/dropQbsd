@@ -194,9 +194,9 @@ $ /opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/qutebrowser --te
 ```
 
 **Tip:** Each browser needs a different flag for temporary profiles:
-- `qutebrowser`: `--temp-basedir`
-- `Chromium / ungoogled-chromium`: `--temp-profile`
-- `Firefox`: `--private-window` (no persistent profile in private mode)
+- Qutebrowser: `--temp-basedir`
+- Chromium / Ungoogled-chromium: `--temp-profile`
+- Firefox: `--private-window` (no persistent profile in private mode)
 
 Disposable mode already destroys everything on exit — these flags add an
 extra layer by preventing the browser from writing to disk at all during
