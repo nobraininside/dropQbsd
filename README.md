@@ -453,7 +453,7 @@ The budget shifts from remediating breaches and renewing licenses to training pe
 
 ### A Challenge to DPOs and Security Consultants
 
-If you advise clients on GDPR compliance while deploying them on Windows, macOS, or even some mainstream Linux distributions, ask yourself: have you implemented privacy by design, or have you implemented privacy by document? Can you audit the operating system your client entrusts with personal data? Do you know what telemetry leaves the building at 3 AM?*
+If you advise clients on GDPR compliance while deploying them on Windows, macOS, or even some mainstream Linux distributions, ask yourself: have you implemented privacy by design, or have you implemented privacy by document? Can you audit the operating system your client entrusts with personal data? Do you know what telemetry leaves the building at 3 AM?¹
 
 If the answer to any of these is no, the paperwork is a fig leaf.
 
@@ -462,7 +462,7 @@ dropQbsd offers a different path: an auditable, telemetry-free, compartmentalize
 **Security is simplicity. Privacy is auditable. Accountability is provable. Anything less is a gamble dressed in legalese.**
 
 
-*\* _Yes, literally at 3 AM. Windows telemetry runs on a schedule that includes early-morning hours. It transmits hardware diagnostics, usage patterns, installed applications, and in some configurations, the content
+¹ _Yes, literally at 3 AM. Windows telemetry runs on a schedule that includes early-morning hours. It transmits hardware diagnostics, usage patterns, installed applications, and in some configurations, the content
 of documents and browsing history — all without explicit consent beyond the click-through EULA. macOS does the same via `rapportd`, `trustd`, and Transparencyd. Ubuntu collects system information via `ubuntu-report`
 and snap telemetry. None of these can be fully disabled without breaking functionality or voiding support agreements. OpenBSD ships with none of this. Zero._
 ---
