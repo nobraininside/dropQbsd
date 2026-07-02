@@ -336,9 +336,12 @@ $ tail /var/log/system_update_pf.log
 
 ### Export/Import Pipeline
 
-| Script | Run by | Purpose |
+These scripts are run automatically by root's crontab on a schedule.
+They can also be run manually by their respective domain users.
+
+| Script | Domain | Purpose |
 | ------ | ------ | ------- |
-| `export_www_to_drop` | userweb | Compress websites into `userweb_export`, verify integrity |
+| `export_www_to_drop` | userweb | Compress `~/www` into `userweb_export`, verify integrity |
 | `export_mail_to_drop` | usermail | Compress mail into `usermail_export` |
 | `pull_www_from_drop` | userdoc | Import latest site archive, verify, keep 3 backups |
 | `pull_mail_from_drop` | userdoc | Import latest mail archive, verify, keep 1 backup |
