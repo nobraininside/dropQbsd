@@ -1,0 +1,38 @@
+/* ==========================================================
+ *  dropQbsd — gtk.css (usermail)
+ *
+ *  Thunar color scheme for the document domain.
+ *  Background: darkorchid3 (#9A32CD).
+ *
+ *  Copy to: /home/usermail/.config/gtk-3.0/gtk.css
+ *  Permissions: chmod 600, usermail:usermail
+ * ========================================================== */
+
+.thunar
+ .frame.standard-view
+  .view {
+    background-color: #9a32cd;  /* darkorchid3 */
+    color: #FFFFFF;
+    padding: 15px;
+    font-size: 15px;
+}
+
+.thunar
+ .frame.standard-view
+  .view:hover {
+    background-color: #00008B;  /* Dark blue */
+    color: #FFFFFF;
+    border-top: 1px solid transparent;
+    border-bottom: 1px solid transparent;
+    background-clip: padding-box;
+}
+
+.thunar
+ .frame.standard-view
+  .view:selected {
+    background-color: #801B7C;  /* Falu red */
+    color: #FFFFFF;
+    border-top: 1px solid transparent;
+    border-bottom: 1px solid transparent;
+    background-clip: padding-box;
+}
