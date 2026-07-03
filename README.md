@@ -7,11 +7,11 @@ __  +---+  __
   dropQbsd
 ```
 
+> Compartmentalization without virtualization. Just Unix, done right.
+
 ![Status](https://img.shields.io/badge/status-beta-orange)
 ![Version](https://img.shields.io/badge/version-0.1.0-blue)
 ![License](https://img.shields.io/badge/license-ISC-green)
-
-> Compartmentalization without virtualization. Just Unix, done right.
 
 ---
 
