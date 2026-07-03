@@ -1,5 +1,9 @@
 # dropQbsd
 
+![Status](https://img.shields.io/badge/status-beta-orange)
+![Version](https://img.shields.io/badge/version-0.1.0-blue)
+![License](https://img.shields.io/badge/license-ISC-green)
+
 > Compartmentalization without virtualization. Just Unix, done right.
 
 ---
@@ -465,6 +469,14 @@ dropQbsd offers a different path: an auditable, telemetry-free, compartmentalize
 of documents and browsing history — all without explicit consent beyond the click-through EULA. macOS does the same via `rapportd`, `trustd`, and Transparencyd. Ubuntu collects system information via `ubuntu-report`
 and snap telemetry. None of these can be fully disabled without breaking functionality or voiding support agreements. OpenBSD ships with none of this. Zero.
 
+## Roadmap
+
+- [x] Desktop standalone — four domains, PF isolation, drop zone
+- [x] Disposable browser sessions (tmpfs-backed)
+- [x] Site menu with password manager integration
+- [x] Archival pipeline (email + websites → userdoc)
+- [ ] Install script (`install.sh`)
+- [ ] OpenBSD ports tree submission
 ---
 
 ## Status ##
