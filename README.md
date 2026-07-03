@@ -153,7 +153,7 @@ dropQbsd is fully functional with just the base system. Several optional compone
 | | DROPQBSD | QUBES OS |
 | -- | ---------- | -------- |
 | Isolation mechanism | Unix users + permissions | Xen hypervisor + VMs |
-| RAM baseline | 512 MB | 8 GB |
+| RAM baseline | 1 GB | 8 GB |
 | Input isolation | None (shared X11 cookie) | Full (separate X servers) |
 | Kernel isolation | None (shared kernel) | Full (separate VM kernels) |
 | Disk usage | ~2 GB (OpenBSD base) | 30+ GB (VM images) |
@@ -441,7 +441,7 @@ Mainstream operating systems fail both. They are closed-source, unauditable, lad
 | **Telemetry** | Thousands of daily callbacks | Zero |
 | **Auditability** | Closed source, trust us | Fully auditable, ~500 lines of ksh + 10 lines of C |
 | **Licensing cost** | Windows/Mac + Office + AV licenses | \$0 |
-| **Hardware lifecycle** | 5-7 years (forced obsolescence) | 10+ years (runs on 512 MB RAM) |
+| **Hardware lifecycle** | 5-7 years (forced obsolescence) | 10+ years (runs on 1 GB RAM) |
 | **Antivirus** | Mandatory, reactive, expensive | Unnecessary — compartmentalization prevents propagation |
 | **Privacy by design** | Impossible (closed source) | Inherent |
 | **Staff training** | "Don't click phishing links" | Learning a security-conscious OS — real education |
