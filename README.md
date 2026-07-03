@@ -467,11 +467,16 @@ and snap telemetry. None of these can be fully disabled without breaking functio
 
 ---
 
-## License
+## Status ##
 
-ISC. See [LICENSE](LICENSE).
+dropQbsd is in active development. It works, it's used daily, but expect sharp edges. Contributions, bug reports, and real-world testing are welcome — open an issue or send a patch.
 
-## Technical deep-dive
+## Further reading ##
 
-See [dropQbsd - Compartmentalization without virtualization](https://blog.nicolabaudo.fr/dropqbsd-compartmentalization-without-virtualization/).
+[dropQbsd — Compartmentalization without virtualization](https://blog.nicolabaudo.fr/dropqbsd-compartmentalization-without-virtualization/)
+— the architectural rationale, design decisions, and why Unix separation beats hypervisors for most threat models.
+
+## License ##
+
+ISC. See [LICENSE](/nobraininside/dropQbsd/blob/main/LICENSE).
 
