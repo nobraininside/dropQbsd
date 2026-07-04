@@ -25,13 +25,16 @@ HOME=/root
 */5     *       *       *       *       /opt/dropQbsd/libexec/verify_integrity
 
 # --- dropQbsd: mail archival (daily at 20:10) ---
+# Mail export runs at 20:10. On large mailboxes (40+ GB) compression
+# can take 90+ minutes. Pull runs at 23:00 with a 6-hour cleanup
+# timeout — safe even for the largest archives.
 10      20      *       *       *       su -l usermail -c /opt/dropQbsd/libexec/export_mail_to_drop > /dev/null 2>&1
+
+# --- dropQbsd: mail pull (daily at 23:10, after export completes) ---
+10       23      *       *       *       su -l userdoc -c /opt/dropQbsd/libexec/pull_mail_from_drop > /dev/null 2>&1
 
 # --- dropQbsd: www archival (every 2 hours, 8:20:00) ---
 0       8,10,12,14,16,18,20 * * *     su -l userweb -c /opt/dropQbsd/libexec/export_www_to_drop > /dev/null 2>&1
-
-# --- dropQbsd: mail pull (3 hours later, well after export completes) ---
-10      23      *       *       *       su -l userdoc -c /opt/dropQbsd/libexec/pull_mail_from_drop > /dev/null 2>&1
 
 # --- dropQbsd: www pull (15 min after each export) ---
 15      8,10,12,14,16,18,20 * * *     su -l userdoc -c /opt/dropQbsd/libexec/pull_www_from_drop > /dev/null 2>&1 
