@@ -3,7 +3,7 @@
 # to the appropriate user. There is no per-user  everything
 # is managed centrally for auditability and simplicity.
 
-PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/opt/dropQbsd/bin
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/opt/dropQbsd/libexec
 SHELL=/bin/sh
 HOME=/root
 
