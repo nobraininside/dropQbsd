@@ -27,11 +27,11 @@ HOME=/root
 # --- dropQbsd: mail archival (daily at 20:10) ---
 10      20      *       *       *       su -l usermail -c /opt/dropQbsd/libexec/export_mail_to_drop > /dev/null 2>&1
 
-# --- dropQbsd: website archival (every 2 hours, 8:20:00) ---
+# --- dropQbsd: www archival (every 2 hours, 8:20:00) ---
 0       8,10,12,14,16,18,20 * * *     su -l userweb -c /opt/dropQbsd/libexec/export_www_to_drop > /dev/null 2>&1
 
-# --- dropQbsd: mail pull (15 min after export) ---
-25      20      *       *       *       su -l userdoc -c /opt/dropQbsd/libexec/pull_mail_from_drop > /dev/null 2>&1
+# --- dropQbsd: mail pull (3 hours later, well after export completes) ---
+10      23      *       *       *       su -l userdoc -c /opt/dropQbsd/libexec/pull_mail_from_drop > /dev/null 2>&1
 
-# --- dropQbsd: website pull (15 min after each export) ---
+# --- dropQbsd: www pull (15 min after each export) ---
 15      8,10,12,14,16,18,20 * * *     su -l userdoc -c /opt/dropQbsd/libexec/pull_www_from_drop > /dev/null 2>&1 
