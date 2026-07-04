@@ -189,9 +189,11 @@ for exdir in "$DROP_DIR/userweb_export" "$DROP_DIR/usermail_export"; do
         continue
     fi
 
-    # Rotate old archives
-    find "$exdir" -type f -name 'www_*.tar.gz' -mmin +120 -delete 2>/dev/null
-    find "$exdir" -type f -name 'mail_*.tar.gz' -mmin +120 -delete 2>/dev/null
+    # Mail archives: delete after 6 hours (generous margin for large exports)
+    find "$exdir" -type f -name 'mail_*.tar.gz' -mmin +360 -delete 2>/dev/null
+
+    # www archives: delete after 4 hours
+    find "$exdir" -type f -name 'www_*.tar.gz' -mmin +240 -delete 2>/dev/nulll
 
     # Fix ownership (only files that need it — preserves mtime on clean files)
     find "$exdir" \( ! -user root -o ! -group drop \) -exec chown root:drop {} + 2>/dev/null
