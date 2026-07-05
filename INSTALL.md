@@ -107,19 +107,25 @@ Minimal — `user` gets no `doas` access at all:
 
 ## 6. Install System Configuration Files
 
+Before installing, back up (or remove) any local dotfiles that would
+override the system-wide configuration:
+
+```sh
+# mv ~/.profile   ~/.profile.bak
+# mv ~/.kshrc     ~/.kshrc.bak
+# mv ~/.shrc      ~/.shrc.bak
+```
+
+dropQbsd relies on a single, coherent environment across all users —
+local dotfiles will break domain isolation.
+
 ```sh
 # cp etc/pf.conf /etc/pf.conf
 # cp etc/profile /etc/profile
+# cp etc/kshrc /etc/kshrc
 ```
 
-Review the locale settings in `/etc/profile` — the example uses Italian regional formats. Adjust to your region or set all to `en_US.UTF-8`.
-
-Add dropQbsd to the PATH for all users:
-
-```sh
-# echo 'PATH="/opt/dropQbsd/bin:$PATH"' >> /etc/profile
-# echo 'export PATH' >> /etc/profile
-```
+Review the locale settings in `/etc/profile` — the example uses English for system messages and Italian for time, monetary, and numeric formats. Adjust to your region or set all to `en_US.UTF-8`. The global shell aliases and per-user prompts are configured in `/etc/kshrc`.
 
 ---
 
@@ -493,6 +499,7 @@ After a full installation, your system will have:
 ├── pf.conf                    # Firewall rules (from etc/pf.conf)
 ├── doas.conf                  # Privilege escalation (from etc/doas.conf)
 ├── profile                    # Shell profile (from etc/profile)
+├── kshrc                      # Interactive shell config (from etc/kshrc)
 └── tables/
     ├── mailserver_hosts       # Mail server hostnames
     ├── services_hosts         # Service IPs and hostnames
