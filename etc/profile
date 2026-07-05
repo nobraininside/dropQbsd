@@ -1,20 +1,36 @@
-# dropQbsd — example /etc/profile additions
+# dropQbsd — /etc/profile
 #
-# Locale settings — adjust to your region.
-export LC_ALL=it_IT.UTF-8
-export LANG=it_IT.UTF-8
+# Global login shell configuration. Sourced once at login.
+# Interactive non-login shells are handled by /etc/kshrc via ENV.
+#
+# Before enabling, back up (or remove) any local overrides
+# that would interfere with the system-wide configuration:
+#
+#   mv ~/.profile   ~/.profile.bak
+#   mv ~/.kshrc     ~/.kshrc.bak
+#   mv ~/.shrc      ~/.shrc.bak
+#
+# dropQbsd relies on a single, coherent environment across
+# all users — local dotfiles will break domain isolation.
 
-# Add dropQbsd commands to PATH for all users
+# --- Locale: system in English, time/money/numbers in Italian ---
+export LANG=en_US.UTF-8
+export LC_CTYPE=en_US.UTF-8
+export LC_COLLATE=en_US.UTF-8
+export LC_TIME=it_IT.UTF-8
+export LC_MONETARY=it_IT.UTF-8
+export LC_NUMERIC=it_IT.UTF-8
+export LESSCHARSET=utf-8
+unset LC_ALL
+
+# --- PATH ---
 PATH="/opt/dropQbsd/bin:$PATH"
 export PATH
 
-# Aliases (available to all users)
-alias run='/opt/dropQbsd/bin/run_app'
-alias runweb='/opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir'
-alias runmail='/opt/dropQbsd/bin/run_app usermail /usr/local/bin/claws-mail'
-alias rundoc='/opt/dropQbsd/bin/run_app userdoc /usr/local/bin/thunar /home/userdoc'
+# --- ENV chain: point ksh to the global kshrc ---
+export ENV=/etc/kshrc
 
-# Conductor reminder (only shown for user)
+# --- Conductor reminder (login only, user only) ---
 if [ "$(id -un)" = "user" ]; then
     echo "=== dropQbsd conductor ==="
     echo "Domains: userweb (browser) | usermail (email) | userdoc (files)"
