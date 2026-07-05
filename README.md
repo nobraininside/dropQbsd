@@ -239,16 +239,26 @@ $ /opt/dropQbsd/bin/run_app usermail /usr/local/bin/claws-mail
 $ /opt/dropQbsd/bin/run_app userdoc /usr/local/bin/thunar /home/userdoc
 ```
 
-Aliases for common commands are provided in `/etc/profile` and available
-to all users:
+Aliases for common commands are provided in `/etc/kshrc`
+(modify runweb/runmail/rundoc app according to your needs, e.g.
+claws-mail instead of thunderbird, xfe instead of thunar, etc):
+
 ```sh
+# Global (all users):
+alias qcp='/opt/dropQbsd/bin/qcp'
+alias qmv='/opt/dropQbsd/bin/qmv'
+alias qimport='/opt/dropQbsd/bin/qimport'
+
+# Conductor only (user):
 alias run='/opt/dropQbsd/bin/run_app'
 alias runweb='/opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir'
 alias runmail='/opt/dropQbsd/bin/run_app usermail /usr/local/bin/claws-mail'
 alias rundoc='/opt/dropQbsd/bin/run_app userdoc /usr/local/bin/thunar /home/userdoc'
 ```
 
-Note: no `doas` prefix — `run_app` is setuid root, so `user` invokes it directly. Commands in `/opt/dropQbsd/bin/` are available to all users via PATH.
+Note: no `doas` prefix — `run_app` is setuid root, so `user` invokes it directly. Global aliases (qcp, qmv, qimport) are available to all users; domain-launch aliases (runweb, runmail, rundoc) are available only to the conductor (user). Commands in `/opt/dropQbsd/bin/` are available to all users via PATH.
+
+
 
 ### Archiving
 
