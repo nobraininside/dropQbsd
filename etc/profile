@@ -1,10 +1,20 @@
-# dropQbsd — /etc/profile
+/etc/profile
+# ==========================================================
+# dropQbsd — profile
 #
-# Global login shell configuration. Sourced once at login.
-# Interactive non-login shells are handled by /etc/kshrc via ENV.
+# System-wide shell configuration
+# Applied at login for all users.
+# Copy to: /etc/profile
 #
-# Before enabling, back up (or remove) any local overrides
-# that would interfere with the system-wide configuration:
+# Locale notes:
+#   LANG, LC_CTYPE, and LC_COLLATE are set to en_US.UTF-8 for consistent
+#   system messages, character encoding, and sorting. LC_TIME, LC_MONETARY,
+#   and LC_NUMERIC are set to it_IT.UTF-8 in this example — adjust to your
+#   region (e.g. de_DE.UTF-8, fr_FR.UTF-8, es_ES.UTF-8) or set all to
+#   en_US.UTF-8 for full English. LC_ALL is intentionally unset to allow
+#   the per-category overrides to work.
+#
+# Before enabling, back up any local overrides:
 #
 #   mv ~/.profile   ~/.profile.bak
 #   mv ~/.kshrc     ~/.kshrc.bak
@@ -12,6 +22,7 @@
 #
 # dropQbsd relies on a single, coherent environment across
 # all users — local dotfiles will break domain isolation.
+# ==========================================================
 
 # --- Locale: system in English, time/money/numbers in Italian ---
 export LANG=en_US.UTF-8
