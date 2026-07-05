@@ -29,6 +29,13 @@ alias qimport='/opt/dropQbsd/bin/qimport'
 
 # --- Per-user configuration ---
 case "$USER" in
+    root)
+        export PS1='root@\h:\w# '
+        alias qpkg_add='/opt/dropQbsd/admin/pkg_add_via_pf'
+        alias qsyspatch='/opt/dropQbsd/admin/syspatch_via_pf'
+        alias qsysupgrade='/opt/dropQbsd/admin/sysupgrade_via_pf'
+        alias qupdate='/opt/dropQbsd/admin/update_openbsd_via_pf'
+        ;;
     user)
         alias run_app='/opt/dropQbsd/bin/run_app'
         alias runweb='/opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir'
