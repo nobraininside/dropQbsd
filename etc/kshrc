@@ -1,0 +1,48 @@
+# dropQbsd — /etc/kshrc
+#
+# Global interactive shell configuration. Sourced by every
+# interactive ksh session (login and subshells) via ENV.
+#
+# Before enabling, back up (or remove) any local overrides
+# that would interfere with the system-wide configuration:
+#
+#   mv ~/.kshrc   ~/.kshrc.bak
+#   mv ~/.shrc    ~/.shrc.bak
+#
+# Per-user customizations belong in /etc/ksh.d/<username>.kshrc
+# or ~/.kshrc.local — not in a standalone ~/.kshrc that
+# bypasses the global config.
+
+# Only run for interactive shells
+[[ $- != *i* ]] && return
+
+# --- Global environment (all users) ---
+export COLORTERM=truecolor
+export EDITOR=vi
+
+# --- Global aliases (all users) ---
+alias qcp='/opt/dropQbsd/bin/qcp'
+alias qmv='/opt/dropQbsd/bin/qmv'
+alias qimport='/opt/dropQbsd/bin/qimport'
+alias run='/opt/dropQbsd/bin/run_app'
+alias runweb='/opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir'
+alias runmail='/opt/dropQbsd/bin/run_app usermail /usr/local/bin/claws-mail'
+alias rundoc='/opt/dropQbsd/bin/run_app userdoc /usr/local/bin/thunar /home/userdoc'
+
+# --- Per-user configuration ---
+case "$USER" in
+    user)
+        alias run_app='/opt/dropQbsd/bin/run_app'
+        export PS1='user@\h:\w$ '
+        ;;
+    userdoc)
+        export PS1='userdoc@\h:\w$ '
+        ;;
+    usermail)
+        export PS1='usermail@\h:\w$ '
+        ;;
+    userweb)
+        export PS1='userweb@\h:\w$ '
+        ;;
+esac
+
