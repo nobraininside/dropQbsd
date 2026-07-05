@@ -24,15 +24,14 @@ export EDITOR=vi
 alias qcp='/opt/dropQbsd/bin/qcp'
 alias qmv='/opt/dropQbsd/bin/qmv'
 alias qimport='/opt/dropQbsd/bin/qimport'
-alias run='/opt/dropQbsd/bin/run_app'
-alias runweb='/opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir'
-alias runmail='/opt/dropQbsd/bin/run_app usermail /usr/local/bin/claws-mail'
-alias rundoc='/opt/dropQbsd/bin/run_app userdoc /usr/local/bin/thunar /home/userdoc'
 
 # --- Per-user configuration ---
 case "$USER" in
     user)
         alias run_app='/opt/dropQbsd/bin/run_app'
+        alias runweb='/opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir'
+        alias runmail='/opt/dropQbsd/bin/run_app usermail /usr/local/bin/claws-mail'
+        alias rundoc='/opt/dropQbsd/bin/run_app userdoc /usr/local/bin/thunar /home/userdoc'
         export PS1='user@\h:\w$ '
         ;;
     userdoc)
