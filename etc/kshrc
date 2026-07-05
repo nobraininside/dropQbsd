@@ -1,10 +1,11 @@
-# dropQbsd — /etc/kshrc
+# ==========================================================
+# dropQbsd — kshrc
 #
-# Global interactive shell configuration. Sourced by every
-# interactive ksh session (login and subshells) via ENV.
+# System-wide interactive shell configuration
+# Sourced by every interactive ksh session via ENV.
+# Copy to: /etc/kshrc
 #
-# Before enabling, back up (or remove) any local overrides
-# that would interfere with the system-wide configuration:
+# Before enabling, back up any local overrides:
 #
 #   mv ~/.kshrc   ~/.kshrc.bak
 #   mv ~/.shrc    ~/.shrc.bak
@@ -12,6 +13,7 @@
 # Per-user customizations belong in /etc/ksh.d/<username>.kshrc
 # or ~/.kshrc.local — not in a standalone ~/.kshrc that
 # bypasses the global config.
+# ==========================================================
 
 # Only run for interactive shells
 [[ $- != *i* ]] && return
