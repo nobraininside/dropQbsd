@@ -46,4 +46,3 @@ case "$USER" in
         export PS1='userweb@\h:\w$ '
         ;;
 esac
-
