@@ -123,6 +123,8 @@ local dotfiles will break domain isolation.
 # cp etc/pf.conf /etc/pf.conf
 # cp etc/profile /etc/profile
 # cp etc/kshrc /etc/kshrc
+# cp etc/xsession /etc/xsession
+
 # for u in user userweb usermail userdoc; do
     cp /etc/xsession /home/$u/.xsession
     chown $u:$u /home/$u/.xsession
@@ -508,7 +510,7 @@ After a full installation, your system will have:
 ├── kshrc                      # Interactive shell config (from etc/kshrc)
 ├── pf.conf                    # Firewall rules (from etc/pf.conf)
 ├── profile                    # Shell profile (from etc/profile)
-├── xsession                  # (from etc/xsession — copy to ~/.xsession)
+├── xsession                   # (from etc/xsession)
 └── tables/
     ├── mailserver_hosts       # Mail server hostnames
     ├── services_hosts         # Service IPs and hostnames
