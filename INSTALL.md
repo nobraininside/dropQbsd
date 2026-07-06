@@ -203,7 +203,7 @@ dropQbsd uses three PF tables to manage network access without exposing provider
 **Adding a hostname (resolved automatically):**
 
 ```sh
-# echo '@difesadigitale.xyz' >> /etc/tables/services_hosts
+# echo '@myhost.xyz' >> /etc/tables/services_hosts
 # /opt/dropQbsd/libexec/update_services_table
 ```
 
