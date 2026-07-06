@@ -259,6 +259,12 @@ alias rundoc='/opt/dropQbsd/bin/run_app userdoc /usr/local/bin/thunar /home/user
 Note: no `doas` prefix — `run_app` is setuid root, so `user` invokes it directly. Global aliases (qcp, qmv, qimport) are available to all users; domain-launch aliases (runweb, runmail, rundoc) are available only to the conductor (user). Commands in `/opt/dropQbsd/bin/` are available to all users via PATH.
 
 
+**Terminal in the document domain:**
+
+```sh
+$ /opt/dropQbsd/bin/xterm_userdoc
+```
+
 
 ### Archiving
 
