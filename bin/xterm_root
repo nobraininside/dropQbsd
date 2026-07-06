@@ -9,4 +9,4 @@
 #  Permissions: chmod 755, root:wheel
 # ==========================================================
 
-exec xterm -bg darkred -fg white -fa "DejaVu Sans Mono" -fs 11 -u8 -e su -c "cd /root && ENV=/etc/kshrc exec ksh"
+exec xterm -bg darkred -fg white -fa "DejaVu Sans Mono" -fs 11 -u8 -c "cd /root && ENV=/etc/kshrc exec ksh" -e su
