@@ -2,11 +2,14 @@
 # ==========================================================
 #  dropQbsd — xterm_userdoc
 #
-#  Opens an xterm as userdoc with the dropQbsd document
-#  domain color scheme (darkgreen background)
+#  Opens an xterm as userdoc with the document domain
+#  color scheme (darkgreen background).
 #
 #  Path: /opt/dropQbsd/bin/xterm_userdoc
 #  Permissions: chmod 755, root:wheel
 # ==========================================================
 
-/opt/dropQbsd/bin/run_app userdoc xterm -bg darkgreen -fg white -fa "DejaVu Sans Mono" -fs 11 -u8 -ls -e ksh -c "cd /home/userdoc && ENV=~/.kshrc exec ksh" "$@"
+/opt/dropQbsd/bin/run_app userdoc xterm \
+    -bg darkgreen -fg white \
+    -fa "DejaVu Sans Mono" -fs 11 \
+    -u8 -ls "$@"
