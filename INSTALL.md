@@ -20,6 +20,7 @@
 # usermod -G drop user
 ```
 
+Root has no permanent network access and is reached via `su -` from console or `xterm_root`. Its prompt and environment are configured in `/etc/kshrc`.
 ---
 
 ## 2. Create Directory Structure
@@ -89,7 +90,7 @@ This is the core of dropQbsd's privilege model. `run_app` is split into three fi
 
 ```sh
 # From user:
-$ /opt/dropQbsd/bin/run_app userdoc xterm
+$ /opt/dropQbsd/bin/xterm_userdoc
 ```
 
 ---
@@ -123,9 +124,17 @@ local dotfiles will break domain isolation.
 # cp etc/pf.conf /etc/pf.conf
 # cp etc/profile /etc/profile
 # cp etc/kshrc /etc/kshrc
+# for u in user userweb usermail userdoc; do
+    cp /etc/xsession /home/$u/.xsession
+    chown $u:$u /home/$u/.xsession
+done
+# cp /etc/xsession /root/.xsession
+# chown root:wheel /root/.xsession
 ```
 
 Review the locale settings in `/etc/profile` — the example uses English for system messages and Italian for time, monetary, and numeric formats. Adjust to your region or set all to `en_US.UTF-8`. The global shell aliases and per-user prompts are configured in `/etc/kshrc`.
+
+The `.xsession` file loads the system-wide environment and launches the desktop. Review the window manager line — the example uses XFCE. Adjust to your preferred WM (cwm, fvwm, etc.).
 
 ---
 
@@ -496,10 +505,11 @@ After a full installation, your system will have:
 
 ```
 /etc/
-├── pf.conf                    # Firewall rules (from etc/pf.conf)
 ├── doas.conf                  # Privilege escalation (from etc/doas.conf)
-├── profile                    # Shell profile (from etc/profile)
 ├── kshrc                      # Interactive shell config (from etc/kshrc)
+├── pf.conf                    # Firewall rules (from etc/pf.conf)
+├── profile                    # Shell profile (from etc/profile)
+├── xsession                  # (from etc/xsession — copy to ~/.xsession)
 └── tables/
     ├── mailserver_hosts       # Mail server hostnames
     ├── services_hosts         # Service IPs and hostnames
@@ -511,16 +521,20 @@ After a full installation, your system will have:
 │   ├── qmv                    # Move files into drop zone
 │   ├── qcp                    # Copy files into drop zone
 │   ├── qimport                # Import files from drop zone
-│   └── site_menu              # Password manager launcher
+│   ├── site_menu              # Password manager launcher
+│   ├── xterm_root             # Launch xterm with root color scheme
+│   ├── xterm_userdoc          # Launch xterm with userdoc color scheme
+│   ├── xterm_usermail         # Launch xterm with usermail color scheme
+│   └── xterm_userweb          # Launch xterm with userweb color scheme
 ├── libexec/                   # Internal logic (cron, export/pull, enforcement)
-│   ├── run_app_impl           # Launch logic (ksh)
 │   ├── enforce_drop           # Drop zone policing
 │   ├── enforce_sync           # Sync directory sanitization
+│   ├── ensure_updates_table   # Populate <updates> PF table
 │   ├── export_www_to_drop     # www archival
 │   ├── export_mail_to_drop    # Mail archival
 │   ├── pull_www_from_drop     # www import
 │   ├── pull_mail_from_drop    # Mail import
-│   ├── ensure_updates_table   # Populate <updates> PF table
+│   ├── run_app_impl           # Launch logic (ksh)
 │   ├── update_mailserver_table # Mail server PF table
 │   ├── update_services_table  # Services PF table
 │   └── verify_integrity       # Script integrity check
@@ -535,14 +549,14 @@ After a full installation, your system will have:
 
 /home/
 ├── drop/                      # Exchange zone (root:drop, 770)
-│   ├── userweb_export/        # www archives (SGID 2770)
 │   ├── usermail_export/       # Mail archives (SGID 2770)
+│   ├── userweb_export/        # www archives (SGID 2770)
 │   └── _quarantine/           # Policy violations
 ├── user/                      # Conductor home
-├── userweb/                   # Browser domain home (700)
-├── usermail/                  # Email domain home (700)
 └── userdoc/                   # Document domain home (700)
-    └── Sync/                  # Syncthing root (optional)
+│   └── Sync/                  # Syncthing root (optional)
+├── usermail/                  # Email domain home (700)
+├── userweb/                   # Browser domain home (700)
 ```
 
 
