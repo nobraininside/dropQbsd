@@ -20,7 +20,6 @@
 # usermod -G drop user
 ```
 
-Root has no permanent network access and is reached via `su -` from console or `xterm_root`. Its prompt and environment are configured in `/etc/kshrc`.
 ---
 
 ## 2. Create Directory Structure
