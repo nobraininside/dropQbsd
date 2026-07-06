@@ -12,4 +12,5 @@
 /opt/dropQbsd/bin/run_app usermail xterm \
     -bg darkorchid3 -fg white \
     -fa "DejaVu Sans Mono" -fs 11 \
-    -u8 -ls "$@"
+    -u8 -ls \
+    -e /bin/ksh -c 'cd /home/usermail && ENV=/etc/kshrc exec /bin/ksh' "$@"
