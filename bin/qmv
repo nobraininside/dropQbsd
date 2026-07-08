@@ -127,6 +127,10 @@ fi
 if mv "$STAGING/$NAME" "$DEST_PATH"; then
     find "$DEST_PATH" -type d -exec chmod 570 {} +
     find "$DEST_PATH" -type f -exec chmod 440 {} +
+    # Reset mtime on all files so enforce_drop doesn't delete them
+    # immediately. cp -pR preserves original mtime, which may be
+    # weeks or months old.
+    find "$DEST_PATH" -exec touch {} +
     rmdir "$STAGING" 2>/dev/null || true
 else
     echo "Error: move from staging failed. Staging left at $STAGING" >&2
