@@ -32,11 +32,12 @@
 # mkdir -p /etc/tables
 
 # chown root:drop /home/drop /home/drop/userweb_export /home/drop/usermail_export
-# chmod 770 /home/drop
+# chmod 2770 /home/drop
 # chmod 2770 /home/drop/userweb_export /home/drop/usermail_export
 # chmod 750 /home/drop/_quarantine
 # chmod 755 /etc/tables
 ```
+SGID (2770) forces the 'drop' group on all files placed here
 
 ---
 
