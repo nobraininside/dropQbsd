@@ -1,10 +1,11 @@
 # dropQbsd
 
 ```
-__  +---+  __
-  \_| Q |_/
-    +---+
-  dropQbsd
+     __  +---+  __
+       \_| Q |_/
+         +---+
+       dropQbsd
+  the flying fortress
 ```
 
 > Compartmentalization without virtualization. Just Unix, done right.
