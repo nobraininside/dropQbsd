@@ -47,7 +47,8 @@ All belong to the `drop` group. Home directories are `chmod 700` — no cross-do
 
 The **only bridge** between domains. A shared directory with strict rules:
 
-- `/home/drop` is `770 root:drop` — all domains in the `drop` group can read and place files
+- `/home/drop` is `2770 root:drop` — SGID forces the `drop` group on all
+  files, making quarantine a rare safety net rather than a daily occurrence
 - Files in transit: `440` (read-only for owner and group)
 - Directories in transit: `570` (group can traverse)
 - Export directories: SGID `2770`, owned by `root:drop`
@@ -117,7 +118,10 @@ Export files are `root:drop 440` — no domain user can modify them. Integrity v
 - **Blind-gate privilege escalation.** `run_app` is a 10-line setuid binary that can only call `run_app_impl`. Logic stays in auditable ksh. Attack surface is frozen.
 - **Disposable browsers.** tmpfs-backed, nothing survives exit. No persistent profiles. Downloads survive via symlink bridge.
 - **Automated archival.** Email and websites compressed, verified, pulled across domains on schedule.
-- **Quarantine with audit trail.** Policy violations are isolated with an explanation ticket, not silently accepted.
+- **Quarantine with audit trail.** Files with incorrect group ownership are
+  isolated with an explanation ticket. Rare in normal use (SGID on the drop
+  zone forces correct group), but catches misconfigured scripts or malicious
+  placement.
 - **Root web access on-demand.** `ensure_updates_table` populates the PF table, `pkg_add_via_pf` and `syspatch_via_pf` do their job. No telemetry. No background phoning home.
 - **Reinstallable in 30 minutes.** No databases, no daemons, no state you can't reconstruct from scripts and `/etc`.
 - **Integrity verification.** Critical scripts are checksummed and verified via `signify(1)` on a cron schedule.
@@ -192,6 +196,11 @@ $ /opt/dropQbsd/bin/qcp ~/document.pdf
 ```sh
 $ /opt/dropQbsd/bin/qmv ~/document.pdf
 ```
+While plain `cp` and `mv` also work (the drop zone's SGID ensures correct
+group ownership), `qcp` and `qmv` are preferred. They apply correct
+permissions immediately, reset file timestamps to prevent premature
+cleanup, verify the copy succeeded, and stage files atomically — the file
+only appears in the drop zone when fully written and correctly locked down.
 
 **Import from the drop zone into ~/Downloads:**
 
