@@ -84,6 +84,10 @@ STAGING="$DST/.staging.$$.$(date +%s)"
 mkdir "$STAGING"
 chmod 700 "$STAGING"          # nobody else can enter during setup
 
+# Ensure all files are readable and all directories traversable
+# before copying. cp -pR will abort on the first unreadable file.
+chmod -R u+rX "$TARGET" 2>/dev/null || true
+
 # Copy into staging
 cp -pR "$TARGET" "$STAGING/$NAME"
 
