@@ -499,6 +499,20 @@ $ /opt/dropQbsd/bin/run_app userdoc mc
 
 Xfe configuration files live in `~/.config/xfe/` inside each domain's home. Copy the example color schemes from `examples/xfe/` and adjust to taste.
 
+### VLC in userdoc
+
+MIT-SHM (X11 shared memory) is not available across user boundaries.
+VLC will decode video but fail to render frames. Force software output:
+
+```sh
+    mkdir -p /home/userdoc/.config/vlc
+    printf '[core]\nvout=x11\navcodec-hw=none\n' > /home/userdoc/.config/vlc/vlcrc
+    chown -R userdoc:drop /home/userdoc/.config
+```
+
+Works for any media player that relies on MIT-SHM or hardware acceleration.
+For mpv, use `--vo=x11 --hwdec=no`.
+
 ---
 
 ## Directory Structure Reference
