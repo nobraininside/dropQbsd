@@ -300,7 +300,7 @@ After installation, verify each domain can perform its function:
 
 ---
 
-## Optional Components
+## 11. Optional Components
 
 These are not required for dropQbsd to function. Install only what you need.
 
@@ -469,6 +469,8 @@ Both work with `run_app` without additional configuration. Launch apps in any do
 
 Set the theme per user via XFCE Settings → Appearance. This gives immediate visual feedback about which domain you're working in.
 
+---
+
 ### File Managers
 
 We recommend two file managers, both lightweight and OpenBSD-native:
@@ -499,6 +501,8 @@ $ /opt/dropQbsd/bin/run_app userdoc mc
 
 Xfe configuration files live in `~/.config/xfe/` inside each domain's home. Copy the example color schemes from `examples/xfe/` and adjust to taste.
 
+---
+
 ### VLC in userdoc
 
 MIT-SHM (X11 shared memory) is not available across user boundaries.
@@ -515,7 +519,7 @@ For mpv, use `--vo=x11 --hwdec=no`.
 
 ---
 
-## Directory Structure Reference
+## 12. Directory Structure Reference
 
 After a full installation, your system will have:
 
