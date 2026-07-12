@@ -362,6 +362,14 @@ $ tail /var/log/system_update_pf.log
 
 ---
 
+## Demo
+
+[dropQbsd in three habits](https://github.com/nobraininside/dropQbsd/raw/main/demo.mp4)
+
+Three commands. Three habits. Ten minutes. Done.
+
+---
+
 ## Scripts Reference
 
 ### Core Workflow
