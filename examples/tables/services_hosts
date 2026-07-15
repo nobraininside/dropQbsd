@@ -1,0 +1,21 @@
+# ==========================================================
+#  dropQbsd — services_hosts (example)
+#
+#  Static IPs and hostnames for the <services> PF table.
+#  Lines prefixed with @ are resolved via userweb DNS each
+#  run. Everything else is treated as a literal IP or CIDR.
+#
+#  Copy to: /etc/tables/services_hosts
+#  Permissions: chmod 644, root:wheel
+#
+#  Replace with your own provider IPs and hostnames.
+# ==========================================================
+
+# cPanel / hosting control panel
+# 198.51.100.10
+
+# GitHub SSH over port 443
+@ssh.github.com
+
+# Remote backup / rsync host
+# @rsync.example.com
