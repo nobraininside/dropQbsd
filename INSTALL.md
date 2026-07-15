@@ -48,7 +48,7 @@ SGID (2770) forces the 'drop' group on all files placed here
 Copy the repository directories to `/opt/dropQbsd/`:
 
 ```sh
-# cp -r bin libexec admin src tables /opt/dropQbsd/
+# cp -r bin libexec admin src /opt/dropQbsd/
 ```
 
 Set permissions:
