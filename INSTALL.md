@@ -17,9 +17,11 @@
 # useradd -m -G drop userweb
 # useradd -m -G drop usermail
 # useradd -m -G drop userdoc
-# usermod -G drop user
 ```
-
+Conductor user — create if missing, add to drop group if existing
+```sh
+# useradd -m -G drop user 2>/dev/null || usermod -G drop user
+```
 ---
 
 ## 2. Create Directory Structure
