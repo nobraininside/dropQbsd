@@ -420,11 +420,15 @@ dropQbsd can cryptographically verify that critical scripts have not been tamper
 
 **Setup:**
 
-```sh
-# Generate key pair (keep the .sec key offline)
-# signify -G -n -p /opt/dropQbsd/tables/dropQbsd.pub -s /root/dropQbsd.sec
+Generate a key pair (keep the .sec key offline):
 
-# Sign the critical scripts
+```sh
+# signify -G -n -p /opt/dropQbsd/tables/dropQbsd.pub -s /root/dropQbsd.sec
+```
+
+Sign the critical scripts
+
+```sh
 # sha256 /opt/dropQbsd/libexec/run_app_impl \
          /opt/dropQbsd/bin/qmv \
          /opt/dropQbsd/bin/qcp \
@@ -433,8 +437,11 @@ dropQbsd can cryptographically verify that critical scripts have not been tamper
          /opt/dropQbsd/libexec/enforce_sync \
     | signify -S -s /root/dropQbsd.sec -m - \
         -x /opt/dropQbsd/tables/dropQbsd_scripts.sha256.sig
+```
 
-# Remove the private key — keep it offline
+Remove the private key — keep it offline
+
+```sh
 # rm /root/dropQbsd.sec
 ```
 
