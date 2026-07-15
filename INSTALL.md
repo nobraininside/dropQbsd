@@ -31,7 +31,7 @@ Conductor user — create if missing, add to drop group if existing
 # mkdir -p /home/drop/userweb_export
 # mkdir -p /home/drop/usermail_export
 # mkdir -p /home/drop/_quarantine
-# mkdir -p /etc/tables
+# mkdir -p /etc/tables    # populated by dropQbsd admin scripts and manual config
 
 # chown root:drop /home/drop /home/drop/userweb_export /home/drop/usermail_export
 # chmod 2770 /home/drop
