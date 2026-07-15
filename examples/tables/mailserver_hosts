@@ -1,0 +1,16 @@
+# ==========================================================
+#  dropQbsd — mailserver_hosts (example)
+#
+#  Mail server hostnames for the <mailserver> PF table.
+#  One hostname per line. Resolved by update_mailserver_table
+#  via userweb DNS each run.
+#
+#  Copy to: /etc/tables/mailserver_hosts
+#  Permissions: chmod 644, root:wheel
+#
+#  Replace with your own mail provider hostnames.
+# ==========================================================
+
+mail.example.com
+imap.example.com
+smtp.example.com
