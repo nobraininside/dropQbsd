@@ -158,8 +158,8 @@ own providers:
 
 Edit each file:
 
-- /etc/tables/mailserver_hosts — one mail server hostname per line
-- /etc/tables/services_hosts — static IPs and hostnames (prefix hostnames with @)
+- **`/etc/tables/mailserver_hosts`** — mail server hostnames, used by `usermail`
+- **`/etc/tables/services_hosts`** — external service IPs/hostnames, used by `userweb` (prefix hostnames with `@`)
 
 Example `/etc/tables/mailserver_hosts`:
 
