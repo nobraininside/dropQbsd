@@ -146,33 +146,36 @@ The `.xsession` file loads the system-wide environment and launches the desktop.
 
 ### Mail Server IPs
 
-Create `/etc/tables/mailserver_hosts` with your mail server hostnames, one per line:
+Copy the example table files from the repository and edit them with your
+own providers:
 
 ```sh
-# Example /etc/tables/mailserver_hosts
+# cp examples/tables/mailserver_hosts /etc/tables/
+# cp examples/tables/services_hosts /etc/tables/
+# chmod 644 /etc/tables/mailserver_hosts
+# chmod 644 /etc/tables/services_hosts
+```
+
+Edit each file:
+
+- /etc/tables/mailserver_hosts — one mail server hostname per line
+- /etc/tables/services_hosts — static IPs and hostnames (prefix hostnames with @)
+
+Example `/etc/tables/mailserver_hosts`:
+
+```sh
 mail.example.com
 imap.example.com
 smtp.example.com
 ```
 
-```sh
-# chmod 644 /etc/tables/mailserver_hosts
-```
-
-### Services IPs
-
-Create `/etc/tables/services_hosts` with static IPs and hostnames (prefix hostnames with `@`):
+Example `/etc/tables/services_hosts`:
 
 ```sh
-# Example /etc/tables/services_hosts
 # Static IPs:
 198.51.100.10          # cPanel hosting
 # Hostnames (resolved each run via userweb DNS):
 @ssh.github.com        # GitHub SSH over 443
-```
-
-```sh
-# chmod 644 /etc/tables/services_hosts
 ```
 
 ### Updates IPs (auto-generated)
