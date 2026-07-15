@@ -34,12 +34,11 @@ Conductor user — create if missing, add to drop group if existing
 # mkdir -p /etc/tables    # populated by dropQbsd admin scripts and manual config
 
 # chown root:drop /home/drop /home/drop/userweb_export /home/drop/usermail_export
-# chmod 2770 /home/drop
+# chmod 2770 /home/drop    # SGID (2770) forces the 'drop' group on all files placed here
 # chmod 2770 /home/drop/userweb_export /home/drop/usermail_export
 # chmod 750 /home/drop/_quarantine
 # chmod 755 /etc/tables
 ```
-SGID (2770) forces the 'drop' group on all files placed here
 
 ---
 
@@ -573,7 +572,7 @@ After a full installation, your system will have:
 └── tables/                    # Integrity verification keys
 
 /home/
-├── drop/                      # Exchange zone (root:drop, 770)
+├── drop/                      # Exchange zone (root:drop, 2770)
 │   ├── usermail_export/       # Mail archives (SGID 2770)
 │   ├── userweb_export/        # www archives (SGID 2770)
 │   └── _quarantine/           # Policy violations
@@ -581,7 +580,7 @@ After a full installation, your system will have:
 └── userdoc/                   # Document domain home (700)
 │   └── Sync/                  # Syncthing root (optional)
 ├── usermail/                  # Email domain home (700)
-├── userweb/                   # Browser domain home (700)
+└── userweb/                   # Browser domain home (700)
 ```
 
 
