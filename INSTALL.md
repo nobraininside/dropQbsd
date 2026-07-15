@@ -216,21 +216,16 @@ Hostnames prefixed with `@` are resolved via `userweb` DNS each time the update 
 
 ---
 
-## 8. Reload the Firewall and update tables
+## 8. Reload the Firewall and populate tables
 
 ```sh
 # pfctl -f /etc/pf.conf
 ```
 
-Run the services table update:
+Populate the services and mailserver tables::
 
 ```sh
 # /opt/dropQbsd/libexec/update_services_table
-```
-
-Run the mail server table update:
-
-```sh
 # /opt/dropQbsd/libexec/update_mailserver_table
 ```
 
