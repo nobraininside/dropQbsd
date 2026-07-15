@@ -216,16 +216,16 @@ Hostnames prefixed with `@` are resolved via `userweb` DNS each time the update 
 
 ---
 
-## 8. Reload the Firewall
+## 8. Reload the Firewall and update tables
 
 ```sh
 # pfctl -f /etc/pf.conf
 ```
 
-Populate the services table with your static IPs:
+Run the services table update:
 
 ```sh
-# pfctl -t services -T add 198.51.100.10
+# /opt/dropQbsd/libexec/update_services_table
 ```
 
 Run the mail server table update:
