@@ -364,7 +364,7 @@ $ tail /var/log/system_update_pf.log
 
 ## Demo
 
-[dropQbsd in three habits](https://github.com/nobraininside/dropQbsd/raw/main/demo.mp4)
+[![dropQbsd in three habits](thumbnail.jpg)](https://gnulinux.tube/w/aymeWDMEZMbk2YQMqnMm93)
 
 Three commands. Three habits. Ten minutes. Done.
 
