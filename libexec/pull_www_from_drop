@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — pull_www_from_drop
+#  dropQbsd -- pull_www_from_drop
 #
 #  Pulls the latest sites archive from the drop zone into
 #  userdoc's Sync directory. Verifies integrity and keeps
