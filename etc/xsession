@@ -1,5 +1,5 @@
 # ==========================================================
-# dropQbsd — .xsession
+# dropQbsd -- .xsession
 #
 # X session startup. Sourced by xenodm at login.
 # Copy to: ~/.xsession
