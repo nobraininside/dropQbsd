@@ -17,18 +17,18 @@ case "$USER" in
         exec /usr/local/bin/xfce4-session
         ;;
     userweb)
-        exec /usr/local/bin/cwm
+        exec /usr/X11R6/bin/cwm
         ;;
     usermail)
-        exec /usr/local/bin/cwm
+        exec /usr/X11R6/bin/cwm
         ;;
     userdoc)
         exec /usr/local/bin/xfce4-session
         ;;
     root)
-        exec /usr/local/bin/cwm
+        exec /usr/X11R6/bin/cwm
         ;;
     *)
-        exec /usr/local/bin/cwm
+        exec /usr/X11R6/bin/cwm
         ;;
 esac
