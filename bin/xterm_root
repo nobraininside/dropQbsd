@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — xterm_root
+#  dropQbsd -- xterm_root
 #
 #  Opens an xterm as root with the dropQbsd document
 #  domain color scheme (darkred background)
