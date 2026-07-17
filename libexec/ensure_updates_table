@@ -1,16 +1,16 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — ensure_updates_table
+#  dropQbsd -- ensure_updates_table
 #
 #  Centralized PF table management for system updates.
 #  Populates the <updates> table with Fastly CDN blocks
 #  and any custom mirrors from /etc/installurl.
 #  Called by pkg_add_via_pf, syspatch_via_pf, and
-#  update_openbsd_via_pf — single source of truth for
+#  update_openbsd_via_pf -- single source of truth for
 #  mirror IP ranges.
 #
 #  DNS resolution for custom mirrors is delegated to
-#  userweb — root never touches the network directly.
+#  userweb -- root never touches the network directly.
 #
 #  Path: /opt/dropQbsd/libexec/ensure_updates_table
 #  Permissions: chmod 700, root:wheel
@@ -46,7 +46,7 @@ fi
 if [ ! -s "$STATIC_BLOCKLIST" ]; then
     log "Creating $STATIC_BLOCKLIST with Fastly CDN blocks..."
     cat > "$STATIC_BLOCKLIST" <<'EOF'
-# dropQbsd — Fastly CDN IP ranges for OpenBSD package mirrors
+# dropQbsd -- Fastly CDN IP ranges for OpenBSD package mirrors
 # Generated: $(date)
 # Source: https://api.fastly.com/public-ip-list
 # Verify periodically against the Fastly API.
@@ -75,7 +75,7 @@ if [ -f "$MIRROR_FILE" ]; then
                 # Already covered by static Fastly blocks
                 ;;
             *)
-                log "  Custom mirror: $mirror — resolving via userweb..."
+                log "  Custom mirror: $mirror -- resolving via userweb..."
                 # Delegate DNS to userweb (has network access under PF)
                 ips=$(su -l userweb -c "host -t A '$mirror' 2>/dev/null" | \
                     grep 'has address' | \
@@ -93,7 +93,7 @@ if [ -f "$MIRROR_FILE" ]; then
         esac
     done
 else
-    log "WARNING: $MIRROR_FILE not found — using static blocks only."
+    log "WARNING: $MIRROR_FILE not found -- using static blocks only."
 fi
 
 #-----------------------------------------------------------------------------
