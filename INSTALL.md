@@ -552,16 +552,6 @@ After a full installation, your system will have:
 │   ├── xterm_userdoc          # Launch xterm with userdoc color scheme
 │   ├── xterm_usermail         # Launch xterm with usermail color scheme
 │   └── xterm_userweb          # Launch xterm with userweb color scheme
-├── etc/                       # 
-│   ├── doas.conf              #
-│   ├── kshrc                  #
-│   ├── pf.conf                #
-│   └── xsession               #
-├── examples/                  # 
-│   ├── crontab                #
-│   ├── cwmrc                  #
-│   ├── exrc                   #
-│   └── sites.conf             #
 ├── libexec/                   # Internal logic (cron, export/pull, enforcement)
 │   ├── enforce_drop           # Drop zone policing
 │   ├── enforce_sync           # Sync directory sanitization
@@ -589,10 +579,32 @@ After a full installation, your system will have:
 │   ├── userweb_export/        # www archives (SGID 2770)
 │   └── _quarantine/           # Policy violations
 ├── user/                      # Conductor home
+│   ├── .config/
+|   |    └── sites.conf        # Site menu configuration (from examples)
+│   ├── .exrc                  # vi configuration (from examples)
+|   └── .xsession              # X session startup (from etc/xsession)
 └── userdoc/                   # Document domain home (700)
-│   └── Sync/                  # Syncthing root (optional)
+│   ├── .cwmrc                 # cwm application menu (from examples)
+│   ├── .exrc                  # vi configuration (from examples)
+|   └── .xsession              # X session startup (from etc/xsession)
+│   └── Sync/                  # Syncthing root folder (optional)
 ├── usermail/                  # Email domain home (700)
+│   ├── .cwmrc                 # cwm application menu (from examples)
+│   ├── .exrc                  # vi configuration (from examples)
+|   └── .xsession              # X session startup (from etc/xsession)
 └── userweb/                   # Browser domain home (700)
+    ├── .cwmrc                 # cwm application menu (from examples)
+    ├── .exrc                  # vi configuration (from examples)
+    └── .xsession              # X session startup (from etc/xsession)
+
+/root/
+    ├── .cwmrc                # cwm application menu (from examples) 
+    ├── .exrc                 # vi configuration (from examples)
+    └── .xsession             # X session startup (from etc/xsession)
+
+/var/cron/tabs/
+    └── root                  # Central crontab -- all jobs run as root (from examples)
+
 ```
 
 
