@@ -2,7 +2,7 @@
 # ==========================================================
 #  dropQbsd -- site_menu
 #
-#  Reads ~/dropQbsd/sites.conf and presents a dropdown menu
+#  Reads ~/.config/dropQbsd/sites.conf and presents a dropdown menu
 #  of sites. Selecting a site:
 #    - Copies the password to clipboard (via pass) if a
 #      pass entry is configured.
@@ -31,7 +31,7 @@
 #    with --temp-profile for disposable sessions.
 # ==========================================================
 
-CONF="$HOME/dropQbsd/sites.conf"
+CONF="$HOME/.config/dropQbsd/sites.conf"
 
 #-----------------------------------------------------------------------------
 # CONFIGURATION
