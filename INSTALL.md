@@ -552,6 +552,16 @@ After a full installation, your system will have:
 │   ├── xterm_userdoc          # Launch xterm with userdoc color scheme
 │   ├── xterm_usermail         # Launch xterm with usermail color scheme
 │   └── xterm_userweb          # Launch xterm with userweb color scheme
+├── etc/                       # 
+│   ├── doas.conf              #
+│   ├── kshrc                  #
+│   ├── pf.conf                #
+│   └── xsession               #
+├── examples/                  # 
+│   ├── crontab                #
+│   ├── cwmrc                  #
+│   ├── exrc                   #
+│   └── sites.conf             #
 ├── libexec/                   # Internal logic (cron, export/pull, enforcement)
 │   ├── enforce_drop           # Drop zone policing
 │   ├── enforce_sync           # Sync directory sanitization
