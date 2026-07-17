@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — run_app_impl
+#  dropQbsd -- run_app_impl
 #
 #  Launches graphical applications as a domain user with
 #  X11 forwarding. The main user (conductor) invokes this
@@ -29,13 +29,13 @@
 #  Security:
 #    - No doas rules for the conductor user. The setuid
 #      wrapper is the only path to root, and it runs only
-#      this script — nothing else.
+#      this script -- nothing else.
 #    - su -l switches to the target user without permanent
 #      doas.conf rules for root to impersonate domains.
 #    - Domain users (userdoc, usermail, userweb) remain
 #      isolated from each other and from the conductor.
 #    - All runtime directories use mktemp -d to prevent
-#      symlink attacks — no predictable paths.
+#      symlink attacks -- no predictable paths.
 #
 #  Paths:
 #    /opt/dropQbsd/bin/run_app       (setuid C wrapper)
@@ -120,7 +120,7 @@ esac
 # LOCATE X11 AUTHENTICATION COOKIE
 #-----------------------------------------------------------------------------
 # xenodm creates per-session cookies in AUTH_DIR named A:0-<random>.
-# Grab the first match — there should be exactly one per display.
+# Grab the first match -- there should be exactly one per display.
 # Note: OpenBSD find(1) does not support -quit. We use head -1 instead.
 AUTH_SRC=$(find "$AUTH_DIR" -maxdepth 1 -name 'A:0-*' -print 2>/dev/null | head -1)
 
@@ -165,7 +165,7 @@ chmod 600 "$AUTH_FILE"
 # LAUNCH APPLICATION AS TARGET USER
 #-----------------------------------------------------------------------------
 # HOME is set to RUNDIR for disposable mode so the app writes everything
-# inside the tmpfs — destroyed on exit.
+# inside the tmpfs -- destroyed on exit.
 # For normal mode, HOME is the target user's real home directory.
 if [[ "$DISPOSABLE" -eq 1 ]]; then
     APP_HOME="$RUNDIR"
@@ -199,7 +199,7 @@ su -l "$TARGET_USER" -c '
 # CLEANUP
 #-----------------------------------------------------------------------------
 if [[ "$DISPOSABLE" -eq 1 ]]; then
-    # Unmount the tmpfs — all data written by the app is gone.
+    # Unmount the tmpfs -- all data written by the app is gone.
     umount "$RUNDIR" 2>/dev/null
     rmdir "$RUNDIR" 2>/dev/null
 else
