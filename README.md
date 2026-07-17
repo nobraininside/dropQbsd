@@ -278,6 +278,39 @@ $ /opt/dropQbsd/bin/xterm_userweb
 $ /opt/dropQbsd/bin/xterm_root
 ```
 
+### Editor and Window Manager Configuration
+
+Example dotfiles for daily-use tools are provided in `examples/`. Copy them
+into your home directory and uncomment the section matching your role.
+
+**nvi (.exrc)** — visible whitespace toggle, tabstop control, paste mode, quick save/quit:
+
+```sh
+$ cp examples/exrc ~/.exrc
+```
+
+Key bindings:
+
+| Shortcut | Action |
+|----------|--------|
+| `,+` / `,-` | Show / hide hidden characters (tabs, newlines, trailing spaces) |
+| `,4` / `,8` | Set tab width to 4 or 8 spaces |
+| `,p` / `,P` | Disable / re-enable autoindent (use before/after pasting) |
+| `,w` / `,q` / `,x` | Force-save, force-quit, force-save-and-quit |
+
+**cwm (.cwmrc)** — application menu with domain-aware launchers:
+
+```sh
+$ cp examples/cwmrc ~/.cwmrc
+```
+
+Edit the file and uncomment the section for your role:
+- **root** — xterm_root, xfe, mc, vi
+- **domain users** (userdoc, usermail, userweb) — xterm_userdoc, xfe, mc, vi, libreoffice, lyx, evince, vlc
+- **conductor** (user) — xterm, xfe, mc, vi, runweb, runmail, rundoc
+
+Launch the menu with `Ctrl+/`.
+
 
 ### Archiving
 
