@@ -1,11 +1,11 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — update_mailserver_table
+#  dropQbsd -- update_mailserver_table
 #
 #  Resolves mail server hostnames via userweb (which has
 #  DNS access under the PF ruleset) and populates the
 #  <mailserver> PF table. Root never touches the network
-#  directly — DNS resolution is delegated to userweb.
+#  directly -- DNS resolution is delegated to userweb.
 #
 #  Uses host(1) from the OpenBSD base system. No packages
 #  required.
