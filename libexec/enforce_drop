@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ==========================================================
-#   enforce_drop
+#  dropQbsd -- enforce_drop
 #
 #  Polices the /home/drop exchange directory.
 #  Runs every minute via cron as root.
@@ -17,7 +17,7 @@
 #       archive rotation.
 #
 #  No sentinel processing. Files are cleaned up by timeout
-#  only — this keeps the conductor (user) from needing
+#  only -- this keeps the conductor (user) from needing
 #  write access to the drop zone.
 #
 #  Path: /opt/dropQbsd/libexec/enforce_drop
@@ -99,8 +99,8 @@ for item in * .*; do
     [[ "$item" == *"_export" ]] && continue
 
     #---------------------------------------------------------------------
-    # 1a. GRACE PERIOD — skip files younger than GRACE_MIN
-    # 1b. ABANDONED FILE CLEANUP — delete files older than ABANDON_MIN
+    # 1a. GRACE PERIOD -- skip files younger than GRACE_MIN
+    # 1b. ABANDONED FILE CLEANUP -- delete files older than ABANDON_MIN
     #---------------------------------------------------------------------
     # Use a single stat call instead of two find invocations.
     FILE_MTIME=$(stat -f '%m' "$item" 2>/dev/null)
@@ -133,7 +133,7 @@ for item in * .*; do
 
         cat <<EOF > "$QUARANTINE_DIR/${QUAR_NAME}.txt"
 -----------------------------------------------------------
-QUARANTINE — dropQbsd enforce_drop
+QUARANTINE -- dropQbsd enforce_drop
 -----------------------------------------------------------
 File:     "$item"
 Date:     $(date '+%Y-%m-%d %H:%M:%S')
@@ -182,7 +182,7 @@ done
 #-----------------------------------------------------------------------------
 # 2. EXPORT DIRECTORY SANITIZATION
 #-----------------------------------------------------------------------------
-# Rotation happens FIRST — before chown/chmod — so that mtime is not
+# Rotation happens FIRST -- before chown/chmod -- so that mtime is not
 # reset by permission fixes, which would prevent files from ever aging out.
 for exdir in "$DROP_DIR/userweb_export" "$DROP_DIR/usermail_export"; do
     if [[ ! -d "$exdir" ]]; then
@@ -195,7 +195,7 @@ for exdir in "$DROP_DIR/userweb_export" "$DROP_DIR/usermail_export"; do
     # www archives: delete after 4 hours
     find "$exdir" -type f -name 'www_*.tar.gz' -mmin +240 -delete 2>/dev/nulll
 
-    # Fix ownership (only files that need it — preserves mtime on clean files)
+    # Fix ownership (only files that need it -- preserves mtime on clean files)
     find "$exdir" \( ! -user root -o ! -group drop \) -exec chown root:drop {} + 2>/dev/null
 
     # Enforce SGID and permissions on directories (2770)
@@ -218,7 +218,7 @@ if [ "$TOTAL_ACTIONS" -gt 0 ]; then
 fi
 
 if [ "$CYCLE_FILES" -gt 50 ]; then
-    log "WARNING: $CYCLE_FILES files in drop zone — possible abuse or stuck pipeline"
+    log "WARNING: $CYCLE_FILES files in drop zone -- possible abuse or stuck pipeline"
 fi
 
 exit 0
