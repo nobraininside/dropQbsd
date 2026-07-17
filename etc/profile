@@ -1,5 +1,5 @@
 # ==========================================================
-# dropQbsd — profile
+# dropQbsd -- profile
 #
 # System-wide shell configuration
 # Applied at login for all users.
@@ -8,7 +8,7 @@
 # Locale notes:
 #   LANG, LC_CTYPE, and LC_COLLATE are set to en_US.UTF-8 for consistent
 #   system messages, character encoding, and sorting. LC_TIME, LC_MONETARY,
-#   and LC_NUMERIC are set to it_IT.UTF-8 in this example — adjust to your
+#   and LC_NUMERIC are set to it_IT.UTF-8 in this example -- adjust to your
 #   region (e.g. de_DE.UTF-8, fr_FR.UTF-8, es_ES.UTF-8) or set all to
 #   en_US.UTF-8 for full English. LC_ALL is intentionally unset to allow
 #   the per-category overrides to work.
@@ -20,7 +20,7 @@
 #   mv ~/.shrc      ~/.shrc.bak
 #
 # dropQbsd relies on a single, coherent environment across
-# all users — local dotfiles will break domain isolation.
+# all users -- local dotfiles will break domain isolation.
 # ==========================================================
 
 # --- Locale: system in English, time/money/numbers in Italian ---
@@ -45,5 +45,5 @@ if [ "$(id -un)" = "user" ]; then
     echo "=== dropQbsd conductor ==="
     echo "Domains: userweb (browser) | usermail (email) | userdoc (files)"
     echo "Use qmv/qcp/qimport to move files between domains."
-    echo "Keep this account clean — do your work inside a domain."
+    echo "Keep this account clean -- do your work inside a domain."
 fi
