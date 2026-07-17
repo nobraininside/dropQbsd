@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ==========================================================
-#   pkg_add_via_pf
+#   dropQbsd -- pkg_add_via_pf
 #
 #  Installs or updates OpenBSD packages through the
 #  restrictive PF ruleset. Populates the <updates> table
