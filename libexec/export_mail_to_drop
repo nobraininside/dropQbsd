@@ -1,12 +1,12 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — export_mail_to_drop
+#  dropQbsd -- export_mail_to_drop
 #
 #  Compresses the usermail directory and places the archive
 #  in /home/drop/usermail_export for archival by userdoc.
 #
 #  Permissions on the exported archive are enforced by
-#  enforce_drop (cron), not by this script — the export
+#  enforce_drop (cron), not by this script -- the export
 #  directory is owned by root:drop, so usermail cannot
 #  chmod files there.
 #
@@ -65,7 +65,7 @@ fi
 # TRANSFER TO DROP ZONE
 #-----------------------------------------------------------------------------
 # enforce_drop (cron, every 60s) will set the correct 440 permissions.
-# usermail cannot chmod here — the export directory is root:drop.
+# usermail cannot chmod here -- the export directory is root:drop.
 if ! cp "$ARCHIVE" "$DST/"; then
     echo "[ERROR] Failed to copy archive to drop zone." >&2
     exit 1
