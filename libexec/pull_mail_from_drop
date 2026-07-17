@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — pull_mail_from_Drop
+#  dropQbsd -- pull_mail_from_Drop
 #
 #  Pulls the latest mail archive from the drop zone into
 #  userdoc's Sync directory. Verifies integrity and keeps
