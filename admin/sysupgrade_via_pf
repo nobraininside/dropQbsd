@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — sysupgrade_via_pf
+#  dropQbsd -- sysupgrade_via_pf
 #
 #  Upgrades OpenBSD to the next release through restrictive
 #  PF. Populates the <updates> table, runs sysupgrade.
@@ -59,7 +59,7 @@ sysupgrade
 RC=$?
 
 # sysupgrade normally reboots before reaching this point.
-log "sysupgrade exited with code $RC — no reboot occurred."
+log "sysupgrade exited with code $RC -- no reboot occurred."
 log "=== sysupgrade_via_pf finished ==="
 exit $RC
 
