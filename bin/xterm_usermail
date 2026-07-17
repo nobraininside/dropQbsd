@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — xterm_usermail
+#  dropQbsd -- xterm_usermail
 #
 #  Opens an xterm as usermail with the document domain
 #  color scheme (darkorchid3 background).
