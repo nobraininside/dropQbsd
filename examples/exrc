@@ -1,0 +1,59 @@
+" ==========================================================
+" dropQbsd -- example .exrc for nvi (OpenBSD base system)
+"
+" vi/ex configuration with quality-of-life mappings.
+" Copy to: ~/.exrc
+"
+" nvi is the default vi implementation on OpenBSD.
+" It is lighter than vim, ships in base, and supports
+" most of what you need for daily editing -- including
+" visible whitespace, which mg(1) does not.
+" ==========================================================
+
+" display current mode (insert/command)
+set showmode
+
+" flash matching parenthesis/brace
+set showmatch
+
+" preserve indentation on new lines
+set autoindent
+
+" tab width: 4 spaces
+set tabstop=4
+
+" ----------------------------------------------------------
+" Toggle hidden characters (tabs, newlines, trailing spaces)
+"   ,+  show hidden characters
+"   ,-  hide hidden characters
+" ----------------------------------------------------------
+map ,+ :set list
+map ,- :set nolist
+
+" ----------------------------------------------------------
+" Toggle tab width
+"   ,4  set tabstop to 4
+"   ,8  set tabstop to 8
+" ----------------------------------------------------------
+map ,4 :set tabstop=4
+map ,8 :set tabstop=8
+
+" ----------------------------------------------------------
+" Toggle autoindent (use before/after pasting)
+"   ,p  disable autoindent (paste mode)
+"   ,P  re-enable autoindent
+"
+" Prevents "staircasing" when pasting indented text.
+" ----------------------------------------------------------
+map ,p :set noautoindent
+map ,P :set autoindent
+
+" ----------------------------------------------------------
+" Quick save / quit
+"   ,w  force-save buffer
+"   ,q  force-quit (discard changes)
+"   ,x  force-save and quit
+" ----------------------------------------------------------
+map ,w :w!
+map ,q :q!
+map ,x :wq!
