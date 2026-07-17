@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ==========================================================
-#  enforce_sync
+#  dropQbsd -- enforce_sync
 #
 #  Monitors and sanitizes the Sync directory permissions.
 #  Ensures all files and directories under /home/userdoc/Sync
