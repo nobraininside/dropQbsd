@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — verify_integrity
+#  dropQbsd -- verify_integrity
 #
 #  Checks the integrity of critical dropQbsd scripts using
 #  signify(1). Run periodically via cron to detect tampering.
