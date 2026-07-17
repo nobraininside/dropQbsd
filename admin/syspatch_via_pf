@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — syspatch_via_pf
+#  dropQbsd -- syspatch_via_pf
 #
 #  Applies OpenBSD security patches through the restrictive
 #  PF ruleset. Populates the <updates> table, runs syspatch,
@@ -72,7 +72,7 @@ RC=$?
 if [ $RC -eq 0 ]; then
     log "syspatch completed successfully."
 else
-    log "syspatch exited with code $RC — check output above."
+    log "syspatch exited with code $RC -- check output above."
 fi
 
 log "=== syspatch_via_pf finished ==="
