@@ -1,13 +1,13 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — qimport
+#  dropQbsd -- qimport
 #
 #  Imports a file or directory from the /home/drop exchange
 #  zone into the conductor's local storage (default:
 #  ~/Downloads).
 #
 #  Cleanup is handled by enforce_drop on its regular cycle.
-#  No sentinel is created — the conductor does not write
+#  No sentinel is created -- the conductor does not write
 #  to the drop zone. Files are removed after the abandonment
 #  timeout (default: 30 minutes).
 #
