@@ -1,5 +1,5 @@
 # ==========================================================
-# dropQbsd — kshrc
+# dropQbsd -- kshrc
 #
 # System-wide interactive shell configuration
 # Sourced by every interactive ksh session via ENV.
@@ -11,7 +11,7 @@
 #   mv ~/.shrc    ~/.shrc.bak
 #
 # Per-user customizations belong in /etc/ksh.d/<username>.kshrc
-# or ~/.kshrc.local — not in a standalone ~/.kshrc that
+# or ~/.kshrc.local -- not in a standalone ~/.kshrc that
 # bypasses the global config.
 # ==========================================================
 
@@ -38,7 +38,7 @@ case "$USER" in
         ;;
     user)
         alias run_app='/opt/dropQbsd/bin/run_app'
-        alias runweb='/opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir'
+        alias runweb='/opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/ungoogled-chromium --temp-profile'
         alias runmail='/opt/dropQbsd/bin/run_app usermail /usr/local/bin/claws-mail'
         alias rundoc='/opt/dropQbsd/bin/run_app userdoc /usr/local/bin/thunar /home/userdoc'
         export PS1='user@\h:\w$ '
