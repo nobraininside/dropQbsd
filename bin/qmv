@@ -1,6 +1,6 @@
 ##!/bin/ksh
 # ==========================================================
-#  dropQbsd - qmv
+#  dropQbsd -- qmv
 #
 #  Moves a file or directory into the /home/drop exchange
 #  zone and sets correct permissions atomically.
@@ -13,12 +13,12 @@
 #  Workflow:
 #    1. Copy to a staging location inside /home/drop with
 #       restricted permissions from the start.
-#    2. Set group and staging permissions (700 dirs — owner
+#    2. Set group and staging permissions (700 dirs -- owner
 #       needs write to move files out of staging).
 #    3. Verify the copy succeeded.
 #    4. Move from staging into the drop zone proper.
-#    5. Apply final permissions (570 dirs — group can
-#       traverse; 440 files — read-only).
+#    5. Apply final permissions (570 dirs -- group can
+#       traverse; 440 files -- read-only).
 #    6. Only then delete the original.
 #
 #  Path: /opt/dropQbsd/bin/qmv
@@ -57,7 +57,7 @@ case "$(realpath "$TARGET")" in
 esac
 
 # Refuse to operate on system-critical paths.
-# This is a safety net — it should never trigger under normal use,
+# This is a safety net -- it should never trigger under normal use,
 # but prevents catastrophic damage from bugs or malicious input.
 case "$(realpath "$TARGET")" in
     /|/bin|/sbin|/usr|/etc|/var|/home|/root|/tmp)
@@ -101,7 +101,7 @@ chgrp -R drop "$STAGING/$NAME"
 # Staging permissions: directories need 700 so the owner can move
 # them out of staging (write permission required on the directory
 # itself for mv to unlink it from the parent).
-# Files are set to 440 — read-only, ready for the drop zone.
+# Files are set to 440 -- read-only, ready for the drop zone.
 find "$STAGING/$NAME" -type d -exec chmod 700 {} +
 find "$STAGING/$NAME" -type f -exec chmod 440 {} +
 
