@@ -1,0 +1,49 @@
+" ==========================================================
+" dropQbsd -- example .cwmrc for cwm(1)
+"
+" Application menu configuration for the Calm Window Manager.
+" Copy to: ~/.cwmrc
+"
+" Contains three commented sections -- uncomment the one
+" matching your role: root, domain users (userdoc/usermail/
+" userweb), or conductor (user).
+"
+" Syntax: command <label> <path>
+"   <label>   -- name shown in the application menu
+"   <path>    -- executable or "xterm -e command" for
+"                terminal-based applications
+"
+" Launch the menu: Ctrl+/
+" ==========================================================
+
+" ----------------------------------------------------------
+" SECTION 1 -- root
+" ----------------------------------------------------------
+" command xterm          xterm_root
+" command xfe            xfe
+" command mc             "xterm_root -e mc"
+" command editor         "xterm_root -e vi"
+
+" ----------------------------------------------------------
+" SECTION 2 -- domain users (userdoc, usermail, userweb)
+" ----------------------------------------------------------
+" command xterm          xterm_userdoc
+" command xfe            xfe
+" command mc             "xterm_userdoc -e mc"
+" command editor         "xterm_userdoc -e vi"
+" command libreoffice    libreoffice
+" command lyx            lyx
+" command evince         evince
+" command vlc            vlc
+
+" ----------------------------------------------------------
+" SECTION 3 -- conductor (user)
+" ----------------------------------------------------------
+" command xterm          xterm
+" command xfe            xfe
+" command mc             "xterm -e mc"
+" command editor         "xterm -e vi"
+" command runweb         runweb
+" command runmail        runmail
+" command rundoc         rundoc
+
