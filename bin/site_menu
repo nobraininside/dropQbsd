@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — site_menu
+#  dropQbsd -- site_menu
 #
 #  Reads ~/dropQbsd/sites.conf and presents a dropdown menu
 #  of sites. Selecting a site:
@@ -22,7 +22,7 @@
 #    Linkedin (my_user_id)|https://linkedin.com|social/linkedin
 #
 #  Lines starting with # are comments.
-#  The pass entry is optional — leave empty for sites
+#  The pass entry is optional -- leave empty for sites
 #  that don't need authentication.
 #
 #  Configuration:
@@ -45,7 +45,7 @@ BROWSER_FLAGS="${BROWSER_FLAGS:---temp-profile}"
 # Path to the run_app blind gate (setuid, no doas needed)
 RUN_APP="${RUN_APP:-/opt/dropQbsd/bin/run_app}"
 
-# Clipboard clear PID tracker — prevents stale background processes
+# Clipboard clear PID tracker -- prevents stale background processes
 CLIPBOARD_PID_FILE="/tmp/dropQbsd_clipboard_clear.pid"
 
 #-----------------------------------------------------------------------------
@@ -72,7 +72,7 @@ fi
 #-----------------------------------------------------------------------------
 # BUILD MENU LIST FOR ZENITY
 #-----------------------------------------------------------------------------
-# Use printf instead of echo — OpenBSD ksh echo does not interpret \n.
+# Use printf instead of echo -- OpenBSD ksh echo does not interpret \n.
 MENU=""
 while IFS='|' read -r label url pass_entry; do
     # Skip comments and empty lines
@@ -137,7 +137,7 @@ while IFS='|' read -r label url pass_entry; do
         fi
 
         # Launch the disposable browser via the setuid blind gate.
-        # No doas needed — run_app escalates to root internally.
+        # No doas needed -- run_app escalates to root internally.
         exec "$RUN_APP" --disposable userweb "$BROWSER" $BROWSER_FLAGS "$url"
     fi
 done < "$CONF"
