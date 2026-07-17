@@ -1,12 +1,12 @@
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd — update_services_table
+#  dropQbsd -- update_services_table
 #
 #  Populates the <services> PF table from
 #  /etc/tables/services_hosts. Supports both static IPs
 #  and hostnames (prefixed with @, resolved via userweb).
 #
-#  Root never touches the network directly — DNS
+#  Root never touches the network directly -- DNS
 #  resolution is delegated to userweb via su.
 #
 #  Uses host(1) from the OpenBSD base system.
@@ -46,7 +46,7 @@ while IFS= read -r line; do
     [[ -z "$line" ]] && continue
 
     if [[ "$line" == @* ]]; then
-        # Hostname entry — resolve via userweb (has DNS access)
+        # Hostname entry -- resolve via userweb (has DNS access)
         HOSTNAME="${line#@}"
         RESOLVED=$(su -l userweb -c "host '$HOSTNAME' 2>/dev/null" \
             | sed -n 's/.* has address //p' \
@@ -57,7 +57,7 @@ while IFS= read -r line; do
             done
         fi
     else
-        # Static IP/CIDR entry — add as-is
+        # Static IP/CIDR entry -- add as-is
         pfctl -t "$PF_TABLE" -T add "$line" 2>/dev/null
     fi
 done < "$CONFIG_FILE"
