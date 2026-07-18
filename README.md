@@ -388,11 +388,10 @@ $ tail /var/log/dropQbsd_updates.log     # System update operations
 # tcpdump -n -e -ttt -i pflog0
 ```
 
-**Integrity verification and log:**
+**Integrity verification:**
 
 ```sh
 # /opt/dropQbsd/libexec/verify_integrity
-$ tail /var/log/dropQbsd_integrity.log
 ```
 
 ---
@@ -435,8 +434,8 @@ They can also be run manually by their respective domain users.
 
 | Script | Run by | Frequency | Purpose |
 | ------ | ------ | --------- | ------- |
-| `enforce_drop` | root | Every minute | Fix permissions, quarantine violations, clean abandoned files, rate-limit monitoring |
-| `enforce_sync` | root | Every minute | Fix owner/group/permissions in Sync directory |
+| `enforce_drop` | root | Every minute | Fix permissions, quarantine violations, clean abandoned files. Logs to `/var/log/dropQbsd_drop.log`. |
+| `enforce_sync` | root | Every minute | Fix owner/group/permissions in Sync directory. Logs to `/var/log/dropQbsd_sync.log`. |
 
 ### PF Table Management (cron)
 
@@ -447,8 +446,8 @@ They can also be run manually by their respective domain users.
 
 ### System Updates (root only)
 
-All update commands are run as root. Root has no permanent network access —
-the `<updates>` PF table is populated on demand by each script.
+All update commands are run as root. Root has no permanent network access — the `<updates>` PF table is populated on demand by each script.
+All update scripts log to `/var/log/dropQbsd_updates.log`.
 
 | Script | Run by | Purpose |
 | ------ | ------ | ------- |
