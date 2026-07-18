@@ -27,9 +27,7 @@ basecolor=#edeceb
 tiptime=10000
 
 [Recent Files]
-FILE2=/home/userdoc/.kshrc
-FILE3=/home/userdoc/.local/share/mc/skins/userlan.ini
-FILE1=/home/userdoc/.local/share/mc/skins/userdoc.ini
+
 
 [FILEDIALOG]
 type_size=100
