@@ -41,12 +41,12 @@ map ,8 :set tabstop=8
 " ----------------------------------------------------------
 " Toggle autoindent (use before/after pasting)
 "   ,p  disable autoindent (paste mode)
-"   ,P  re-enable autoindent
+"   ,i  re-enable autoindent
 "
 " Prevents "staircasing" when pasting indented text.
 " ----------------------------------------------------------
-map ,i :set noautoindent
-map ,I :set autoindent
+map ,p :set noautoindent
+map ,i :set autoindent
 
 " ----------------------------------------------------------
 " Quick save / quit
