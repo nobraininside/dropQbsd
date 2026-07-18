@@ -434,11 +434,12 @@ The `verify_integrity` cron job (installed in step 9) checks these scripts every
 
 **Log rotation:**
 
-Add to /etc/newsyslog.conf:
+Add to `/etc/newsyslog.conf`:
 
 ```sh
 /var/log/dropQbsd_integrity.log   root:wheel   640  7     *     @T00  Z
 ```
+
 To verify manually:
 
 ```sh
@@ -572,7 +573,7 @@ After a full installation, your system will have:
 │   ├── xterm_userdoc          # Launch xterm with userdoc color scheme
 │   ├── xterm_usermail         # Launch xterm with usermail color scheme
 │   └── xterm_userweb          # Launch xterm with userweb color scheme
-├── keys/                      # Integrity verification keys
+├── keys/                      # `signify` keys and signatures for integrity verification
 │   ├── dropQbsd.pub           # `signify` public key
 │   └── dropQbsd_scripts.sha256.sig       # Signed checksums of critical scripts
 ├── libexec/                   # Internal logic (cron, export/pull, enforcement)
