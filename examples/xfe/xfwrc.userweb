@@ -26,8 +26,4 @@ tippause=500
 basecolor=#ede9e3
 tiptime=10000
 
-[Recent Files]
-FILE2=/home/userweb/.kshrc
-FILE3=/usr/local/bin/dropQbsd/run_app
-FILE1=/home/userweb/.local/share/mc/skins/userweb.ini
 
