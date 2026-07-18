@@ -640,20 +640,26 @@ The following files live in the repository under `examples/` and are NOT copied 
 
 ```sh
 examples/
-├── cwmrc                      " cwm application menu (copy to ~/.cwmrc)
-├── exrc                       " nvi editor config (copy to ~/.exrc)
-├── newsyslog.conf             " Log rotation rules (append to /etc/newsyslog.conf)
-├── sites.conf                 " Site menu configuration (copy to ~/.config/dropQbsd/)
-├── crontab                    " Root crontab reference (apply via crontab -e)
-├── mc/                        " Midnight Commander color schemes
-│   ├── userweb.ini            " mc skin for userweb domain
-│   ├── usermail.ini           " mc skin for usermail domain
-│   └── userdoc.ini            " mc skin for userdoc domain
-├── rc.d/                      " Optional rc.d service scripts
-│   └── syncthing_userdoc      " Syncthing service for userdoc
-├── tables/                    " Example PF table configurations
-│   ├── mailserver_hosts       " Mail server hostnames template
-│   └── services_hosts         " Service IPs and hostnames template
-└── xfe/                       " Xfe file manager color schemes
+├── cwmrc                      # cwm application menu (copy to ~/.cwmrc)
+├── exrc                       # nvi editor config (copy to ~/.exrc)
+├── newsyslog.conf             # Log rotation rules (append to /etc/newsyslog.conf)
+├── sites.conf                 # Site menu configuration (copy to ~/.config/dropQbsd/)
+├── crontab                    # Root crontab reference (apply via crontab -e)
+├── mc/                        # Midnight Commander color schemes
+│   ├── root.ini               # mc skin for root
+│   ├── user.ini               # mc skin for user domain
+│   ├── userweb.ini            # mc skin for userweb domain
+│   ├── usermail.ini           # mc skin for usermail domain
+│   └── userdoc.ini            # mc skin for userdoc domain
+├── rc.d/                      # Optional rc.d service scripts
+│   └── syncthing_userdoc      # Syncthing service for userdoc
+├── tables/                    # Example PF table configurations
+│   ├── mailserver_hosts       # Mail server hostnames template
+│   └── services_hosts         # Service IPs and hostnames template
+└── xfe/                       # Xfe file manager color schemes
+    ├── xferc.user             # xfe skin for user domain
+    ├── xferc.userdoc          # xfe skin for userweb domain
+    ├── xferc.usermail         # xfe skin for usermail domain
+    └── xferc.userweb          # xfe skin for userdoc domain
 ```
 
