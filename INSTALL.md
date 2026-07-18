@@ -553,7 +553,7 @@ For mpv, use `--vo=x11 --hwdec=no`.
 
 After a full installation, your system will have:
 
-```
+```sh
 /etc/
 ├── tables/
 │   ├── mailserver_hosts       # Mail server hostnames
@@ -608,25 +608,20 @@ After a full installation, your system will have:
 ├── user/                      # Conductor home
 │   ├── .config/
 |   |    └── sites.conf        # Site menu configuration (from examples)
-│   ├── .exrc                  # vi configuration (from examples)
 |   └── .xsession              # X session startup (from etc/xsession)
 └── userdoc/                   # Document domain home (700)
 │   ├── .cwmrc                 # cwm application menu (from examples)
-│   ├── .exrc                  # vi configuration (from examples)
 |   └── .xsession              # X session startup (from etc/xsession)
 │   └── Sync/                  # Syncthing root folder (optional)
 ├── usermail/                  # Email domain home (700)
 │   ├── .cwmrc                 # cwm application menu (from examples)
-│   ├── .exrc                  # vi configuration (from examples)
 |   └── .xsession              # X session startup (from etc/xsession)
 └── userweb/                   # Browser domain home (700)
     ├── .cwmrc                 # cwm application menu (from examples)
-    ├── .exrc                  # vi configuration (from examples)
     └── .xsession              # X session startup (from etc/xsession)
 
 /root/
     ├── .cwmrc                # cwm application menu (from examples) 
-    ├── .exrc                 # vi configuration (from examples)
     └── .xsession             # X session startup (from etc/xsession)
 
 /var/cron/tabs/
@@ -637,7 +632,29 @@ After a full installation, your system will have:
     ├── dropQbsd_sync.log     # Sync directory enforcement (enforce_sync)
     ├── dropQbsd_integrity.log     # Script integrity verification (verify_integrity)
     └── dropQbsd_updates.log       # System update operations (pkg_add_via_pf, syspatch, etc.)
+```
 
+The following files live in the repository under `examples/` and are NOT copied during installation. Copy them manually as needed -- see INSTALL.md sections 7, 11, and Desktop Environment for details.
+
+`.cwmrc` is shown above in the home directories (except user, who runs XFCE by default) as it is required by `/etc/profile`.
+
+```sh
+examples/
+├── cwmrc                      " cwm application menu (copy to ~/.cwmrc)
+├── exrc                       " nvi editor config (copy to ~/.exrc)
+├── newsyslog.conf             " Log rotation rules (append to /etc/newsyslog.conf)
+├── sites.conf                 " Site menu configuration (copy to ~/.config/dropQbsd/)
+├── crontab                    " Root crontab reference (apply via crontab -e)
+├── mc/                        " Midnight Commander color schemes
+│   ├── userweb.ini            " mc skin for userweb domain
+│   ├── usermail.ini           " mc skin for usermail domain
+│   └── userdoc.ini            " mc skin for userdoc domain
+├── rc.d/                      " Optional rc.d service scripts
+│   └── syncthing_userdoc      " Syncthing service for userdoc
+├── tables/                    " Example PF table configurations
+│   ├── mailserver_hosts       " Mail server hostnames template
+│   └── services_hosts         " Service IPs and hostnames template
+└── xfe/                       " Xfe file manager color schemes
 ```
 
 
