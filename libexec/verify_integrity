@@ -4,17 +4,16 @@
 #
 #  Checks the integrity of critical dropQbsd scripts using
 #  signify(1). Run periodically via cron to detect tampering.
+#  Logs to /var/log/dropQbsd_integrity.log.
 #
 #  Setup (one-time, private key kept offline):
-#    signify -G -n -p /etc/tables/dropQbsd.pub -s /root/dropQbsd.sec
-#    sha256 /opt/dropQbsd/libexec/run_app_impl \
-#           /opt/dropQbsd/bin/qmv \
-#           /opt/dropQbsd/bin/qcp \
-#           /opt/dropQbsd/bin/qimport \
-#           /opt/dropQbsd/libexec/enforce_drop \
-#           /opt/dropQbsd/libexec/enforce_sync \
+#    cd /opt/dropQbsd
+#    rm -f keys/dropQbsd.pub keys/dropQbsd_scripts.sha256.sig
+#    signify -G -n -p keys/dropQbsd.pub -s /root/dropQbsd.sec
+#    sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport \
+#           libexec/enforce_drop libexec/enforce_sync \
 #      | signify -S -s /root/dropQbsd.sec -m - \
-#          -x /etc/tables/dropQbsd_scripts.sha256.sig
+#          -x keys/dropQbsd_scripts.sha256.sig
 #    rm /root/dropQbsd.sec
 #
 #  Path: /opt/dropQbsd/libexec/verify_integrity
@@ -23,21 +22,24 @@
 #  Cron: */5 * * * * /opt/dropQbsd/libexec/verify_integrity
 # ==========================================================
 
-PUBKEY="/opt/dropQbsd/tables/dropQbsd.pub"
-CHECKSUM_FILE="/opt/dropQbsd/tables/dropQbsd_scripts.sha256.sig"
-SCRIPT_DIR="/opt/dropQbsd"
+PUBKEY="/opt/dropQbsd/keys/dropQbsd.pub" 
+CHECKSUM_FILE="/opt/dropQbsd/keys/dropQbsd_scripts.sha256.sig" 
+SCRIPT_DIR="/opt/dropQbsd" 
+LOG="/var/log/dropQbsd_integrity.log" 
+TMP="/tmp/verify_integrity_$$" 
 
-if [[ ! -f "$PUBKEY" ]] || [[ ! -f "$CHECKSUM_FILE" ]]; then
-    exit 0
-fi
+cd "$SCRIPT_DIR" || exit 1 
 
-if ! signify -C -p "$PUBKEY" -x "$CHECKSUM_FILE" \
-    "$SCRIPT_DIR/libexec/run_app_impl" \
-    "$SCRIPT_DIR/bin/qmv" \
-    "$SCRIPT_DIR/bin/qcp" \
-    "$SCRIPT_DIR/bin/qimport" \
-    "$SCRIPT_DIR/libexec/enforce_drop" \
-    "$SCRIPT_DIR/libexec/enforce_sync" \
-    >/dev/null 2>&1; then
-    logger -t dropQbsd "INTEGRITY VIOLATION: one or more scripts have been modified"
+sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport \ 
+    libexec/enforce_drop libexec/enforce_sync > "$TMP" 2>&1 
+
+OUTPUT=$(signify -V -p "$PUBKEY" -x "$CHECKSUM_FILE" -m "$TMP" 2>&1) 
+RET=$? 
+rm -f "$TMP" 
+
+if [ $RET -eq 0 ]; then 
+    printf '%s: OK\n' "$(date)" >> "$LOG" 
+else 
+    printf '%s: INTEGRITY VIOLATION\n' "$(date)" >> "$LOG" 
+    printf '%s\n' "$OUTPUT" >> "$LOG" 
 fi
