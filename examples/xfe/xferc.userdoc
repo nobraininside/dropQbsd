@@ -1,71 +1,42 @@
 [OPTIONS]
-height=676
+height=872
 toolstoolbar=1
 folder_warn=1
-panel_view=1
-width=722
+panel_view=2
+width=1223
+confirm_drag_and_drop=1
 use_startup_notification=1
-use_trash_can=1
 preserve_date_warn=1
 confirm_delete=1
 no_script=0
-su_cmd="su root -c \'nohup xfe >/dev/null 2>&1 & sleep 1\'"
+use_trash_can=1
 auto_save_layout=1
 use_trash_bypass=1
 sudo_cmd="doas su root -c \'nohup xfe >/dev/null 2>&1 & sleep 1\'"
 root_mode=0
-treetwopanels_lpanel_pct=0.4
-xfv_replaced=1
+su_cmd="su root -c \'nohup xfe >/dev/null 2>&1 & sleep 1\'"
 confirm_overwrite=1
 paneltoolbar=1
 confirm_delete_emptydir=1
 startdir_mode=1
 ask_before_copy=1
+confirm_execute=1
 confirm_properties=1
-twopanels_lpanel_pct=0.5
+twopanels_lpanel_pct=0.353
 root_auth=0
 vert_panels=1
 root_warn=0
 confirm_trash=1
-confirm_execute=1
+treetwopanels_lpanel_pct=0.4
 status=1
-treepanel_tree_pct=0.195
+treepanel_tree_pct=0.192
 treetwopanels_tree_pct=0.2
 generaltoolbar=1
 locationbar=1
-confirm_drag_and_drop=1
+xfv_replaced=1
 
-[SETTINGS]
-listforecolor=Gray100
-iconpath=/usr/local/share/xfe/icons/default-theme
-hilitecolor=Gray100
-single_click=2
-highlightcolor=DarkGreen
-textfont=Mono,100,normal,regular
-bordercolor=Black
-activecolorpane=4
-font=Sans,100,normal,regular
-listbackcolor=DarkGreen
-scrollbarsize=12
-shadowcolor=#a5a5a4
-file_tooltips=1
-tippause=500
-scrollbarcolor=#95b2d7
-forecolor=Black
-basecolor=#edeceb
-time_format=%x %X
-selforecolor=Gray100
-selbackcolor=#8bafdc
-wheellines=5
-smooth_scroll=1
-use_clearlooks=1
-attentioncolor=Red
-backcolor=Gray100
-tiptime=10000
-relative_resize=1
-pbarcolor=#7999c0
-save_win_pos=0
-show_pathlinker=1
+[HISTORY]
+open=vlc:
 
 [KEYBINDINGS]
 search_prev=Shift-Ctrl-G
@@ -147,69 +118,107 @@ empty_trash_can=Ctrl-Del
 rotate_left=Ctrl-L
 
 [RIGHT PANEL]
-type_size=98
+type_size=166
 deldate_size=150
 origpath_size=200
 liststyle=0
-attr_size=98
-size_size=59
-user_size=49
+attr_size=166
+user_size=82
+hiddenfiles=1
 dirs_first=1
-ext_size=98
-grou_size=49
-modd_size=146
+ext_size=166
+grou_size=82
+modd_size=248
 ignore_case=1
 sort_func=ascendingCase
 showthumbnails=0
-name_size=195
-lastdir=/home/userdoc
-hiddenfiles=0
+name_size=466
+lastdir=/home/userdoc/
+size_size=101
 
 [SEARCH PANEL]
+grou_size=50
 type_size=100
-search_ypos=229
-dir_size=150
-liststyle=0
+search_ypos=258
+search_xpos=210
+dir_size=333
 attr_size=100
-search_xpos=205
 user_size=50
 search_height=480
 find_hidden=0
+moreoptions=0
 ext_size=100
-sort_func=ascendingCase
-grou_size=50
+liststyle=0
 find_ignorecase=0
 search_width=650
 modd_size=150
 grep_ignorecase=0
 ignore_case=1
-moreoptions=0
+sort_func=ascendingCase
 showthumbnails=0
 name_size=200
 dirs_first=1
 size_size=60
 
-[PROGS]
-xterm=/usr/local/bin/dropQbsd/term_userdoc
+[DIR PANEL]
+hidden_dir=1
+sort_func=ascendingCase
 
 [LEFT PANEL]
-type_size=90
+type_size=153
 deldate_size=150
 origpath_size=200
 liststyle=0
-attr_size=90
-size_size=54
-user_size=45
+attr_size=153
+user_size=75
+hiddenfiles=0
 dirs_first=1
-ext_size=90
-grou_size=45
-modd_size=134
+ext_size=153
+grou_size=75
+modd_size=227
 ignore_case=1
 sort_func=ascendingCase
 showthumbnails=0
-name_size=181
+name_size=395
 lastdir=/home/userdoc
-hiddenfiles=1
+size_size=98
+
+[PROGS]
+pdfviewer=evince
+xterm=/opt/dropQbsd/bin/xterm_userdoc
+videoplayer=vlc
+
+[SETTINGS]
+listforecolor=Gray100
+iconpath=/usr/local/share/xfe/icons/default-theme
+hilitecolor=Gray100
+single_click=2
+highlightcolor=DarkGreen
+textfont=Mono,100,normal,regular
+bordercolor=Black
+activecolorpane=4
+font=Sans,100,normal,regular
+listbackcolor=DarkGreen
+scrollbarsize=12
+shadowcolor=#a5a5a4
+tippause=500
+scrollbarcolor=#95b2d7
+forecolor=Black
+basecolor=#edeceb
+time_format=%x %X
+show_pathlinker=1
+relative_resize=1
+selbackcolor=#8bafdc
+wheellines=5
+smooth_scroll=1
+use_clearlooks=1
+attentioncolor=Red
+backcolor=Gray100
+tiptime=10000
+selforecolor=Gray100
+pbarcolor=#7999c0
+save_win_pos=0
+file_tooltips=1
 
 [FILETYPES]
 epub=fbreader,fbreader,;ePub eBook;epub_32x32.png;epub_16x16.png;;
@@ -226,7 +235,7 @@ pm=<txteditor>,<txtviewer>,<txteditor>;Perl Module;text_32x32.png;text_16x16.png
 po=<txteditor>,<txtviewer>,<txteditor>;Locale File;text_32x32.png;text_16x16.png;;
 ico=<imgviewer>,<imgviewer>,<imgeditor>;Icon Image;gif_32x32.png;gif_16x16.png;;
 flac=<audioplayer>,<audioplayer>,audacity;FLAC Audio;sound_32x32.png;sound_16x16.png;;
-mp4=<videoplayer>,<videoplayer>,;MPEG4 Video;video_32x32.png;video_16x16.png;;
+mp4=vlc,<videoplayer>,;MPEG4 Video;video_32x32.png;video_16x16.png;;
 sxm=lomath,lomath,lomath;OpenOffice 1.0 Math;sxm_32x32.png;sxm_16x16.png;;
 mp3=<audioplayer>,<audioplayer>,audacity;MPEG Audio;mp3_32x32.png;mp3_16x16.png;;
 jpeg=<imgviewer>,<imgviewer>,<imgeditor>;JPEG Image;jpeg_32x32.png;jpeg_16x16.png;;
@@ -360,11 +369,12 @@ iso=<archiver>,<archiver>,<archiver>;ISO9660 Image;package_32x32.png;package_16x
 yaml=<txteditor>,<txtviewer>,<txteditor>;YAML;text_32x32.png;text_16x16.png;;
 readme=<txteditor>,<txtviewer>,<txteditor>;Readme File;help_32x32.png;help_16x16.png;;
 ram=realplay,realplay,;RealPlayer Video;video_32x32.png;video_16x16.png;;
+webp=ristretto;Document;;;;
 cpp=<txteditor>,<txtviewer>,<txteditor>;C++ Source;cc_32x32.png;cc_16x16.png;;
 hxx=<txteditor>,<txtviewer>,<txteditor>;C++ Header;h_32x32.png;h_16x16.png;;
 sxc=localc,localc,localc;OpenOffice 1.0 Calc;sxc_32x32.png;sxc_16x16.png;;
 rpm=xfp,xfp,xfp;RPM Package;rpm_32x32.png;rpm_16x16.png;;
-mkv=<videoplayer>,<videoplayer>,;MKV Video;video_32x32.png;video_16x16.png;;
+mkv=vlc,<videoplayer>,;MKV Video;video_32x32.png;video_16x16.png;;
 deb=xfp,xfp,xfp;DEB Package;deb_32x32.png;deb_16x16.png;;
 tar.gz=<archiver>,<archiver>,<archiver>;Gzip Archive;tgz_32x32.png;tgz_16x16.png;;
 jar=<archiver>,<archiver>,<archiver>;Java Archive;zip_32x32.png;zip_16x16.png;;
@@ -445,8 +455,4 @@ modd_size=150
 showthumbnails=0
 name_size=200
 size_size=60
-
-[DIR PANEL]
-hidden_dir=1
-sort_func=ascendingCase
 
