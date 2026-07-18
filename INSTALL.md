@@ -488,7 +488,7 @@ box — no additional packages needed.
 $ cp examples/cwmrc ~/.cwmrc
 ```
 
-Edit `~/.cwmr` and uncomment the section matching your role (root, domain user, or conductor). Provides a `Ctrl+/` application menu with domain-aware terminal launchers and commonly used applications. Requires no additional packages — `cwm` is in the base system.
+Edit `~/.cwmrc` and uncomment the section matching your role (root, domain user, or conductor). Provides a `Ctrl+/` application menu with domain-aware terminal launchers and commonly used applications. Requires no additional packages — `cwm` is in the base system.
 
 ---
 
