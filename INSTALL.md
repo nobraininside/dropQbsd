@@ -38,6 +38,7 @@ Conductor user — create if missing, add to drop group if existing
 # chmod 2770 /home/drop/userweb_export /home/drop/usermail_export
 # chmod 750 /home/drop/_quarantine
 # chmod 755 /etc/tables
+# chmod 700 /opt/dropQbsd/keys
 ```
 
 ---
@@ -426,10 +427,7 @@ Generate a key pair and sign the critical scripts (keep the .sec key offline):
 # cd /opt/dropQbsd
 # rm -f keys/dropQbsd.pub keys/dropQbsd_scripts.sha256.sig
 # signify -G -n -p keys/dropQbsd.pub -s /root/dropQbsd.sec
-# sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport \
-         libexec/enforce_drop libexec/enforce_sync \
-    | signify -S -s /root/dropQbsd.sec -m - \
-        -x keys/dropQbsd_scripts.sha256.sig
+# sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport libexec/enforce_drop libexec/enforce_sync | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
 # rm /root/dropQbsd.sec
 ```
 The `verify_integrity` cron job (installed in step 9) checks these scripts every 5 minutes and logs any modifications to `/var/log/dropQbsd_integrity.log`.
@@ -442,6 +440,7 @@ Add to /etc/newsyslog.conf:
 /var/log/dropQbsd_integrity.log   root:wheel   640  7     *     @T00  Z
 ```
 To verify manually:
+
 ```sh
 # /opt/dropQbsd/libexec/verify_integrity
 # cat /var/log/dropQbsd_integrity.log
@@ -575,7 +574,7 @@ After a full installation, your system will have:
 │   └── xterm_userweb          # Launch xterm with userweb color scheme
 ├── keys/                      # Integrity verification keys
 │   ├── dropQbsd.pub           # `signify` public key
-│   └── dropQbsd_scripts_sha256.sig       # Signed checksums of critical scripts
+│   └── dropQbsd_scripts.sha256.sig       # Signed checksums of critical scripts
 ├── libexec/                   # Internal logic (cron, export/pull, enforcement)
 │   ├── enforce_drop           # Drop zone policing
 │   ├── enforce_sync           # Sync directory sanitization
