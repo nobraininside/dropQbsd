@@ -646,20 +646,33 @@ examples/
 ├── sites.conf                 # Site menu configuration (copy to ~/.config/dropQbsd/)
 ├── crontab                    # Root crontab reference (apply via crontab -e)
 ├── mc/                        # Midnight Commander color schemes
-│   ├── root.ini               # mc skin for root
-│   ├── user.ini               # mc skin for user domain
-│   ├── userweb.ini            # mc skin for userweb domain
-│   ├── usermail.ini           # mc skin for usermail domain
-│   └── userdoc.ini            # mc skin for userdoc domain
+│   ├── root.ini               # Midnight Commander skin for root (copy to ~/.local/share/mc/skins)
+│   ├── user.ini               # Midnight Commander skin for user domain (copy to ~/.local/share/mc/skins)
+│   ├── userweb.ini            # Midnight Commander skin for userweb domain (copy to ~/.local/share/mc/skins)
+│   ├── usermail.ini           # Midnight Commander skin for usermail domain (copy to ~/.local/share/mc/skins)
+│   └── userdoc.ini            # Midnight Commander skin for userdoc domain (copy to ~/.local/share/mc/skins)
 ├── rc.d/                      # Optional rc.d service scripts
 │   └── syncthing_userdoc      # Syncthing service for userdoc
 ├── tables/                    # Example PF table configurations
 │   ├── mailserver_hosts       # Mail server hostnames template
 │   └── services_hosts         # Service IPs and hostnames template
-└── xfe/                       # Xfe file manager color schemes
-    ├── xferc.user             # xfe skin for user domain
-    ├── xferc.userdoc          # xfe skin for userweb domain
-    ├── xferc.usermail         # xfe skin for usermail domain
-    └── xferc.userweb          # xfe skin for userdoc domain
+└── thunar/                    # Xfe file manager color schemes
+│   ├── gtk.css.user           # Thunar skin for user domain (copy to ~/.config/gtk-3.0/gtk.css)
+│   ├── gtk.css.userdoc        # Thunar skin for userweb domain (copy to ~/.config/gtk-3.0/gtk.css)
+│   ├── gtk.css.usermail       # Thunar skin for usermail domain (copy to ~/.config/gtk-3.0/gtk.css)
+│   ├── gtk.css.userweb        # Thunar skin for userdoc domain (copy to ~/.config/gtk-3.0/gtk.css)
+└── xfe/                       # Xfe file manager color schemes and scripts
+    ├── scripts/               # Xfe custom scripts (copy to ~/.config/xfe/scripts/)
+    |    ├── qcp               # Run /opt/dropQbsd/bin/qcp from Xfe
+    |    ├── qimport           # Run /opt/dropQbsd/bin/qimport from Xfe
+    |    └── qmv               # Run /opt/dropQbsd/bin/qmv from Xfe
+    ├── xferc.user             # Xfe skin for user domain (copy to ~/.config/xfe)
+    ├── xferc.userdoc          # Xfe skin for userweb domain (copy to ~/.config/xfe)
+    ├── xferc.usermail         # Xfe skin for usermail domain (copy to ~/.config/xfe)
+    └── xferc.userweb          # Xfe skin for userdoc domain (copy to ~/.config/xfe)
+    ├── xfwrc.user             # Xfe editor skin for user domain (copy to ~/.config/xfe)
+    ├── xfwrc.userdoc          # xfe editor skin for userweb domain (copy to ~/.config/xfe)
+    ├── xfwrc.usermail         # Xfe editor skin for usermail domain (copy to ~/.config/xfe)
+    └── xfwrc.userweb          # Xfe editor skin for userdoc domain (copy to ~/.config/xfe)
 ```
 
