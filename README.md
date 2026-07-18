@@ -124,7 +124,7 @@ Export files are `root:drop 440` — no domain user can modify them. Integrity v
   placement.
 - **Root web access on-demand.** `ensure_updates_table` populates the PF table, `pkg_add_via_pf` and `syspatch_via_pf` do their job. No telemetry. No background phoning home.
 - **Reinstallable in 30 minutes.** No databases, no daemons, no state you can't reconstruct from scripts and `/etc`.
-- **Integrity verification.** Critical scripts are checksummed and verified via `signify(1)` on a cron schedule.
+- **Integrity verification.** Critical scripts are checksummed and verified via `signify(1)` on a cron schedule. All dropQbsd components log to `/var/log/` (see Monitoring below).
 - **Dynamic PF tables.** Mail server and service IPs are managed via `/etc/tables/` — no provider details in the repository.
 
 ### Optional Components
@@ -283,7 +283,7 @@ $ /opt/dropQbsd/bin/xterm_root
 Example dotfiles for daily-use tools are provided in `examples/`. Copy them
 into your home directory and uncomment the section matching your role.
 
-**nvi (.exrc)** — visible whitespace toggle, tabstop control, paste mode, quick save/quit:
+**vi (.exrc)** — visible whitespace toggle, tabstop control, paste mode, quick save/quit:
 
 ```sh
 $ cp examples/exrc ~/.exrc
@@ -376,9 +376,10 @@ $ cat /home/drop/_quarantine/*.txt
 **Logs:**
 
 ```sh
-$ tail /var/log/dropQbsd_drop.log
-$ tail /var/log/dropQbsd_sync.log
-$ tail /var/log/system_update_pf.log
+$ tail /var/log/dropQbsd_drop.log        # Drop zone enforcement
+$ tail /var/log/dropQbsd_sync.log        # Sync directory enforcement
+$ tail /var/log/dropQbsd_integrity.log   # Script integrity verification
+$ tail /var/log/dropQbsd_updates.log     # System update operations
 ```
 
 **Live PF traffic:**
@@ -387,10 +388,11 @@ $ tail /var/log/system_update_pf.log
 # tcpdump -n -e -ttt -i pflog0
 ```
 
-**Integrity verification:**
+**Integrity verification and log:**
 
 ```sh
 # /opt/dropQbsd/libexec/verify_integrity
+$ tail /var/log/dropQbsd_integrity.log
 ```
 
 ---
@@ -460,7 +462,7 @@ the `<updates>` PF table is populated on demand by each script.
 
 | Script | Run by | Purpose |
 | ------ | ------ | ------- |
-| `verify_integrity` | root (cron) | Verify SHA256 checksums of critical scripts via `signify(1)` |
+| `verify_integrity` | root (cron) | Generate SHA256 hashes, verify against signed checksums via `signify(1)`. Logs to `/var/log/dropQbsd_integrity.log`. |
 
 ### Recovery
 
