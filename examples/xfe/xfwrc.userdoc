@@ -26,9 +26,6 @@ tippause=500
 basecolor=#edeceb
 tiptime=10000
 
-[Recent Files]
-
-
 [FILEDIALOG]
 type_size=100
 hiddenfiles=0
