@@ -443,7 +443,7 @@ To verify manually:
 
 ### Log Rotation
 
-All dropQbsd logs should be rotated to prevent unbounded growth. Add to `/etc/newsyslog.conf`:
+All dropQbsd logs should be rotated to prevent unbounded growth. Append the example rules to the existing `/etc/newsyslog.conf` — do **not** replace it, as OpenBSD ships with its own system rotation rules.
 
 ```sh
 # dropQbsd logs
