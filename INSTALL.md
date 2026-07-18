@@ -432,20 +432,28 @@ Generate a key pair and sign the critical scripts (keep the .sec key offline):
 ```
 The `verify_integrity` cron job (installed in step 9) checks these scripts every 5 minutes and logs any modifications to `/var/log/dropQbsd_integrity.log`.
 
-**Log rotation:**
-
-Add to `/etc/newsyslog.conf`:
-
-```sh
-/var/log/dropQbsd_integrity.log   root:wheel   640  7     *     @T00  Z
-```
-
 To verify manually:
 
 ```sh
 # /opt/dropQbsd/libexec/verify_integrity
 # cat /var/log/dropQbsd_integrity.log
 ```
+
+---
+
+### Log Rotation
+
+All dropQbsd logs should be rotated to prevent unbounded growth. Add to `/etc/newsyslog.conf`:
+
+```sh
+# dropQbsd logs
+/var/log/dropQbsd_drop.log        root:wheel   640  7     *     @T00  Z
+/var/log/dropQbsd_sync.log        root:wheel   640  7     *     @T00  Z
+/var/log/dropQbsd_integrity.log   root:wheel   640  7     *     @T00  Z
+/var/log/dropQbsd_updates.log     root:wheel   640  3     100   *     Z
+```
+
+`enforce_drop` and `enforce_sync` run every minute — rotate daily, keep 7 archives. `verify_integrity` runs every 5 minutes — same policy. Update logs grow slowly (manual runs only) — rotate at 100 KB, keep 3 archives.
 
 ---
 
@@ -473,7 +481,7 @@ Set the theme per user via XFCE Settings → Appearance. This gives immediate vi
 
 Example configuration files are provided in `examples/` for a smoother daily workflow.
 
-**nvi — editor configuration:**
+**vi — editor configuration:**
 
 ```sh
 $ cp examples/exrc ~/.exrc
@@ -547,15 +555,16 @@ After a full installation, your system will have:
 
 ```
 /etc/
+├── tables/
+│   ├── mailserver_hosts       # Mail server hostnames
+│   ├── services_hosts         # Service IPs and hostnames
+│   └── updates_ips            # Fastly CDN blocks (auto-generated)
 ├── doas.conf                  # Privilege escalation (from etc/doas.conf)
 ├── kshrc                      # Interactive shell config (from etc/kshrc)
+├── newsyslog.conf             # Log rotation rules (dropQbsd entries appended)
 ├── pf.conf                    # Firewall rules (from etc/pf.conf)
 ├── profile                    # Shell profile (from etc/profile)
 ├── xsession                   # (from etc/xsession)
-└── tables/
-    ├── mailserver_hosts       # Mail server hostnames
-    ├── services_hosts         # Service IPs and hostnames
-    └── updates_ips            # Fastly CDN blocks (auto-generated)
 
 /opt/dropQbsd/
 ├── admin/                     # System administration tools
@@ -621,7 +630,7 @@ After a full installation, your system will have:
     └── .xsession             # X session startup (from etc/xsession)
 
 /var/cron/tabs/
-    └── root                  # Central crontab -- all jobs run as root (from examples)
+    └── root                  # Central crontab -- all jobs run as root
 
 /var/log/
     ├── dropQbsd_drop.log     # Drop zone enforcement (enforce_drop)
