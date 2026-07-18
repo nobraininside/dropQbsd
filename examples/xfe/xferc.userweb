@@ -164,7 +164,7 @@ lastdir=/home/userweb
 size_size=60
 
 [PROGS]
-xterm=/usr/local/bin/dropQbsd/term_userweb
+xterm=/opt/dropQbsd/bin/xterm_userweb
 
 [LEFT PANEL]
 type_size=86
@@ -182,7 +182,7 @@ ignore_case=1
 sort_func=ascendingCase
 showthumbnails=0
 name_size=172
-lastdir=/home/userweb/.local/share/mc/skins
+lastdir=/home/userweb/
 size_size=51
 
 [FILETYPES]
