@@ -23,7 +23,7 @@ case "$USER" in
         exec /usr/X11R6/bin/cwm
         ;;
     userdoc)
-        exec /usr/local/bin/xfce4-session
+        exec /usr/local/bin/cwm
         ;;
     root)
         exec /usr/X11R6/bin/cwm
