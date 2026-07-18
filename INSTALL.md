@@ -27,7 +27,7 @@ Conductor user — create if missing, add to drop group if existing
 ## 2. Create Directory Structure
 
 ```sh
-# mkdir -p /opt/dropQbsd/{bin,libexec,admin,src,tables}
+# mkdir -p /opt/dropQbsd/{admin,bin,keys,libexec,src}
 # mkdir -p /home/drop/userweb_export
 # mkdir -p /home/drop/usermail_export
 # mkdir -p /home/drop/_quarantine
@@ -47,7 +47,7 @@ Conductor user — create if missing, add to drop group if existing
 Copy the repository directories to `/opt/dropQbsd/`:
 
 ```sh
-# cp -r bin libexec admin src /opt/dropQbsd/
+# cp -r admin bin libexec src /opt/dropQbsd/
 ```
 
 Set permissions:
@@ -177,7 +177,7 @@ Example `/etc/tables/services_hosts`:
 @ssh.github.com        # GitHub SSH over 443
 ```
 
-### Updates IPs (auto-generated)
+### Updates IPs (will be filled by admin scripts)
 
 ```sh
 # touch /etc/tables/updates_ips
@@ -416,41 +416,35 @@ The site opens in a disposable browser (tmpfs-backed). Nothing survives after th
 
 ### Integrity Verification
 
-dropQbsd can cryptographically verify that critical scripts have not been tampered with, using OpenBSD's built-in `signify(1)`.
+dropQbsd can cryptographically verify that critical scripts have not been tampered with, using OpenBSD's built-in `signify(1)`. Logs are written to `/var/log/dropQbsd_integrity.log`.
 
 **Setup:**
 
-Generate a key pair (keep the .sec key offline):
+Generate a key pair and sign the critical scripts (keep the .sec key offline):
 
 ```sh
-# signify -G -n -p /opt/dropQbsd/tables/dropQbsd.pub -s /root/dropQbsd.sec
-```
-
-Sign the critical scripts
-
-```sh
-# sha256 /opt/dropQbsd/libexec/run_app_impl \
-         /opt/dropQbsd/bin/qmv \
-         /opt/dropQbsd/bin/qcp \
-         /opt/dropQbsd/bin/qimport \
-         /opt/dropQbsd/libexec/enforce_drop \
-         /opt/dropQbsd/libexec/enforce_sync \
+# cd /opt/dropQbsd
+# rm -f keys/dropQbsd.pub keys/dropQbsd_scripts.sha256.sig
+# signify -G -n -p keys/dropQbsd.pub -s /root/dropQbsd.sec
+# sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport \
+         libexec/enforce_drop libexec/enforce_sync \
     | signify -S -s /root/dropQbsd.sec -m - \
-        -x /opt/dropQbsd/tables/dropQbsd_scripts.sha256.sig
-```
-
-Remove the private key — keep it offline
-
-```sh
+        -x keys/dropQbsd_scripts.sha256.sig
 # rm /root/dropQbsd.sec
 ```
+The `verify_integrity` cron job (installed in step 9) checks these scripts every 5 minutes and logs any modifications to `/var/log/dropQbsd_integrity.log`.
 
-The `verify_integrity` cron job (installed in step 9) checks these scripts every 5 minutes and logs any modifications via `logger`.
+**Log rotation:**
 
-To verify manually:
+Add to /etc/newsyslog.conf:
 
 ```sh
+/var/log/dropQbsd_integrity.log   root:wheel   640  7     *     @T00  Z
+```
+To verify manually:
+```sh
 # /opt/dropQbsd/libexec/verify_integrity
+# cat /var/log/dropQbsd_integrity.log
 ```
 
 ---
@@ -474,6 +468,28 @@ Both work with `run_app` without additional configuration. Launch apps in any do
 | `userdoc` | Documents | Green |
 
 Set the theme per user via XFCE Settings → Appearance. This gives immediate visual feedback about which domain you're working in.
+
+### Editor and Application Menu
+
+Example configuration files are provided in `examples/` for a smoother daily workflow.
+
+**nvi — editor configuration:**
+
+```sh
+$ cp examples/exrc ~/.exrc
+```
+
+
+Provides quality-of-life key bindings for nvi (OpenBSD's base system vi): toggle visible whitespace, tab width control, paste mode to prevent indentation staircasing, and quick save/quit shortcuts. Works out of the
+box — no additional packages needed.
+
+**cwm — application menu:**
+
+```sh
+$ cp examples/cwmrc ~/.cwmrc
+```
+
+Edit `~/.cwmr` and uncomment the section matching your role (root, domain user, or conductor). Provides a `Ctrl+/` application menu with domain-aware terminal launchers and commonly used applications. Requires no additional packages — `cwm` is in the base system.
 
 ---
 
@@ -542,6 +558,11 @@ After a full installation, your system will have:
     └── updates_ips            # Fastly CDN blocks (auto-generated)
 
 /opt/dropQbsd/
+├── admin/                     # System administration tools
+│   ├── pkg_add_via_pf         # Package management
+│   ├── syspatch_via_pf        # Security patches
+│   ├── sysupgrade_via_pf      # Major release upgrade
+│   └── update_openbsd_via_pf  # Full system update
 ├── bin/                       # User-facing commands
 │   ├── run_app                # setuid blind gate (compiled)
 │   ├── qmv                    # Move files into drop zone
@@ -552,6 +573,9 @@ After a full installation, your system will have:
 │   ├── xterm_userdoc          # Launch xterm with userdoc color scheme
 │   ├── xterm_usermail         # Launch xterm with usermail color scheme
 │   └── xterm_userweb          # Launch xterm with userweb color scheme
+├── keys/                      # Integrity verification keys
+│   ├── dropQbsd.pub           # `signify` public key
+│   └── dropQbsd_scripts_sha256.sig       # Signed checksums of critical scripts
 ├── libexec/                   # Internal logic (cron, export/pull, enforcement)
 │   ├── enforce_drop           # Drop zone policing
 │   ├── enforce_sync           # Sync directory sanitization
@@ -564,14 +588,8 @@ After a full installation, your system will have:
 │   ├── update_mailserver_table # Mail server PF table
 │   ├── update_services_table  # Services PF table
 │   └── verify_integrity       # Script integrity check
-├── admin/                     # System administration tools
-│   ├── pkg_add_via_pf         # Package management
-│   ├── syspatch_via_pf        # Security patches
-│   ├── sysupgrade_via_pf      # Major release upgrade
-│   └── update_openbsd_via_pf  # Full system update
-├── src/
-│   └── run_app_wrapper.c      # C source (reference)
-└── tables/                    # Integrity verification keys
+└── src/
+    └── run_app_wrapper.c      # C source (reference)
 
 /home/
 ├── drop/                      # Exchange zone (root:drop, 2770)
@@ -604,6 +622,12 @@ After a full installation, your system will have:
 
 /var/cron/tabs/
     └── root                  # Central crontab -- all jobs run as root (from examples)
+
+/var/log/
+    ├── dropQbsd_drop.log     # Drop zone enforcement (enforce_drop)
+    ├── dropQbsd_sync.log     # Sync directory enforcement (enforce_sync)
+    ├── dropQbsd_integrity.log     # Script integrity verification (verify_integrity)
+    └── dropQbsd_updates.log       # System update operations (pkg_add_via_pf, syspatch, etc.)
 
 ```
 
