@@ -22,6 +22,9 @@
 export COLORTERM=truecolor
 export EDITOR=vi
 
+# --- Use emacs keybindings (arrow keys, Ctrl-A/E, etc.) instead of vi mode ---
+set -o emacs
+
 # --- Global aliases (all users) ---
 alias qcp='/opt/dropQbsd/bin/qcp'
 alias qmv='/opt/dropQbsd/bin/qmv'
