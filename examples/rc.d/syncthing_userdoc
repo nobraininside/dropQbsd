@@ -15,7 +15,7 @@
 # ================================================================
 
 daemon="/usr/local/bin/syncthing"
-daemon_flags="-home /home/userdoc/.config/syncthing -no-browser -gui-address=127.0.0.1:8384"
+daemon_flags="serve --home=/home/userdoc/.config/syncthing --no-browser --gui-address=127.0.0.1:8384"
 rc_bg=YES
 rc_user="userdoc"
 rc_reload=NO
