@@ -477,6 +477,40 @@ Both work with `run_app` without additional configuration. Launch apps in any do
 
 Set the theme per user via XFCE Settings → Appearance. This gives immediate visual feedback about which domain you're working in.
 
+---
+
+### Domain Indicator (XFCE / Desktop Environments)
+
+```sh
+doas pkg_add dzen2 xdotool
+```
+
+Add to `/home/user/.xsession` before the WM line:
+
+```sh
+/opt/dropQbsd/bin/indicator_xfce4 &
+```
+
+### Domain Indicator (cwm / Minimal WMs)
+
+No extra packages needed. Add to `/home/user/.xsession`:
+
+```sh
+/opt/dropQbsd/bin/indicator_cwm &
+```
+
+### Control Panel
+
+No extra packages needed (base system only). Run as `user`:
+
+```sh
+control_panel
+```
+
+Requires `/opt/dropQbsd/libexec/root_snapshot` for privileged data.
+
+---
+
 ### Editor and Application Menu
 
 Example configuration files are provided in `examples/` for a smoother daily workflow.
