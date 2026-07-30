@@ -1,0 +1,40 @@
+#!/bin/ksh
+# ==========================================================
+#  dropQbsd -- root_snapshot
+#
+#  Collects privileged system data for the control panel.
+#  Executed as root via su -. Fast path, no network calls.
+#
+#  Path: /opt/dropQbsd/libexec/root_snapshot
+#  Permissions: chmod 700, root:wheel
+# ==========================================================
+
+[ "$(id -u)" -eq 0 ] || { echo "must be root"; exit 1; }
+
+SNAPSHOT_FILE="/tmp/control_panel_root_snapshot.txt"
+LOCK_FILE="/tmp/control_panel_root_snapshot.lock"
+
+: > "$LOCK_FILE" 2>/dev/null || { echo "another instance running"; exit 1; }
+
+{
+    echo "PF: $(pfctl -s info 2>/dev/null | grep 'Status' | sed 's/Status: //')"
+    echo "States: $(pfctl -s states 2>/dev/null | wc -l | tr -d ' ') active"
+    echo "Rules: $(pfctl -s rules 2>/dev/null | grep -c 'pass\|block') loaded"
+    echo ""
+    if [ -f /var/log/dropQbsd_drop.log ]; then
+        echo "enforce_drop: $(tail -1 /var/log/dropQbsd_drop.log 2>/dev/null | cut -c1-60)"
+    fi
+    if [ -f /var/log/dropQbsd_sync.log ]; then
+        echo "enforce_sync: $(tail -1 /var/log/dropQbsd_sync.log 2>/dev/null | cut -c1-60)"
+    fi
+    if [ -f /var/log/dropQbsd_integrity.log ]; then
+        echo "verify: $(tail -1 /var/log/dropQbsd_integrity.log 2>/dev/null | cut -c1-60)"
+    fi
+    echo ""
+    echo "Snapshot: $(date '+%Y-%m-%d %H:%M:%S')"
+} > "$SNAPSHOT_FILE"
+
+chmod 644 "$SNAPSHOT_FILE"
+rm -f "$LOCK_FILE"
+echo ""
+echo "Done."
