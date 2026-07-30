@@ -1,0 +1,371 @@
+#!/bin/ksh
+# ==========================================================
+#  dropQbsd -- control_panel
+#
+#  ncurses dashboard for monitoring compartment status,
+#  drop zone contents, and system health. Launched by the
+#  conductor (user). Root-level data (PF state, enforcement
+#  logs, integrity verification) is gated behind on-demand
+#  su - authentication triggered by pressing 'a'.
+#
+#  No doas rules, no persistent root processes, no changes
+#  to the privilege model.
+#
+#  Path: /opt/dropQbsd/bin/control_panel
+#  Permissions: chmod 755, root:wheel
+#  Usage: control_panel
+# ==========================================================
+
+SNAPSHOT_FILE="/tmp/control_panel_root_snapshot.txt"
+SNAPSHOT_MAX_AGE=300
+REFRESH_INTERVAL=15
+DROP_ZONE="/home/drop"
+QUARANTINE_DIR="/home/drop/_quarantine"
+
+C_HEADER='\033[1;37m'
+C_DIM='\033[2;37m'
+C_USERWEB='\033[1;34m'
+C_USERMAIL='\033[1;35m'
+C_USERDOC='\033[1;32m'
+C_WARN='\033[1;33m'
+C_OK='\033[1;32m'
+C_LOCK='\033[1;31m'
+C_FILE='\033[0;37m'
+C_QUAR='\033[1;33m'
+C_RESET='\033[0m'
+
+COLS=80
+LINES=24
+RUNNING=1
+ROOT_AUTHED=0
+SNAPSHOT_AGE=0
+STTY_ORIG=""
+LAST_RENDER=0
+
+cleanup() {
+    [ -n "$STTY_ORIG" ] && stty "$STTY_ORIG" 2>/dev/null
+    tput cnorm 2>/dev/null
+    printf "${C_RESET}"
+    clear
+    RUNNING=0
+}
+trap cleanup SIGINT SIGTERM
+
+sigwinch_handler() {
+    COLS=$(tput cols)
+    LINES=$(tput lines)
+    clear
+    render
+}
+trap sigwinch_handler SIGWINCH
+
+now_epoch() { date +%s; }
+
+hr() {
+    typeset w="$1" ch="${2:--}" i=0
+    while [ "$i" -lt "$w" ]; do
+        printf "%s" "$ch"
+        i=$(( i + 1 ))
+    done
+}
+
+root_snapshot_available() {
+    [ -f "$SNAPSHOT_FILE" ] || return 1
+    typeset now snap_time
+    now=$(now_epoch)
+    snap_time=$(stat -f '%m' "$SNAPSHOT_FILE" 2>/dev/null)
+    [ -n "$snap_time" ] || return 1
+    SNAPSHOT_AGE=$(( now - snap_time ))
+    [ "$SNAPSHOT_AGE" -lt "$SNAPSHOT_MAX_AGE" ]
+}
+
+load_snapshot() {
+    if root_snapshot_available; then
+        ROOT_AUTHED=1
+    else
+        ROOT_AUTHED=0
+    fi
+}
+
+truncate_name() {
+    typeset name="$1" max="${2:-30}"
+    typeset len
+    len=${#name}
+    if [ "$len" -gt "$max" ]; then
+        echo "$name" | cut -c1-$(( max - 3 ))
+        echo "..."
+    else
+        echo "$name"
+    fi
+}
+
+render_domain_line() {
+    typeset r="$1" color="$2" label="$3" pid_count="$4" proc_name="$5"
+
+    tput cup "$r" 4
+    printf "${color}%-10s${C_RESET}  " "$label"
+
+    if [ "$pid_count" -gt 0 ]; then
+        printf "${C_OK}ACTIVE${C_RESET}  ${C_DIM}%s${C_RESET}" "$proc_name"
+    else
+        printf "${C_DIM}idle${C_RESET}"
+    fi
+}
+
+do_root_auth() {
+    typeset mode="$1" inner_y inner_x box_w box_h
+
+    stty "$STTY_ORIG" 2>/dev/null
+    tput cnorm 2>/dev/null
+    printf "${C_RESET}\033[2J\033[H"
+
+    COLS=$(tput cols)
+    LINES=$(tput lines)
+
+    box_w=60
+    box_h=6
+    inner_x=$(( (COLS - box_w) / 2 ))
+    inner_y=$(( (LINES - box_h) / 2 - 2 ))
+
+    tput cup $inner_y $inner_x
+    printf "${C_DIM}┌"
+    hr $(( box_w - 2 )) '─'
+    printf "┐${C_RESET}"
+
+    tput cup $(( inner_y + 1 )) $inner_x
+    printf "${C_DIM}│${C_RESET}  ${C_HEADER}dropQbsd — root %s${C_RESET}" "$mode"
+    tput cup $(( inner_y + 1 )) $(( inner_x + box_w - 1 ))
+    printf "${C_DIM}│${C_RESET}"
+
+    tput cup $(( inner_y + 2 )) $inner_x
+    printf "${C_DIM}├"
+    hr $(( box_w - 2 )) '─'
+    printf "┤${C_RESET}"
+
+    tput cup $(( inner_y + 3 )) $inner_x
+    printf "${C_DIM}│${C_RESET}%*s${C_DIM}│${C_RESET}" $(( box_w - 2 )) ""
+    tput cup $(( inner_y + 4 )) $inner_x
+    printf "${C_DIM}│${C_RESET}%*s${C_DIM}│${C_RESET}" $(( box_w - 2 )) ""
+
+    tput cup $(( inner_y + 5 )) $inner_x
+    printf "${C_DIM}└"
+    hr $(( box_w - 2 )) '─'
+    printf "┘${C_RESET}"
+    tput cup $(( inner_y + box_h + 1 )) 0
+    su - root -c /opt/dropQbsd/libexec/root_snapshot
+
+    printf "\n"
+    printf "${C_DIM}  Press ENTER to return to panel...${C_RESET}"
+    read dummy
+
+    load_snapshot
+    tput civis 2>/dev/null
+    stty raw -echo min 0 time $(( REFRESH_INTERVAL * 10 )) 2>/dev/null
+    render
+}
+
+render() {
+    typeset row n_files n_quar uw_pid um_pid ud_pid uw_proc um_proc ud_proc
+    typeset tmpfs_data dz_count dz_name dz_perms dz_age snap_line
+
+    COLS=$(tput cols)
+    LINES=$(tput lines)
+    load_snapshot
+    clear
+
+    n_files=0; n_quar=0
+    for f in "$DROP_ZONE"/*; do [ -f "$f" ] && n_files=$(( n_files + 1 )); done
+    for f in "$QUARANTINE_DIR"/*; do [ -f "$f" ] && n_quar=$(( n_quar + 1 )); done
+
+    uw_pid=$(ps -U userweb -o pid= 2>/dev/null | wc -l | tr -d ' ')
+    um_pid=$(ps -U usermail -o pid= 2>/dev/null | wc -l | tr -d ' ')
+    ud_pid=$(ps -U userdoc -o pid= 2>/dev/null | wc -l | tr -d ' ')
+
+    uw_proc=""; um_proc=""; ud_proc=""
+    [ "$uw_pid" -gt 0 ] && uw_proc=$(ps -U userweb -o comm= 2>/dev/null | head -1 | tr -d ' ')
+    [ "$um_pid" -gt 0 ] && um_proc=$(ps -U usermail -o comm= 2>/dev/null | head -1 | tr -d ' ')
+    [ "$ud_pid" -gt 0 ] && ud_proc=$(ps -U userdoc -o comm= 2>/dev/null | head -1 | tr -d ' ')
+
+    tmpfs_data=$(df -m 2>/dev/null | awk '/tmpfs/ {used+=$3; total+=$2} END {printf "%d/%d", used, total}')
+
+    row=0
+    tput cup $row 0
+    printf "${C_HEADER}  dropQbsd Control Panel${C_RESET}"
+    tput cup $row $(( COLS - 48 ))
+    if [ "$ROOT_AUTHED" -eq 1 ]; then
+        printf "${C_DIM}[q]uit  [a]uth  [r]efresh root${C_RESET}"
+    else
+        printf "${C_DIM}[q]uit  [a]uth  [r]efresh${C_RESET}"
+    fi
+
+    row=1
+    tput cup $row 0; printf "${C_DIM}"; hr "$COLS"; printf "${C_RESET}"
+
+    row=2
+    tput cup $row 2
+    printf "${C_HEADER}DOMAINS${C_RESET}"
+    row=3
+
+    render_domain_line $row "$C_USERWEB" "userweb" "$uw_pid" "$uw_proc"
+    row=$(( row + 1 ))
+    render_domain_line $row "$C_USERMAIL" "usermail" "$um_pid" "$um_proc"
+    row=$(( row + 1 ))
+    render_domain_line $row "$C_USERDOC" "userdoc" "$ud_pid" "$ud_proc"
+    row=$(( row + 1 ))
+
+    tput cup $row 4
+    printf "${C_DIM}%-10s${C_RESET}  ${C_OK}%s files${C_RESET}  ${C_DIM}%s quarantined${C_RESET}" "dropzone" "$n_files" "$n_quar"
+    row=$(( row + 1 ))
+
+    tput cup $row 0; printf "${C_DIM}"; hr "$COLS"; printf "${C_RESET}"
+    row=$(( row + 1 ))
+
+    tput cup $row 2
+    printf "${C_HEADER}DROP ZONE${C_RESET}  ${C_DIM}%s${C_RESET}" "$DROP_ZONE"
+    row=$(( row + 1 ))
+
+    dz_count=0
+    for f in "$DROP_ZONE"/*; do
+        [ -f "$f" ] || continue
+        dz_count=$(( dz_count + 1 ))
+        [ "$dz_count" -gt 8 ] && break
+
+        dz_name=$(basename "$f")
+        dz_name=$(truncate_name "$dz_name" 30)
+        dz_perms=$(stat -f '%p' "$f" 2>/dev/null | tail -c 5)
+        dz_age=$(( ( $(now_epoch) - $(stat -f '%m' "$f" 2>/dev/null) ) / 60 ))
+
+        tput cup $row 4
+        printf "${C_FILE}%-30s${C_RESET}  %-5s  %4dm  " "$dz_name" "$dz_perms" "$dz_age"
+        case "$dz_perms" in
+            440|444) printf "${C_OK}ready${C_RESET}" ;;
+            *)       printf "${C_WARN}WARN${C_RESET}" ;;
+        esac
+        row=$(( row + 1 ))
+    done
+
+    for f in "$QUARANTINE_DIR"/*; do
+        [ -f "$f" ] || continue
+        dz_count=$(( dz_count + 1 ))
+        [ "$dz_count" -gt 8 ] && break
+
+        dz_name=$(basename "$f")
+        dz_name=$(truncate_name "$dz_name" 30)
+
+        tput cup $row 4
+        printf "${C_FILE}%-30s${C_RESET}  %-5s  %4s  ${C_QUAR}QUARANTINED${C_RESET}" \
+            "$dz_name" "quar" "-"
+        row=$(( row + 1 ))
+    done
+
+    if [ "$dz_count" -eq 0 ]; then
+        tput cup $row 4
+        printf "${C_DIM}(empty)${C_RESET}"
+        row=$(( row + 1 ))
+    fi
+
+    tput cup $row 0; printf "${C_DIM}"; hr "$COLS"; printf "${C_RESET}"
+    row=$(( row + 1 ))
+
+    tput cup $row 2
+    printf "${C_HEADER}SYSTEM${C_RESET}"
+    row=$(( row + 1 ))
+
+    if [ "$ROOT_AUTHED" -eq 1 ]; then
+        tput cup $row 4
+        printf "${C_OK}Root authenticated${C_RESET} ${C_DIM}(snapshot: %s ago)${C_RESET}" "${SNAPSHOT_AGE}s"
+        row=$(( row + 1 ))
+
+        if [ -f "$SNAPSHOT_FILE" ]; then
+            exec 4< "$SNAPSHOT_FILE"
+            while IFS= read -r snap_line <&4; do
+                [ -z "$snap_line" ] && continue
+                tput cup $row 4
+                printf "%-*s" $(( COLS - 8 )) "$snap_line"
+                row=$(( row + 1 ))
+            done
+            exec 4<&-
+        fi
+
+        tput cup $row 4
+        printf "tmpfs: %sM used" "$tmpfs_data"
+        row=$(( row + 1 ))
+
+        tput cup $row 4
+        printf "${C_DIM}[ Press R to refresh root snapshot ]${C_RESET}"
+        row=$(( row + 1 ))
+    else
+        tput cup $row 4
+        printf "${C_LOCK}Root data not available${C_RESET}"
+        row=$(( row + 1 ))
+
+        tput cup $row 4
+        printf "${C_DIM}[ Press A to authenticate as root ]${C_RESET}"
+        row=$(( row + 1 ))
+
+        tput cup $row 4
+        printf "tmpfs: %sM used" "$tmpfs_data"
+        row=$(( row + 1 ))
+    fi
+
+    tput cup $(( LINES - 1 )) 0
+    printf "${C_DIM}  dropQbsd %s" "$(uname -r)"
+    tput cup $(( LINES - 1 )) $(( COLS - 30 ))
+    printf "refresh: r | %s" "$(date '+%H:%M:%S')"
+}
+
+input_loop() {
+    typeset key now
+
+    while [ "$RUNNING" -eq 1 ]; do
+        key=$(dd bs=1 count=1 2>/dev/null)
+
+        if [ -z "$key" ]; then
+            now=$(now_epoch)
+            if [ $(( now - LAST_RENDER )) -ge "$REFRESH_INTERVAL" ]; then
+                render
+                LAST_RENDER=$now
+            fi
+            continue
+        fi
+
+        LAST_RENDER=$(now_epoch)
+
+        if [ "$key" = "q" ]; then
+            cleanup
+            exit 0
+        fi
+
+        if [ "$key" = "a" ] && [ "$ROOT_AUTHED" -eq 0 ]; then
+            do_root_auth "authentication"
+            continue
+        fi
+
+        if [ "$key" = "r" ] && [ "$ROOT_AUTHED" -eq 1 ]; then
+            do_root_auth "refresh"
+            continue
+        fi
+
+        render
+    done
+}
+
+main() {
+    [ -t 0 ] || {
+        echo "control_panel: must be run from a terminal" >&2
+        exit 1
+    }
+
+    STTY_ORIG=$(stty -g)
+    stty raw -echo min 0 time $(( REFRESH_INTERVAL * 10 ))
+
+    tput civis 2>/dev/null
+    COLS=$(tput cols)
+    LINES=$(tput lines)
+
+    LAST_RENDER=$(now_epoch)
+    render
+    input_loop
+}
+
+main "$@"
