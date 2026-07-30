@@ -138,7 +138,7 @@ done
 
 Review the locale settings in `/etc/profile` — the example uses English for system messages and Italian for time, monetary, and numeric formats. Adjust to your region or set all to `en_US.UTF-8`. The global shell aliases and per-user prompts are configured in `/etc/kshrc`.
 
-The `.xsession` file loads the system-wide environment and launches the desktop. Review the window manager line — the example uses XFCE. Adjust to your preferred WM (cwm, fvwm, etc.).
+The `.xsession` file loads the system-wide environment and launches the desktop. The conductor (`user`) runs XFCE with `indicator_xfce4`; all other domains run cwm with `indicator_cwm`. Adjust to your preferred WM.
 
 ---
 
@@ -470,10 +470,11 @@ Both work with `run_app` without additional configuration. Launch apps in any do
 
 | User | Role | Suggested theme color |
 |------|------|-----------------------|
-| `user` | Conductor | Dark grey |
-| `userweb` | Web browser | Red |
-| `usermail` | Email | Blue |
-| `userdoc` | Documents | Green |
+| `user` | Conductor | Black / Dark grey |
+| `userdoc` | Documents | Dark green |
+| `usermail` | Email | Dark orchid |
+| `userweb` | Web browser | Dark blue |
+| `root` | System | Dark red |
 
 Set the theme per user via XFCE Settings → Appearance. This gives immediate visual feedback about which domain you're working in.
 
@@ -607,6 +608,9 @@ After a full installation, your system will have:
 │   ├── sysupgrade_via_pf      # Major release upgrade
 │   └── update_openbsd_via_pf  # Full system update
 ├── bin/                       # User-facing commands
+│   ├── control_panel          # ncurses dashboard
+│   ├── indicator_cwm          # Domain indicator for cwm/i3/dwm
+│   ├── indicator_xfce4        # Domain indicator for XFCE/DEs
 │   ├── run_app                # setuid blind gate (compiled)
 │   ├── qmv                    # Move files into drop zone
 │   ├── qcp                    # Copy files into drop zone
@@ -625,8 +629,11 @@ After a full installation, your system will have:
 │   ├── ensure_updates_table   # Populate <updates> PF table
 │   ├── export_www_to_drop     # www archival
 │   ├── export_mail_to_drop    # Mail archival
+│   ├── indicator_cwm          # Domain indicator for cwm/i3/dwm
+│   ├── indicator_xfce4        # Domain indicator for XFCE/DEs
 │   ├── pull_www_from_drop     # www import
 │   ├── pull_mail_from_drop    # Mail import
+│   ├── root_snapshot          # Privileged data for control_panel
 │   ├── run_app_impl           # Launch logic (ksh)
 │   ├── update_mailserver_table # Mail server PF table
 │   ├── update_services_table  # Services PF table
