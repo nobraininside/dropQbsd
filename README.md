@@ -348,6 +348,32 @@ Edit the file and uncomment the section for your role:
 Launch the menu with `Ctrl+/`.
 
 
+### Control Panel
+
+`control_panel` is an ncurses dashboard that shows compartment status, drop zone contents, and system health at a glance. Run it from the conductor:
+
+```sh
+$ control_panel
+```
+
+**What you see:**
+
+- **Domains** — which compartments are active (userweb, usermail, userdoc) and what process is running in each
+- **Drop zone** — files awaiting import, their permissions, age, and quarantine status
+- **System** — PF firewall state, enforcement logs, integrity verification, tmpfs usage (root authentication required)
+
+**Keys:**
+
+| Key | Action |
+|-----|--------|
+| `q` | Quit |
+| `a` | Authenticate as root (shows PF state, logs, integrity) |
+| `r` | Refresh root snapshot (when already authenticated) |
+
+The panel auto-refreshes every 15 seconds. No doas rules required — root authentication uses `su -` inline through a clean terminal UI.
+Requires `/opt/dropQbsd/libexec/root_snapshot` on the system.
+
+
 ### Archiving
 
 Export and pull operations are automated via root's crontab. To run them manually:
