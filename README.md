@@ -103,6 +103,47 @@ Downloads made in disposable mode are bridged to the real `/home/$USER/Downloads
 
 Service IPs and mail server IPs are managed dynamically via PF tables, populated from configuration files in `/etc/tables/`. No provider IPs are exposed in the public repository.
 
+### Domain Indicators
+
+dropQbsd includes two scripts that show which domain the active
+window belongs to, so you never lose track of what compartment
+you're working in.
+
+| Script | For | How it works |
+|--------|-----|--------------|
+| `indicator_xfce4` | XFCE, MATE, any DE | OSD popup overlay on domain change |
+| `indicator_cwm` | cwm, i3, dwm, spectrwm | Sets root window name via `xsetroot` |
+
+**indicator_xfce4** shows a large popup overlay centered on the active window whenever you switch domains. Requires `dzen2` and `xdotool`:
+
+```sh
+doas pkg_add dzen2 xdotool
+```
+
+Add to `~/.xsession` before the window manager line:
+
+```sh
+/opt/dropQbsd/bin/indicator_xfce4 &
+```
+
+**indicator_cwm** sets the X11 root window name. cwm, i3, and dwm display it automatically in their status bar — no extra configuration needed. Zero dependencies beyond base X11.
+
+```sh
+/opt/dropQbsd/bin/indicator_cwm &
+```
+
+**Detection:** the indicator checks the active window's title first (so xterms with `-title 'userweb'` are always detected correctly), then falls back to `_NET_WM_PID` and process owner, and finally matches `WM_CLASS` for apps like xfe and Thunar that don't expose their PID.
+
+**Color mapping (consistent across all dropQbsd themes):**
+
+| Domain | Color | Hex |
+|--------|-------|-----|
+| userweb | Bright blue | #3399FF |
+| usermail | Bright orchid | #BB66EE |
+| userdoc | Bright green | #33CC33 |
+| user (conductor) | White | #FFFFFF |
+| root | Bright red | #FF3333 |
+
 ### Archival Pipeline
 
 ```
@@ -118,10 +159,7 @@ Export files are `root:drop 440` — no domain user can modify them. Integrity v
 - **Blind-gate privilege escalation.** `run_app` is a 10-line setuid binary that can only call `run_app_impl`. Logic stays in auditable ksh. Attack surface is frozen.
 - **Disposable browsers.** tmpfs-backed, nothing survives exit. No persistent profiles. Downloads survive via symlink bridge.
 - **Automated archival.** Email and websites compressed, verified, pulled across domains on schedule.
-- **Quarantine with audit trail.** Files with incorrect group ownership are
-  isolated with an explanation ticket. Rare in normal use (SGID on the drop
-  zone forces correct group), but catches misconfigured scripts or malicious
-  placement.
+- **Quarantine with audit trail.** Files with incorrect group ownership are   isolated with an explanation ticket. Rare in normal use (SGID on the drop zone forces correct group), but catches misconfigured scripts or malicious placement.
 - **Root web access on-demand.** `ensure_updates_table` populates the PF table, `pkg_add_via_pf` and `syspatch_via_pf` do their job. No telemetry. No background phoning home.
 - **Reinstallable in 30 minutes.** No databases, no daemons, no state you can't reconstruct from scripts and `/etc`.
 - **Integrity verification.** Critical scripts are checksummed and verified via `signify(1)` on a cron schedule. All dropQbsd components log to `/var/log/` (see Monitoring below).
@@ -135,8 +173,6 @@ dropQbsd is fully functional with just the base system. Several optional compone
 - **Site Menu + pass** — password manager integration with one-click site launching
 - **Integrity verification** — cryptographic checksums via `signify(1)`
 - **Color schemes** — coordinated skins for Midnight Commander, Xfe, Thunar and related editors per domain
-
----
 
 ### Security Model
 
