@@ -2,28 +2,33 @@
 # ==========================================================
 #  dropQbsd -- indicator_xfce4
 #
-#  OSD popup on domain change. Shows a large centered
-#  overlay on the active window when you switch domains.
+#  OSD popup on domain change.
 #  Requires: dzen2, xdotool.
-# 
-#  Setup: /opt/dropQbsd/bin/indicator_xfce4 &
 #
 #  Path: /opt/dropQbsd/bin/indicator_xfce4
 #  Permissions: chmod 755, root:wheel
 # ==========================================================
+
 last_owner=""
 last_change=0
+
 find_owner() {
     typeset wid="$1" pid owner uid wm_name wm_class
 
+    # 1. Window title — exact domain matches
     wm_name=$(xprop -id "$wid" WM_NAME 2>/dev/null | cut -d'"' -f2)
     case "$wm_name" in
         "userweb"|"userweb "*|*" userweb")  echo "userweb"; return ;;
         "usermail"|"usermail "*|*" usermail") echo "usermail"; return ;;
         "userdoc"|"userdoc "*|*" userdoc")  echo "userdoc"; return ;;
-        "root"|"root "*|*" root")           echo "root"; return ;;
     esac
 
+    # 2. Window title contains [root@] — shell prompt betrays root
+    case "$wm_name" in
+        *"[root@"*) echo "root"; return ;;
+    esac
+
+    # 3. _NET_WM_PID
     pid=$(xprop -id "$wid" _NET_WM_PID 2>/dev/null | awk '{print $NF}')
     if [ -n "$pid" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
         uid=$(ps -o uid= -p "$pid" 2>/dev/null | tr -d ' ')
@@ -34,6 +39,7 @@ find_owner() {
         esac
     fi
 
+    # 4. WM_CLASS fallback for xfe/Thunar
     wm_class=$(xprop -id "$wid" WM_CLASS 2>/dev/null | cut -d'"' -f2)
     case "$wm_class" in
         "xfe"|"Xfe"|"Thunar"|"thunar")
@@ -46,6 +52,7 @@ find_owner() {
     esac
 
     echo "unknown"
+}
 
 while true; do
     raw=$(xprop -root _NET_ACTIVE_WINDOW 2>/dev/null)
@@ -60,7 +67,6 @@ while true; do
     owner=$(find_owner "$active_id")
     now=$(date +%s)
 
-    # Popup only on domain change
     if [ "$owner" != "$last_owner" ] && [ -n "$owner" ] && [ "$owner" != "unknown" ]; then
         if [ $(( now - last_change )) -gt 1 ]; then
             case "$owner" in
@@ -95,5 +101,3 @@ while true; do
 
     sleep 0.5
 done
-
-}
