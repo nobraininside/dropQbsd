@@ -3,33 +3,23 @@
 #  dropQbsd -- indicator_cwm
 #
 #  Domain indicator for minimal window managers: cwm, i3,
-#  dwm, spectrwm, ratpoison, bspwm, herbstluftwm, and any
-#  WM that reads the X11 root window name for its status bar.
-#
-#  Sets the root window name to the current domain via
+#  dwm, spectrwm, ratpoison, bspwm, herbstluftwm.
+#  Sets the X11 root window name to the current domain via
 #  xsetroot(1). Zero dependencies beyond base X11.
 #
-#  Colors are not supported — root window name is plain text.
-#  For color indicators, use indicator_xfce with XFCE/MATE
-#  or pipe indicator_cwm into dzen2/lemonbar with color
-#  formatting.
-#
-#  Setup:
-#    Add to ~/.xsession or ~/.xinitrc:
-#      /opt/dropQbsd/bin/indicator_cwm &
-#
-#    cwm and dwm pick it up automatically.
-#    For i3, use as status_command in your i3status config.
+#  Setup: add to ~/.xsession before the WM line:
+#    /opt/dropQbsd/bin/indicator_cwm &
 #
 #  Does NOT work with XFCE, KDE, GNOME — these ignore the
-#  root window name. Use indicator_xfce instead.
+#  root window name. Use indicator_xfce4 instead.
 #
 #  Path: /opt/dropQbsd/bin/indicator_cwm
 #  Permissions: chmod 755, root:wheel
 # ==========================================================
 
 while true; do
-    active_id=$(xprop -root _NET_ACTIVE_WINDOW 2>/dev/null | awk '{print $NF}')
+    raw=$(xprop -root _NET_ACTIVE_WINDOW 2>/dev/null)
+    active_id=$(echo "$raw" | sed 's/.*window id # //' | cut -d',' -f1 | tr -d ' ')
 
     if [ -z "$active_id" ] || [ "$active_id" = "0x0" ]; then
         xsetroot -name "  dropQbsd: none"
@@ -41,6 +31,20 @@ while true; do
     [ -z "$pid" ] && { sleep 1; continue; }
 
     owner=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
+    uid=$(ps -o uid= -p "$pid" 2>/dev/null | tr -d ' ')
+
+    # Root detection
+    if [ "$uid" = "0" ]; then
+        owner="root"
+    else
+        wm_name=$(xprop -id "$active_id" WM_NAME 2>/dev/null | cut -d'"' -f2)
+        case "$wm_name" in
+            *"[root@"*) owner="root" ;;
+            "userweb"|"userweb "*|*" userweb")  owner="userweb" ;;
+            "usermail"|"usermail "*|*" usermail") owner="usermail" ;;
+            "userdoc"|"userdoc "*|*" userdoc")  owner="userdoc" ;;
+        esac
+    fi
 
     case "$owner" in
         userweb)  xsetroot -name "  WEB" ;;
