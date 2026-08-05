@@ -1,54 +1,53 @@
-#!/bin/ksh
-# ==========================================================
-#  dropQbsd -- indicator_xfce4
-#
-#  OSD popup on domain change. Shows a large centered
-#  overlay on the active window when you switch domains.
-#  Requires: dzen2, xdotool.
-#
-#  Setup: /opt/dropQbsd/bin/indicator_xfce4 &
-#
-#  Path: /opt/dropQbsd/bin/indicator_xfce4
-#  Permissions: chmod 755, root:wheel
-# ==========================================================
+#!/bin/ksh                                                                                                                                                          
+# ==========================================================                                                                                                                                                        
+#  dropQbsd -- indicator_xfce4                                                                                                                                                                                      
+#                                                                                                                               
+#  OSD popup on domain change. Shows a large centered                                                                                                                                                               
+#  overlay on the active window when you switch domains.                                                                                                                                                            
+#  Requires: dzen2, xdotool.                                                                                                                                                                                        
+#                                                                                                                               
+#  Setup: /opt/dropQbsd/bin/indicator_xfce4 &                                                                                                                                                                       
+#                                                                                                                               
+#  Path: /opt/dropQbsd/bin/indicator_xfce4                                                                                                                                                                          
+#  Permissions: chmod 755, root:wheel                                                                                                                                                                               
+# ==========================================================                                                                                                                                                        
 
-last_owner=""
-last_change=0
+last_owner=""                                                                                                                                                                   
+last_change=0                                                                                                                                                                   
 
-find_owner() {
-    typeset wid="$1" pid owner uid wm_name wm_class
+find_owner() {                                                                                                                                                                      
+    typeset wid="$1" pid owner uid wm_name wm_class                                                                                                                                                                 
 
-    wm_name=$(xprop -id "$wid" WM_NAME 2>/dev/null | cut -d'"' -f2)
-    case "$wm_name" in
-        "userweb"|"userweb "*|*" userweb")  echo "userweb"; return ;;
-        "usermail"|"usermail "*|*" usermail") echo "usermail"; return ;;
-        "userdoc"|"userdoc "*|*" userdoc")  echo "userdoc"; return ;;
-        "root"|"root "*|*" root")           echo "root"; return ;;
-    esac
+    wm_name=$(xprop -id "$wid" WM_NAME 2>/dev/null | cut -d'"' -f2)                                                                                                                                                 
+    case "$wm_name" in                                                                                                                                                                                              
+        "userweb"|"userweb "*|*" userweb")  echo "userweb"; return ;;                                                                                                                                               
+        "usermail"|"usermail "*|*" usermail") echo "usermail"; return ;;                                                                                                                                            
+        "userdoc"|"userdoc "*|*" userdoc")  echo "userdoc"; return ;;                                                                                                                                               
+        "root"|"root "*|*" root")           echo "root"; return ;;                                                                                                                                                  
+    esac                                                                                                                                                    
 
-    pid=$(xprop -id "$wid" _NET_WM_PID 2>/dev/null | awk '{print $NF}')
-    if [ -n "$pid" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
-        uid=$(ps -o uid= -p "$pid" 2>/dev/null | tr -d ' ')
-        owner=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
-        if [ "$uid" = "0" ]; then echo "root"; return; fi
-        case "$owner" in
-            userweb|usermail|userdoc|user) echo "$owner"; return ;;
-        esac
-    fi
+    pid=$(xprop -id "$wid" _NET_WM_PID 2>/dev/null | awk '{print $NF}')                                                                                                                                             
+    if [ -n "$pid" ] && [ "$pid" -gt 0 ] 2>/dev/null; then                                                                                                                                                          
+        uid=$(ps -o uid= -p "$pid" 2>/dev/null | tr -d ' ')                                                                                                                                                         
+        owner=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')                                                                                                                                                      
+        if [ "$uid" = "0" ]; then echo "root"; return; fi                                                                                                                                                           
+        case "$owner" in                                                                                                                                                                                            
+            userweb|usermail|userdoc|user) echo "$owner"; return ;;                                                                                                                                                 
+        esac                                                                                                                                                                
+    fi                                                                                                                                              
 
-    wm_class=$(xprop -id "$wid" WM_CLASS 2>/dev/null | cut -d'"' -f2)
-    case "$wm_class" in
-        "xfe"|"Xfe"|"Thunar"|"thunar")
-            for domain in userweb usermail userdoc; do
-                if ps -U "$domain" -o comm= 2>/dev/null | grep -qi "$wm_class"; then
-                    echo "$domain"; return
-                fi
+    wm_class=$(xprop -id "$wid" WM_CLASS 2>/dev/null | cut -d'"' -f2)                                                                                                                                               
+    case "$wm_class" in                                                                                                                                                                                             
+        "xfe"|"Xfe"|"Thunar"|"thunar")                                                                                                                                                                              
+            for domain in userweb usermail userdoc; do                                                                                                                                                              
+                if ps -U "$domain" -o comm= 2>/dev/null | grep -qi "$wm_class"; then                                                                                                                                
+                    echo "$domain"; return                                                                                                                                                                          
+                fi                                                                                                                                                                                  
             done
             ;;
     esac
 
     echo "unknown"
-}
 
 while true; do
     raw=$(xprop -root _NET_ACTIVE_WINDOW 2>/dev/null)
@@ -98,3 +97,5 @@ while true; do
 
     sleep 0.5
 done
+
+}
