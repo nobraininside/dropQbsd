@@ -1,88 +1,16 @@
-avviato file_bridge. control_panell ok; pannelli vifm danno "warning checkinf for string using a boolean context is a bug; per usermail ho userlan color scheme is not supported. Ecco gli schemi che uso per xterm: 1) userdoc: -bg darkgreen -fg white; 2) usermail: -bg darkorchid3 -fg white ; 3) userweb: -bg darkblue -fg white;      Due problemi: il warning di vifm e i colori xterm. Sistemiamoli.
-1. Warning vifm
-È un bug noto di vifm quando riceve comandi via -c. Si risolve racchiudendo ogni cmap in un blocco che forza il contesto corretto:
--c 'cmap <f5> qcp'   →   -c 'execute "cmap <f5> qcp"'
-
-2. Colori xterm
-run_app non propaga le variabili d'ambiente del terminale del conductor ai domini. Devi passare i colori esplicitamente. xterm accetta -bg e -fg da riga di comando.
-Ecco lo script corretto:
 #!/bin/ksh
 # ==========================================================
-#  dropQbsd -- file_bridge
+#  dropQbsd -- xterm_userweb
 #
-#  tmux-based 4-quadrant file manager bridge across all
-#  three dropQbsd domains. Each domain gets its own vifm
-#  :only instance launched via run_app, with qcp/qmv/qimport
-#  bound to F5/F6/F7. control_panel sits in the top-left
-#  quadrant for real-time drop zone and compartment status.
+#  Opens an xterm as usermail with the document domain
+#  color scheme (darkblue background).
 #
-#  No config files in domain homes. No hardcoded geometry.
-#  vifm keybindings are injected via command-line flags.
-#  tiled layout adapts to terminal size automatically.
-#
-#  Path: /opt/dropQbsd/bin/file_bridge
+#  Path: /opt/dropQbsd/bin/xterm_userweb
 #  Permissions: chmod 755, root:wheel
-#  Usage: file_bridge
-#
-#  Requirements: tmux, vifm, control_panel
 # ==========================================================
 
-SESSION="file_bridge"
-
-# -- Teardown existing session -----------------------------
-
-tmux kill-session -t "$SESSION" 2>/dev/null
-sleep 0.3
-
-# -- Quadrant 1: top-left, control_panel -------------------
-
-tmux new-session -d -s "$SESSION" -n 'bridge' \
-    "control_panel"
-
-# -- Quadrant 2: top-right, userdoc ------------------------
-
-tmux split-window -h -t "$SESSION:0" \
-    "xterm -bg darkgreen -fg white \
-     -e /opt/dropQbsd/bin/run_app userdoc vifm +only \
-     -c 'execute \"cmap <f5> qcp\"' \
-     -c 'execute \"cmap <f6> qmv\"' \
-     -c 'execute \"cmap <f7> qimport\"' \
-     /home/userdoc"
-
-# -- Quadrant 3: bottom-left, usermail ---------------------
-
-tmux select-pane -t "$SESSION:0.0"
-tmux split-window -v -t "$SESSION:0.0" \
-    "xterm -bg darkorchid3 -fg white \
-     -e /opt/dropQbsd/bin/run_app usermail vifm +only \
-     -c 'execute \"cmap <f5> qcp\"' \
-     -c 'execute \"cmap <f6> qmv\"' \
-     -c 'execute \"cmap <f7> qimport\"' \
-     /home/usermail"
-
-# -- Quadrant 4: bottom-right, userweb ─────────────────────
-
-tmux select-pane -t "$SESSION:0.1"
-tmux split-window -v -t "$SESSION:0.1" \
-    "xterm -bg darkblue -fg white \
-     -e /opt/dropQbsd/bin/run_app userweb vifm +only \
-     -c 'execute \"cmap <f5> qcp\"' \
-     -c 'execute \"cmap <f6> qmv\"' \
-     -c 'execute \"cmap <f7> qimport\"' \
-     /home/userweb"
-
-# -- Even layout -------------------------------------------
-
-tmux select-layout -t "$SESSION" tiled
-
-# -- Style -------------------------------------------------
-
-tmux set-option -t "$SESSION" pane-border-style 'fg=#444444'
-tmux set-option -t "$SESSION" pane-active-border-style 'fg=#FFFFFF'
-
-tmux select-pane -t "$SESSION:0.0" -T "control"
-tmux select-pane -t "$SESSION:0.1" -T "userdoc"
-tmux select-pane -t "$SESSION:0.2" -T "usermail"
-tmux select-pane -t "$SESSION:0.3" -T "userweb"
-
-# -- Attach -----------------------------------------------
+/opt/dropQbsd/bin/run_app userweb xterm \
+    -bg darkblue -fg white \
+    -fa "DejaVu Sans Mono" -fs 11 \
+    -u8 -ls \
+    -e /bin/ksh -c 'cd /home/userweb && ENV=/etc/kshrc exec /bin/ksh' "$@"
