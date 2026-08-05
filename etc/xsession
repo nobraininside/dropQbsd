@@ -1,34 +1,33 @@
 # ==========================================================
-# dropQbsd -- .xsession
+# dropQbsd \xe2\x80\x94 .xsession
 #
 # X session startup. Sourced by xenodm at login.
 # Copy to: ~/.xsession
 #
-# Loads the system-wide environment, then launches the
-# desktop. Window manager is selected per-user for visual
-# domain identification.
+# user:      indicator_xfce4 + XFCE (conductor desktop)
+# all others: indicator_cwm + cwm (domain compartments)
 # ==========================================================
 
 [ -f /etc/profile ] && . /etc/profile
 xrandr --dpi 96
 
+# --- dropQbsd domain indicator ---
 case "$USER" in
     user)
-        exec /usr/local/bin/xfce4-session
-        ;;
-    userweb)
-        exec /usr/X11R6/bin/cwm
-        ;;
-    usermail)
-        exec /usr/X11R6/bin/cwm
-        ;;
-    userdoc)
-        exec /usr/local/bin/cwm
-        ;;
-    root)
-        exec /usr/X11R6/bin/cwm
+        /opt/dropQbsd/bin/indicator_xfce4 &
         ;;
     *)
-        exec /usr/X11R6/bin/cwm
+        /opt/dropQbsd/bin/indicator_cwm &
         ;;
 esac
+
+# --- window manager / desktop environment ---
+case "$USER" in
+    user)
+        exec /usr/local/bin/startxfce4
+        ;;
+    *)
+        exec /usr/local/bin/cwm
+        ;;
+esac
+
