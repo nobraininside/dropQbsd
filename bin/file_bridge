@@ -21,14 +21,15 @@ SESSION="file_bridge"
 tmux kill-session -t "$SESSION" 2>/dev/null
 sleep 0.3
 
-# -- Quadrant 1: top-left, control_panel -------------------
+# -- Pane 0: top-left, control_panel -----------------------
 
 tmux new-session -d -s "$SESSION" -n 'bridge' \
     "control_panel"
+tmux select-pane -t "$SESSION:0.0" -T "control"
 
-# -- Quadrant 2: top-right, userdoc -------------------------
+# -- Pane 1: top-right, userdoc -----------------------------
 
-tmux split-window -h -t "$SESSION:0" \
+tmux split-window -h -t "$SESSION:0.0" \
     "/opt/dropQbsd/bin/run_app userdoc vifm \
      '+only' \
      '+set nodotfiles' \
@@ -36,11 +37,11 @@ tmux split-window -h -t "$SESSION:0" \
      '+cmap ,m qmv' \
      '+cmap ,i qimport' \
      /home/userdoc"
+tmux select-pane -t "$SESSION:0.1" -T "userdoc"
 
-# -- Quadrant 3: bottom-left, usermail ----------------------
+# -- Pane 2: bottom-left, usermail --------------------------
 
-tmux select-pane -t "$SESSION:0.0"
-tmux split-window -v -t "$SESSION:0.0" \
+tmux split-window -v -t "$SESSION:0.1" \
     "/opt/dropQbsd/bin/run_app usermail vifm \
      '+only' \
      '+set nodotfiles' \
@@ -48,11 +49,11 @@ tmux split-window -v -t "$SESSION:0.0" \
      '+cmap ,m qmv' \
      '+cmap ,i qimport' \
      /home/usermail"
+tmux select-pane -t "$SESSION:0.2" -T "usermail"
 
-# -- Quadrant 4: bottom-right, userweb ----------------------
+# -- Pane 3: bottom-right, userweb --------------------------
 
-tmux select-pane -t "$SESSION:0.1"
-tmux split-window -v -t "$SESSION:0.1" \
+tmux split-window -v -t "$SESSION:0.2" \
     "/opt/dropQbsd/bin/run_app userweb vifm \
      '+only' \
      '+set nodotfiles' \
@@ -60,26 +61,19 @@ tmux split-window -v -t "$SESSION:0.1" \
      '+cmap ,m qmv' \
      '+cmap ,i qimport' \
      /home/userweb"
+tmux select-pane -t "$SESSION:0.3" -T "userweb"
 
 # -- Even layout --------------------------------------------
 
 tmux select-layout -t "$SESSION" tiled
 
-# -- Pane titles --------------------------------------------
+# -- Status bar ---------------------------------------------
 
-tmux select-pane -t "$SESSION:0.0" -T "control"
-tmux select-pane -t "$SESSION:0.1" -T "userdoc"
-tmux select-pane -t "$SESSION:0.2" -T "usermail"
-tmux select-pane -t "$SESSION:0.3" -T "userweb"
-
-# -- Status bar: domain name left, clock right --------------
-
-tmux set-option -t "$SESSION" status-left ' #{pane_title} '
 tmux set-option -t "$SESSION" status-right ' %Y-%m-%d %H:%M '
 tmux set-option -t "$SESSION" window-status-format ''
 tmux set-option -t "$SESSION" window-status-current-format ''
 
-# -- Background watcher: updates status bar + active border --
+# -- Background watcher --------------------------------------
 
 WATCHER="/tmp/dropqbsd_watcher_$$"
 
@@ -87,18 +81,20 @@ cat > "$WATCHER" << 'WATCHER_EOF'
 #!/bin/ksh
 SESSION="file_bridge"
 while tmux has-session -t "$SESSION" 2>/dev/null; do
-    title=$(tmux display -pt "$SESSION:0" '#{pane_title}' 2>/dev/null)
+    # Find active pane by looking for the one marked active
+    title=$(tmux list-panes -t "$SESSION" -F '#{?pane_active,#{pane_title},}' 2>/dev/null | grep -v '^$')
     case "$title" in
-        userdoc)  bg='#33CC33'; border='fg=#33CC33,bright' ;;
-        usermail) bg='#BB66EE'; border='fg=#BB66EE,bright' ;;
-        userweb)  bg='#3399FF'; border='fg=#3399FF,bright' ;;
-        control)  bg='#222222'; border='fg=#888888,bright' ;;
-        *)        bg='#444444'; border='fg=#FFFFFF' ;;
+        userdoc)  bg='#33CC33'; border='fg=#33CC33,bright'; label=' userdoc ' ;;
+        usermail) bg='#BB66EE'; border='fg=#BB66EE,bright'; label=' usermail ' ;;
+        userweb)  bg='#3399FF'; border='fg=#3399FF,bright'; label=' userweb ' ;;
+        control)  bg='#222222'; border='fg=#888888,bright'; label=' control ' ;;
+        *)        bg='#444444'; border='fg=#FFFFFF';        label=' -- ' ;;
     esac
+    tmux set-option -t "$SESSION" status-left "$label" 2>/dev/null
     tmux set-option -t "$SESSION" status-style "fg=white,bg=$bg" 2>/dev/null
     tmux set-option -t "$SESSION" pane-active-border-style "$border" 2>/dev/null
     tmux set-option -t "$SESSION" pane-border-style 'fg=#333333' 2>/dev/null
-    sleep 0.5
+    sleep 0.3
 done
 rm -f "$WATCHER"
 WATCHER_EOF
