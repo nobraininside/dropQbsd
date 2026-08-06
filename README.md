@@ -238,6 +238,35 @@ permissions immediately, reset file timestamps to prevent premature
 cleanup, verify the copy succeeded, and stage files atomically — the file
 only appears in the drop zone when fully written and correctly locked down.
 
+### File Bridge (tmux-based 4-quadrant file manager)
+
+`file_bridge` opens a tmux session with four quadrants: `control_panel` (top-left), and `nnn` instances for `userdoc` (top-right), `usermail` (bottom-left), `userweb` (bottom-right). The tmux status bar and active pane border change color to match the active domain — green for userdoc, orchid for usermail, blue for userweb, dark grey for control_panel. `nnn` directory colors follow the same scheme via `NNN_COLORS`.
+
+```sh
+$ /opt/dropQbsd/bin/file_bridge
+```
+
+**Keys:**
+
+| Key | Action |
+|-----|--------|
+| `Alt+1` | Jump to control_panel |
+| `Alt+2` | Jump to userdoc |
+| `Alt+3` | Jump to usermail |
+| `Alt+4` | Jump to userweb |
+| `Ctrl+b` arrows | Navigate between quadrants (fallback) |
+| `Space` | Select file(s) in nnn |
+| `;qcp` | Copy selected files to `/home/drop` via qcp |
+| `;qmv` | Move selected files to `/home/drop` via qmv |
+| `;qimport` | Import selected files from `/home/drop` via qimport |
+| `.` | Toggle hidden files in nnn |
+| `Ctrl+b d` | Detach session (reattach with `tmux attach -t file_bridge`) |
+| `Ctrl+b :kill-session` | Quit |
+
+No configuration files required. Domain identification is handled by the tmux status bar (colored background + domain name), the active pane border (colored bright), and `NNN_COLORS` injected via `env` at launch.
+
+Requirements: `tmux`, `nnn`, `control_panel`, plus `nnn` plugins for qcp/qmv/qimport (see INSTALL.md).
+
 **Import from the drop zone into ~/Downloads:**
 
 ```sh
@@ -478,6 +507,7 @@ Three commands. Three habits. Ten minutes. Done.
 | `run_app` | user (setuid root) | Blind-gate binary. Escalates to root, execs `run_app_impl`. The only privileged entry point `user` can touch. |
 | `run_app_impl` | root (via `run_app`) | ksh script with all launch logic — X11 cookie, runtime dir, tmpfs, `su -l`. Editable without recompilation. |
 | `run_app_wrapper.c` | — (source only) | 10-line C source. Kept for reference; only needed if OpenBSD ABI breaks. |
+| `file_bridge` | user | Launch 4-quadrant tmux file manager bridge across all domains |
 
 
 ### Export/Import Pipeline
