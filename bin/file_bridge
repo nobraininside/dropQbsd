@@ -3,15 +3,19 @@
 #  dropQbsd -- file_bridge
 #
 #  tmux-based 4-quadrant bridge. control_panel top-left,
-#  vifm :only instances for userdoc, usermail, userweb.
-#  Status bar + active pane border color follow domain.
-#  qcp/qmv/qimport on ,c ,m ,i. Hidden files hidden.
+#  nnn instances for userdoc (green), usermail (orchid),
+#  userweb (blue) in the other three quadrants. NNN_COLORS
+#  set per-domain via env. Status bar + active pane border
+#  follow domain. qcp/qmv/qimport via nnn plugins.
+#
+#  Alt+1/2/3/4: jump to quadrant.
 #
 #  Path: /opt/dropQbsd/bin/file_bridge
 #  Permissions: chmod 755, root:wheel
 #  Usage: file_bridge
 #
-#  Requirements: tmux, vifm, control_panel
+#  Requirements: tmux, nnn, control_panel,
+#                nnn plugins: qcp, qmv, qimport
 # ==========================================================
 
 SESSION="file_bridge"
@@ -27,40 +31,22 @@ tmux new-session -d -s "$SESSION" -n 'bridge' \
     "control_panel"
 tmux select-pane -t "$SESSION:0.0" -T "control"
 
-# -- Pane 1: top-right, userdoc -----------------------------
+# -- Pane 1: top-right, userdoc (green) ---------------------
 
 tmux split-window -h -t "$SESSION:0.0" \
-    "/opt/dropQbsd/bin/run_app userdoc vifm \
-     '+only' \
-     '+set nodotfiles' \
-     '+cmap ,c qcp' \
-     '+cmap ,m qmv' \
-     '+cmap ,i qimport' \
-     /home/userdoc"
+    "/opt/dropQbsd/bin/run_app userdoc env NNN_COLORS='2312' nnn -H /home/userdoc"
 tmux select-pane -t "$SESSION:0.1" -T "userdoc"
 
-# -- Pane 2: bottom-left, usermail --------------------------
+# -- Pane 2: bottom-left, usermail (orchid) -----------------
 
 tmux split-window -v -t "$SESSION:0.1" \
-    "/opt/dropQbsd/bin/run_app usermail vifm \
-     '+only' \
-     '+set nodotfiles' \
-     '+cmap ,c qcp' \
-     '+cmap ,m qmv' \
-     '+cmap ,i qimport' \
-     /home/usermail"
+    "/opt/dropQbsd/bin/run_app usermail env NNN_COLORS='5315' nnn -H /home/usermail"
 tmux select-pane -t "$SESSION:0.2" -T "usermail"
 
-# -- Pane 3: bottom-right, userweb --------------------------
+# -- Pane 3: bottom-right, userweb (blue) -------------------
 
 tmux split-window -v -t "$SESSION:0.2" \
-    "/opt/dropQbsd/bin/run_app userweb vifm \
-     '+only' \
-     '+set nodotfiles' \
-     '+cmap ,c qcp' \
-     '+cmap ,m qmv' \
-     '+cmap ,i qimport' \
-     /home/userweb"
+    "/opt/dropQbsd/bin/run_app userweb env NNN_COLORS='6316' nnn -H /home/userweb"
 tmux select-pane -t "$SESSION:0.3" -T "userweb"
 
 # -- Even layout --------------------------------------------
@@ -73,6 +59,13 @@ tmux set-option -t "$SESSION" status-right ' %Y-%m-%d %H:%M '
 tmux set-option -t "$SESSION" window-status-format ''
 tmux set-option -t "$SESSION" window-status-current-format ''
 
+# -- Keyboard bindings: Alt+1/2/3/4 jump to quadrant -------
+
+tmux bind-key -T root M-1 select-pane -t "$SESSION:0.0"
+tmux bind-key -T root M-2 select-pane -t "$SESSION:0.1"
+tmux bind-key -T root M-3 select-pane -t "$SESSION:0.2"
+tmux bind-key -T root M-4 select-pane -t "$SESSION:0.3"
+
 # -- Background watcher --------------------------------------
 
 WATCHER="/tmp/dropqbsd_watcher_$$"
@@ -81,7 +74,6 @@ cat > "$WATCHER" << 'WATCHER_EOF'
 #!/bin/ksh
 SESSION="file_bridge"
 while tmux has-session -t "$SESSION" 2>/dev/null; do
-    # Find active pane by looking for the one marked active
     title=$(tmux list-panes -t "$SESSION" -F '#{?pane_active,#{pane_title},}' 2>/dev/null | grep -v '^$')
     case "$title" in
         userdoc)  bg='#33CC33'; border='fg=#33CC33,bright'; label=' userdoc ' ;;
