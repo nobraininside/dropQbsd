@@ -566,6 +566,50 @@ $ /opt/dropQbsd/bin/run_app userdoc mc
 
 Xfe configuration files live in `~/.config/xfe/` inside each domain's home. Copy the example color schemes from `examples/xfe/` and adjust to taste.
 
+#### File Bridge (tmux + nnn)
+
+`file_bridge` provides a 4-quadrant tmux session with `nnn` per domain plus `control_panel`. Install requirements:
+
+```sh
+# /opt/dropQbsd/admin/pkg_add_via_pf nnn tmux
+```
+##### nnn Plugins
+
+Each domain needs three nnn plugins for qcp/qmv/qimport. Create the plugin directory and scripts for each domain:
+
+```sh
+# for d in userdoc usermail userweb; do
+    mkdir -p /home/$d/.config/nnn/plugins
+
+    cat > /home/$d/.config/nnn/plugins/qcp << 'EOF'
+#!/bin/sh
+for f in "$@"; do /opt/dropQbsd/bin/qcp "$f" /home/drop/; done
+EOF
+
+    cat > /home/$d/.config/nnn/plugins/qmv << 'EOF'
+#!/bin/sh
+for f in "$@"; do /opt/dropQbsd/bin/qmv "$f" /home/drop/; done
+EOF
+
+    cat > /home/$d/.config/nnn/plugins/qimport << 'EOF'
+#!/bin/sh
+for f in "$@"; do /opt/dropQbsd/bin/qimport "$f"; done
+EOF
+
+    chmod +x /home/$d/.config/nnn/plugins/*
+    chown -R $d:drop /home/$d/.config/nnn
+done
+```
+Launch from the conductor:
+
+```sh
+$ /opt/dropQbsd/bin/file_bridge
+```
+
+**Navigation:** `Alt+1` through `Alt+4` jump directly to each quadrant. `Ctrl+b` arrows as fallback. The tmux status bar and active pane border follow the active domain with dropQbsd's standard color scheme (green/orchid/blue/grey).
+
+**nnn Colors:** each domain's `nnn` instance uses `NNN_COLORS` set via `env` at launch — directory entries match the domain color. No dotfiles required.
+
 ---
 
 ### VLC in userdoc
@@ -609,6 +653,7 @@ After a full installation, your system will have:
 │   └── update_openbsd_via_pf  # Full system update
 ├── bin/                       # User-facing commands
 │   ├── control_panel          # ncurses dashboard
+│   ├── file_bridge            # tmux-based 4-quadrant file manager bridge
 │   ├── indicator_cwm          # Domain indicator for cwm/i3/dwm
 │   ├── indicator_xfce4        # Domain indicator for XFCE/DEs
 │   ├── run_app                # setuid blind gate (compiled)
