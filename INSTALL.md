@@ -578,7 +578,7 @@ Xfe configuration files live in `~/.config/xfe/` inside each domain's home. Copy
 Each domain needs three nnn plugins for qcp/qmv/qimport. Create the plugin directory and scripts for each domain:
 
 ```sh
-# for d in userdoc usermail userweb; do
+for d in userdoc usermail userweb; do
     mkdir -p /home/$d/.config/nnn/plugins
 
     cat > /home/$d/.config/nnn/plugins/qcp << 'EOF'
@@ -605,10 +605,6 @@ Launch from the conductor:
 ```sh
 $ /opt/dropQbsd/bin/file_bridge
 ```
-
-**Navigation:** `Alt+1` through `Alt+4` jump directly to each quadrant. `Ctrl+b` arrows as fallback. The tmux status bar and active pane border follow the active domain with dropQbsd's standard color scheme (green/orchid/blue/grey).
-
-**nnn Colors:** each domain's `nnn` instance uses `NNN_COLORS` set via `env` at launch — directory entries match the domain color. No dotfiles required.
 
 ---
 
