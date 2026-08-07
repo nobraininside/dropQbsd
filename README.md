@@ -238,35 +238,6 @@ permissions immediately, reset file timestamps to prevent premature
 cleanup, verify the copy succeeded, and stage files atomically — the file
 only appears in the drop zone when fully written and correctly locked down.
 
-### File Bridge (tmux-based 4-quadrant file manager)
-
-`file_bridge` opens a tmux session with four quadrants: `control_panel` (top-left), and `nnn` instances for `userdoc` (top-right), `usermail` (bottom-left), `userweb` (bottom-right). The tmux status bar and active pane border change color to match the active domain — green for userdoc, orchid for usermail, blue for userweb, dark grey for control_panel. `nnn` directory colors follow the same scheme via `NNN_COLORS`.
-
-```sh
-$ /opt/dropQbsd/bin/file_bridge
-```
-
-**Keys:**
-
-| Key | Action |
-|-----|--------|
-| `Alt+1` | Jump to control_panel |
-| `Alt+2` | Jump to userdoc |
-| `Alt+3` | Jump to usermail |
-| `Alt+4` | Jump to userweb |
-| `Ctrl+b` arrows | Navigate between quadrants (fallback) |
-| `Space` | Select file(s) in nnn |
-| `;qcp` | Copy selected files to `/home/drop` via qcp |
-| `;qmv` | Move selected files to `/home/drop` via qmv |
-| `;qimport` | Import selected files from `/home/drop` via qimport |
-| `.` | Toggle hidden files in nnn |
-| `Ctrl+b d` | Detach session (reattach with `tmux attach -t file_bridge`) |
-| `Ctrl+b :kill-session` | Quit |
-
-No configuration files required. Domain identification is handled by the tmux status bar (colored background + domain name), the active pane border (colored bright), and `NNN_COLORS` injected via `env` at launch.
-
-Requirements: `tmux`, `nnn`, `control_panel`, plus `nnn` plugins for qcp/qmv/qimport (see INSTALL.md).
-
 **Import from the drop zone into ~/Downloads:**
 
 ```sh
@@ -342,6 +313,35 @@ $ /opt/dropQbsd/bin/xterm_usermail
 $ /opt/dropQbsd/bin/xterm_userweb
 $ /opt/dropQbsd/bin/xterm_root
 ```
+
+### File Bridge (tmux-based 4-quadrant file manager)
+
+`file_bridge` opens a tmux session with four quadrants: `control_panel` (top-left), and `nnn` instances for `userdoc` (top-right), `usermail` (bottom-left), `userweb` (bottom-right). The tmux status bar and active pane border change color to match the active domain — green for userdoc, orchid for usermail, blue for userweb, dark grey for control_panel. `nnn` directory colors follow the same scheme via `NNN_COLORS`.
+
+```sh
+$ file_bridge
+```
+
+**Keys:**
+
+| Key | Action |
+|-----|--------|
+| `Alt+1` | Jump to control_panel |
+| `Alt+2` | Jump to userdoc |
+| `Alt+3` | Jump to usermail |
+| `Alt+4` | Jump to userweb |
+| `Ctrl+b` arrows | Navigate between quadrants (fallback) |
+| `Space` | Select file(s) in nnn |
+| `;c` | Copy selected files to `/home/drop` via qcp |
+| `;m` | Move selected files to `/home/drop` via qmv |
+| `;i` | Import selected files from `/home/drop` via qimport |
+| `.` | Toggle hidden files in nnn |
+| `Ctrl+b d` | Detach session (reattach with `tmux attach -t file_bridge`) |
+| `Ctrl+b :kill-session` | Quit |
+
+No configuration files required. Domain identification is handled by the tmux status bar (colored background + domain name), the active pane border (colored bright), and `NNN_COLORS` injected via `env` at launch. Plugin keybindings are mapped via `NNN_PLUG`.
+
+Requirements: `tmux`, `nnn`, `control_panel`, plus `nnn` plugins for qcp/qmv/qimport (see INSTALL.md).
 
 ### Editor and Window Manager Configuration
 
