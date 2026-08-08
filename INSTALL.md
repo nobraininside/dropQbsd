@@ -369,7 +369,14 @@ If remote devices show as disconnected:
 
 For daily use we recommend **KeePassXC** — it runs in its own domain, keeps the password database isolated, and works with any browser.
 
-For a smoother, more integrated experience, dropQbsd includes `site_menu`: a dropdown launcher that reads site entries from a config file, copies passwords to the clipboard via `pass(1)`, and opens sites in a disposable browser. The clipboard is automatically cleared after 15 seconds.
+For a smoother, more integrated experience, dropQbsd includes `site_menu`: a two-phase dropdown launcher that reads site entries from a config file, copies credentials to the clipboard via `pass(1)`, and opens sites in a disposable browser.
+
+**Two-phase login flow:**
+
+1. Select a site → press **Copy ID** → browser opens, user ID copied to clipboard, window stays open.
+2. The same site is now the only entry shown → press **Copy Password** → password copied (30s timer), window closes.
+
+This eliminates the risk of pasting credentials into the wrong site — phase 2 locks the selection so only the waiting site is visible. If the GPG keyring is locked, a warning dialog prompts you to unlock it manually and retry.
 
 **Installation:**
 
@@ -393,16 +400,20 @@ $ cp examples/sites.conf ~/.config/dropQbsd/sites.conf
 Edit `~/.config/dropQbsd/sites.conf` with your own sites. Format:
 
 ```sh
-# Label|URL|pass_entry (optional)
-Bank (your_user_id)|https://bank.example.com|finance/bank
-ERP (your_user_id)|https://erp.example.com|work/erp
+# Label|URL|id_entry|pass_entry
+Bank |https://bank.example.com|finance/bank_id|finance/bank_pw
+ERP |https://erp.example.com|work/erp_id|work/erp_pw
+# Sites without a separate ID field:
+Forum|https://forum.example.com||web/forum
 ```
 
 **Store passwords:**
 
 ```sh
-$ pass insert finance/bank
-$ pass insert work/erp
+$ pass insert finance/bank_id
+$ pass insert finance/bank_pw
+$ pass insert work/erp_id
+$ pass insert work/erp_pw
 ```
 
 **Launch:**
@@ -411,7 +422,7 @@ $ pass insert work/erp
 $ /opt/dropQbsd/bin/site_menu
 ```
 
-The site opens in a disposable browser (tmpfs-backed). Nothing survives after the browser closes.
+Phase 1: select site, press **Copy ID** — browser opens, ID copied, window stays open. Phase 2: same site pre-selected, press **Copy Password** — password copied (30s timer), window closes. The site runs in a disposable browser (tmpfs-backed). Nothing survives after the browser closes.
 
 ---
 
@@ -656,12 +667,12 @@ After a full installation, your system will have:
 │   ├── qmv                    # Move files into drop zone
 │   ├── qcp                    # Copy files into drop zone
 │   ├── qimport                # Import files from drop zone
-│   ├── site_menu              # Password manager launcher
-│   ├── xterm_root             # Launch xterm with root color scheme
-│   ├── xterm_user             # Launch xterm with user color scheme
-│   ├── xterm_userdoc          # Launch xterm with userdoc color scheme
-│   ├── xterm_usermail         # Launch xterm with usermail color scheme
-│   └── xterm_userweb          # Launch xterm with userweb color scheme
+│   ├── site_menu              # Two-phase site launcher with ID/password clipboard integration
+│   ├── xterm_root             # Launch xterm with root color scheme (optional command)
+│   ├── xterm_user             # Launch xterm with user color scheme (optional command)
+│   ├── xterm_userdoc          # Launch xterm with userdoc color scheme (optional command)
+│   ├── xterm_usermail         # Launch xterm with usermail color scheme (optional command)
+│   └── xterm_userweb          # Launch xterm with userweb color scheme (optional command)
 ├── keys/                      # `signify` keys and signatures for integrity verification
 │   ├── dropQbsd.pub           # `signify` public key
 │   └── dropQbsd_scripts.sha256.sig       # Signed checksums of critical scripts
