@@ -4,13 +4,25 @@
 #
 #  Opens an xterm as userdoc with the document domain
 #  color scheme (darkgreen background).
+#  Optionally accepts a command to run instead of an
+#  interactive shell.
+#
+#  Usage: xterm_userdoc [command [args...]]
 #
 #  Path: /opt/dropQbsd/bin/xterm_userdoc
 #  Permissions: chmod 755, root:wheel
 # ==========================================================
 
-/opt/dropQbsd/bin/run_app userdoc xterm \
-    -bg darkgreen -fg white \
-    -fa "DejaVu Sans Mono" -fs 11 \
-    -u8 -ls \
-    -e /bin/ksh -c 'cd /home/userdoc && ENV=/etc/kshrc exec /bin/ksh' "$@"
+if [ $# -gt 0 ]; then
+    /opt/dropQbsd/bin/run_app userdoc xterm \
+        -bg darkgreen -fg white \
+        -fa "DejaVu Sans Mono" -fs 11 \
+        -ls \
+        -e /bin/ksh -c "cd /home/userdoc && ENV=/etc/kshrc TERM=xterm-256color exec /bin/ksh -c \"\$@\"" -- "$@"
+else
+    /opt/dropQbsd/bin/run_app userdoc xterm \
+        -bg darkgreen -fg white \
+        -fa "DejaVu Sans Mono" -fs 11 \
+        -u8 -ls \
+        -e /bin/ksh -c 'cd /home/userdoc && ENV=/etc/kshrc exec /bin/ksh' "$@"
+fi
