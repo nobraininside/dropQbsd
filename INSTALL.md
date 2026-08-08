@@ -654,7 +654,7 @@ After a full installation, your system will have:
 ├── newsyslog.conf             # Log rotation rules (dropQbsd entries appended)
 ├── pf.conf                    # Firewall rules (from etc/pf.conf)
 ├── profile                    # Shell profile (from etc/profile)
-├── xsession                   # (from etc/xsession)
+└── xsession                   # (from etc/xsession)
 
 /opt/dropQbsd/
 ├── admin/                     # System administration tools
