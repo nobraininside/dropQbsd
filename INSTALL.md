@@ -306,62 +306,200 @@ These are not required for dropQbsd to function. Install only what you need.
 
 ---
 
-### Syncthing — LAN File Synchronization
+### Control Panel
 
-Set up Syncthing for `userdoc` with the Sync directory at `/home/userdoc/Sync`. The `enforce_sync` script maintains correct permissions automatically.
-
-**Installation:**
+No extra packages needed (base system only). Run as `user`:
 
 ```sh
-# /opt/dropQbsd/admin/pkg_add_via_pf syncthing
+control_panel
 ```
 
-**Service setup:**
+Requires `/opt/dropQbsd/libexec/root_snapshot` for privileged data.
+
+---
+
+### Desktop Environment
+
+dropQbsd works with any window manager. Two recommendations:
+
+- **XFCE** — full desktop environment, familiar for users migrating from Windows/macOS. Lightweight by modern standards, well-supported on OpenBSD. Install: `/opt/dropQbsd/admin/pkg_add_via_pf xfce xfce-extras`
+- **cwm** — OpenBSD's native stacking window manager. Minimal, keyboard-driven, zero dependencies beyond the base system. For a purer OpenBSD experience. Already installed — no packages needed.
+
+Both work with `run_app` without additional configuration. Launch apps in any domain from the same desktop — `run_app` handles the X11 cookie forwarding transparently.
+
+**Color scheme convention:**
+
+| User | Role | Suggested theme color |
+|------|------|-----------------------|
+| `user` | Conductor | Black / Dark grey |
+| `userdoc` | Documents | Dark green |
+| `usermail` | Email | Dark orchid |
+| `userweb` | Web browser | Dark blue |
+| `root` | System | Dark red |
+
+Set the theme per user via XFCE Settings → Appearance. This gives immediate visual feedback about which domain you're working in.
+
+---
+
+### Domain Indicator (XFCE / Desktop Environments)
 
 ```sh
-# cp examples/rc.d/syncthing_userdoc /etc/rc.d/
-# chmod 555 /etc/rc.d/syncthing_userdoc
-# rcctl enable syncthing_userdoc
-# rcctl start syncthing_userdoc
+doas pkg_add dzen2 xdotool
 ```
 
-**Firewall:**
-
-Add these rules to `/etc/pf.conf`:
+Add to `/home/user/.xsession` before the WM line:
 
 ```sh
-# Syncthing — incoming from LAN
-pass in quick on egress proto tcp from 192.168.0.0/16 to any port 22000
-pass in quick on egress proto udp from 192.168.0.0/16 to any port 21027
-
-# Syncthing — outgoing to LAN
-pass out quick on egress proto tcp from any to any port 22000 user userdoc flags S/SA
-pass out quick on egress proto udp from any to any port 21027 user userdoc
+/opt/dropQbsd/bin/indicator_xfce4 &
 ```
 
-Reload:
+### Domain Indicator (cwm / Minimal WMs)
+
+No extra packages needed. Add to `/home/user/.xsession`:
 
 ```sh
-# pfctl -f /etc/pf.conf
+/opt/dropQbsd/bin/indicator_cwm &
 ```
 
-**Configuration:**
+---
+
+### Editor and Application Menu
+
+Example configuration files are provided in `examples/` for a smoother daily workflow.
+
+**vi — editor configuration:**
 
 ```sh
-$ /opt/dropQbsd/bin/run_app userdoc /usr/local/bin/qutebrowser --temp-basedir http://127.0.0.1:8384
+$ cp examples/exrc ~/.exrc
 ```
 
-Settings → Default Folder Path: `/home/userdoc/Sync`
-Add remote devices by their device ID. Share folders with read/write permissions as needed.
 
-**Troubleshooting:**
+Provides quality-of-life key bindings for nvi (OpenBSD's base system vi): toggle visible whitespace, tab width control, paste mode to prevent indentation staircasing, and quick save/quit shortcuts. Works out of the
+box — no additional packages needed.
 
-If remote devices show as disconnected:
+**cwm — application menu:**
 
-- Verify both devices have Sync Protocol Listen Addresses set to default
-- Verify the remote device is listening on TCP 22000: `nc -zv <remote-ip> 22000`
-- Delete and re-add the remote device after any hostname or IP changes
-- Check that `pf.conf` allows incoming TCP 22000 and UDP 21027 from LAN
+```sh
+$ cp examples/cwmrc ~/.cwmrc
+```
+
+Edit `~/.cwmrc` and uncomment the section matching your role (root, domain user, or conductor). Provides a `Ctrl+/` application menu with domain-aware terminal launchers and commonly used applications. Requires no additional packages — `cwm` is in the base system.
+
+---
+
+### File Bridge (tmux + nnn)
+
+`file_bridge` provides a 4-quadrant tmux session with `nnn` per domain plus `control_panel`. Install requirements:
+
+```sh
+# /opt/dropQbsd/admin/pkg_add_via_pf nnn tmux
+```
+#### nnn Plugins
+
+Each domain needs three nnn plugins for qcp/qmv/qimport. Create the plugin directory and scripts for each domain:
+
+```sh
+for d in userdoc usermail userweb; do
+    mkdir -p /home/$d/.config/nnn/plugins
+
+    cat > /home/$d/.config/nnn/plugins/qcp << 'EOF'
+#!/bin/sh
+for f in "$@"; do /opt/dropQbsd/bin/qcp "$f" /home/drop/; done
+EOF
+
+    cat > /home/$d/.config/nnn/plugins/qmv << 'EOF'
+#!/bin/sh
+for f in "$@"; do /opt/dropQbsd/bin/qmv "$f" /home/drop/; done
+EOF
+
+    cat > /home/$d/.config/nnn/plugins/qimport << 'EOF'
+#!/bin/sh
+for f in "$@"; do /opt/dropQbsd/bin/qimport "$f"; done
+EOF
+
+    chmod +x /home/$d/.config/nnn/plugins/*
+    chown -R $d:drop /home/$d/.config/nnn
+done
+```
+Launch from the conductor:
+
+```sh
+$ /opt/dropQbsd/bin/file_bridge
+```
+
+---
+
+### File Managers
+
+We recommend two file managers, both lightweight and OpenBSD-native:
+
+- **Xfe** (X File Explorer) — graphical, dual-pane, familiar interface
+- **Midnight Commander (`mc`)** — terminal-based, fast, ideal for remote sessions
+
+Each domain user should use a distinct color scheme for immediate visual feedback about which domain you're working in. Example templates with coordinated colors are provided in `examples/`:
+
+| Domain | Xfe background | mc skin |
+|--------|---------------|---------|
+| `userweb` | Blue | `examples/mc/userweb.ini` |
+| `usermail` | Orchid | `examples/mc/usermail.ini` |
+| `userdoc` | Green | `examples/mc/userdoc.ini` |
+
+Install in each domain:
+
+```sh
+# /opt/dropQbsd/admin/pkg_add_via_pf xfe mc
+```
+
+Launch via `run_app`:
+
+```sh
+$ /opt/dropQbsd/bin/run_app userdoc xfe /home/userdoc
+$ /opt/dropQbsd/bin/run_app userdoc mc
+```
+
+Xfe configuration files live in `~/.config/xfe/` inside each domain's home. Copy the example color schemes from `examples/xfe/` and adjust to taste.
+
+---
+
+### Integrity Verification
+
+dropQbsd can cryptographically verify that critical scripts have not been tampered with, using OpenBSD's built-in `signify(1)`. Logs are written to `/var/log/dropQbsd_integrity.log`.
+
+**Setup:**
+
+Generate a key pair and sign the critical scripts (keep the .sec key offline):
+
+```sh
+# cd /opt/dropQbsd
+# rm -f keys/dropQbsd.pub keys/dropQbsd_scripts.sha256.sig
+# signify -G -n -p keys/dropQbsd.pub -s /root/dropQbsd.sec
+# sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport libexec/enforce_drop libexec/enforce_sync | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
+# rm /root/dropQbsd.sec
+```
+The `verify_integrity` cron job (installed in step 9) checks these scripts every 5 minutes and logs any modifications to `/var/log/dropQbsd_integrity.log`.
+
+To verify manually:
+
+```sh
+# /opt/dropQbsd/libexec/verify_integrity
+# cat /var/log/dropQbsd_integrity.log
+```
+
+---
+
+### Log Rotation
+
+All dropQbsd logs should be rotated to prevent unbounded growth. Append the example rules to the existing `/etc/newsyslog.conf` — do **not** replace it, as OpenBSD ships with its own system rotation rules.
+
+```sh
+# dropQbsd logs
+/var/log/dropQbsd_drop.log        root:wheel   640  7     *     @T00  Z
+/var/log/dropQbsd_sync.log        root:wheel   640  7     *     @T00  Z
+/var/log/dropQbsd_integrity.log   root:wheel   640  7     *     @T00  Z
+/var/log/dropQbsd_updates.log     root:wheel   640  3     100   *     Z
+```
+
+`enforce_drop` and `enforce_sync` run every minute — rotate daily, keep 7 archives. `verify_integrity` runs every 5 minutes — same policy. Update logs grow slowly (manual runs only) — rotate at 100 KB, keep 3 archives.
 
 ---
 
@@ -426,196 +564,62 @@ Phase 1: select site, press **Copy ID** — browser opens, ID copied, window sta
 
 ---
 
-### Integrity Verification
+### Syncthing — LAN File Synchronization
 
-dropQbsd can cryptographically verify that critical scripts have not been tampered with, using OpenBSD's built-in `signify(1)`. Logs are written to `/var/log/dropQbsd_integrity.log`.
+Set up Syncthing for `userdoc` with the Sync directory at `/home/userdoc/Sync`. The `enforce_sync` script maintains correct permissions automatically.
 
-**Setup:**
-
-Generate a key pair and sign the critical scripts (keep the .sec key offline):
+**Installation:**
 
 ```sh
-# cd /opt/dropQbsd
-# rm -f keys/dropQbsd.pub keys/dropQbsd_scripts.sha256.sig
-# signify -G -n -p keys/dropQbsd.pub -s /root/dropQbsd.sec
-# sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport libexec/enforce_drop libexec/enforce_sync | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
-# rm /root/dropQbsd.sec
+# /opt/dropQbsd/admin/pkg_add_via_pf syncthing
 ```
-The `verify_integrity` cron job (installed in step 9) checks these scripts every 5 minutes and logs any modifications to `/var/log/dropQbsd_integrity.log`.
 
-To verify manually:
+**Service setup:**
 
 ```sh
-# /opt/dropQbsd/libexec/verify_integrity
-# cat /var/log/dropQbsd_integrity.log
+# cp examples/rc.d/syncthing_userdoc /etc/rc.d/
+# chmod 555 /etc/rc.d/syncthing_userdoc
+# rcctl enable syncthing_userdoc
+# rcctl start syncthing_userdoc
 ```
 
----
+**Firewall:**
 
-### Log Rotation
-
-All dropQbsd logs should be rotated to prevent unbounded growth. Append the example rules to the existing `/etc/newsyslog.conf` — do **not** replace it, as OpenBSD ships with its own system rotation rules.
+Add these rules to `/etc/pf.conf`:
 
 ```sh
-# dropQbsd logs
-/var/log/dropQbsd_drop.log        root:wheel   640  7     *     @T00  Z
-/var/log/dropQbsd_sync.log        root:wheel   640  7     *     @T00  Z
-/var/log/dropQbsd_integrity.log   root:wheel   640  7     *     @T00  Z
-/var/log/dropQbsd_updates.log     root:wheel   640  3     100   *     Z
+# Syncthing — incoming from LAN
+pass in quick on egress proto tcp from 192.168.0.0/16 to any port 22000
+pass in quick on egress proto udp from 192.168.0.0/16 to any port 21027
+
+# Syncthing — outgoing to LAN
+pass out quick on egress proto tcp from any to any port 22000 user userdoc flags S/SA
+pass out quick on egress proto udp from any to any port 21027 user userdoc
 ```
 
-`enforce_drop` and `enforce_sync` run every minute — rotate daily, keep 7 archives. `verify_integrity` runs every 5 minutes — same policy. Update logs grow slowly (manual runs only) — rotate at 100 KB, keep 3 archives.
-
----
-
-### Desktop Environment
-
-dropQbsd works with any window manager. Two recommendations:
-
-- **XFCE** — full desktop environment, familiar for users migrating from Windows/macOS. Lightweight by modern standards, well-supported on OpenBSD. Install: `/opt/dropQbsd/admin/pkg_add_via_pf xfce xfce-extras`
-- **cwm** — OpenBSD's native stacking window manager. Minimal, keyboard-driven, zero dependencies beyond the base system. For a purer OpenBSD experience. Already installed — no packages needed.
-
-Both work with `run_app` without additional configuration. Launch apps in any domain from the same desktop — `run_app` handles the X11 cookie forwarding transparently.
-
-**Color scheme convention:**
-
-| User | Role | Suggested theme color |
-|------|------|-----------------------|
-| `user` | Conductor | Black / Dark grey |
-| `userdoc` | Documents | Dark green |
-| `usermail` | Email | Dark orchid |
-| `userweb` | Web browser | Dark blue |
-| `root` | System | Dark red |
-
-Set the theme per user via XFCE Settings → Appearance. This gives immediate visual feedback about which domain you're working in.
-
----
-
-### Domain Indicator (XFCE / Desktop Environments)
+Reload:
 
 ```sh
-doas pkg_add dzen2 xdotool
+# pfctl -f /etc/pf.conf
 ```
 
-Add to `/home/user/.xsession` before the WM line:
+**Configuration:**
 
 ```sh
-/opt/dropQbsd/bin/indicator_xfce4 &
+$ /opt/dropQbsd/bin/run_app userdoc /usr/local/bin/qutebrowser --temp-basedir http://127.0.0.1:8384
 ```
 
-### Domain Indicator (cwm / Minimal WMs)
+Settings → Default Folder Path: `/home/userdoc/Sync`
+Add remote devices by their device ID. Share folders with read/write permissions as needed.
 
-No extra packages needed. Add to `/home/user/.xsession`:
+**Troubleshooting:**
 
-```sh
-/opt/dropQbsd/bin/indicator_cwm &
-```
+If remote devices show as disconnected:
 
-### Control Panel
-
-No extra packages needed (base system only). Run as `user`:
-
-```sh
-control_panel
-```
-
-Requires `/opt/dropQbsd/libexec/root_snapshot` for privileged data.
-
----
-
-### Editor and Application Menu
-
-Example configuration files are provided in `examples/` for a smoother daily workflow.
-
-**vi — editor configuration:**
-
-```sh
-$ cp examples/exrc ~/.exrc
-```
-
-
-Provides quality-of-life key bindings for nvi (OpenBSD's base system vi): toggle visible whitespace, tab width control, paste mode to prevent indentation staircasing, and quick save/quit shortcuts. Works out of the
-box — no additional packages needed.
-
-**cwm — application menu:**
-
-```sh
-$ cp examples/cwmrc ~/.cwmrc
-```
-
-Edit `~/.cwmrc` and uncomment the section matching your role (root, domain user, or conductor). Provides a `Ctrl+/` application menu with domain-aware terminal launchers and commonly used applications. Requires no additional packages — `cwm` is in the base system.
-
----
-
-### File Managers
-
-We recommend two file managers, both lightweight and OpenBSD-native:
-
-- **Xfe** (X File Explorer) — graphical, dual-pane, familiar interface
-- **Midnight Commander (`mc`)** — terminal-based, fast, ideal for remote sessions
-
-Each domain user should use a distinct color scheme for immediate visual feedback about which domain you're working in. Example templates with coordinated colors are provided in `examples/`:
-
-| Domain | Xfe background | mc skin |
-|--------|---------------|---------|
-| `userweb` | Blue | `examples/mc/userweb.ini` |
-| `usermail` | Orchid | `examples/mc/usermail.ini` |
-| `userdoc` | Green | `examples/mc/userdoc.ini` |
-
-Install in each domain:
-
-```sh
-# /opt/dropQbsd/admin/pkg_add_via_pf xfe mc
-```
-
-Launch via `run_app`:
-
-```sh
-$ /opt/dropQbsd/bin/run_app userdoc xfe /home/userdoc
-$ /opt/dropQbsd/bin/run_app userdoc mc
-```
-
-Xfe configuration files live in `~/.config/xfe/` inside each domain's home. Copy the example color schemes from `examples/xfe/` and adjust to taste.
-
-#### File Bridge (tmux + nnn)
-
-`file_bridge` provides a 4-quadrant tmux session with `nnn` per domain plus `control_panel`. Install requirements:
-
-```sh
-# /opt/dropQbsd/admin/pkg_add_via_pf nnn tmux
-```
-##### nnn Plugins
-
-Each domain needs three nnn plugins for qcp/qmv/qimport. Create the plugin directory and scripts for each domain:
-
-```sh
-for d in userdoc usermail userweb; do
-    mkdir -p /home/$d/.config/nnn/plugins
-
-    cat > /home/$d/.config/nnn/plugins/qcp << 'EOF'
-#!/bin/sh
-for f in "$@"; do /opt/dropQbsd/bin/qcp "$f" /home/drop/; done
-EOF
-
-    cat > /home/$d/.config/nnn/plugins/qmv << 'EOF'
-#!/bin/sh
-for f in "$@"; do /opt/dropQbsd/bin/qmv "$f" /home/drop/; done
-EOF
-
-    cat > /home/$d/.config/nnn/plugins/qimport << 'EOF'
-#!/bin/sh
-for f in "$@"; do /opt/dropQbsd/bin/qimport "$f"; done
-EOF
-
-    chmod +x /home/$d/.config/nnn/plugins/*
-    chown -R $d:drop /home/$d/.config/nnn
-done
-```
-Launch from the conductor:
-
-```sh
-$ /opt/dropQbsd/bin/file_bridge
-```
+- Verify both devices have Sync Protocol Listen Addresses set to default
+- Verify the remote device is listening on TCP 22000: `nc -zv <remote-ip> 22000`
+- Delete and re-add the remote device after any hostname or IP changes
+- Check that `pf.conf` allows incoming TCP 22000 and UDP 21027 from LAN
 
 ---
 
