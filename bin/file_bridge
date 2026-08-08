@@ -94,10 +94,21 @@ chmod +x "$WATCHER"
 
 "$WATCHER" &
 
+# -- Cleanup function ---------------------------------------
+
+cleanup() {
+    tmux kill-session -t "$SESSION" 2>/dev/null
+    # Kill eventuali nnn orfani nei domini
+    for user in userdoc usermail userweb; do
+        pkill -9 -u "$user" -f nnn 2>/dev/null
+    done
+    kill %1 2>/dev/null
+    rm -f "$WATCHER"
+    exit 0
+}
+trap cleanup EXIT INT TERM HUP
+
 # -- Attach -------------------------------------------------
 
 tmux attach-session -t "$SESSION"
 
-# -- Cleanup -------------------------------------------------
-kill %1 2>/dev/null
-rm -f "$WATCHER"
