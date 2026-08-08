@@ -267,11 +267,19 @@ the session.
 $ /opt/dropQbsd/bin/run_app --disposable 1G userweb /usr/local/bin/qutebrowser --temp-basedir
 ```
 
-**Open a site from the site menu (password auto-copied):**
+**Open a site from the site menu (two-phase login):**
+
+`site_menu` uses a two-phase flow to prevent credential mix-ups:
+
+1. Select a site → press **Copy ID** → browser opens, user ID copied to clipboard, window stays open.
+2. The same site is now the only entry shown → press **Copy Password** → password copied (30s timer), window closes.
 
 ```sh
 $ /opt/dropQbsd/bin/site_menu
 ```
+
+If the GPG keyring is locked, a warning dialog prompts you to unlock it manually and retry. Passwords are cleared from the clipboard after 30 seconds.
+
 
 **Mail client in its isolated domain:**
 
@@ -346,6 +354,8 @@ $ file_bridge
 | `;i` | Import selected files from `/home/drop` via qimport |
 | `.` | Toggle hidden files in nnn |
 | `Alt+k` | Quit |
+
+On exit, `file_bridge` automatically kills any orphaned `nnn` processes across all domains — no stale background processes left behind.
 
 No configuration files required. Domain identification is handled by the tmux status bar (colored background + domain name), the active pane border (colored bright), and `NNN_COLORS` injected via `env` at launch. Plugin keybindings are mapped via `NNN_PLUG`.
 
@@ -515,7 +525,7 @@ Three commands. Three habits. Ten minutes. Done.
 | `run_app` | user (setuid root) | Blind-gate binary. Escalates to root, execs `run_app_impl`. The only privileged entry point `user` can touch. |
 | `run_app_impl` | root (via `run_app`) | ksh script with all launch logic — X11 cookie, runtime dir, tmpfs, `su -l`. Editable without recompilation. |
 | `run_app_wrapper.c` | — (source only) | 10-line C source. Kept for reference; only needed if OpenBSD ABI breaks. |
-| `file_bridge` | user | Launch 4-quadrant tmux file manager bridge across all domains |
+| `file_bridge` | user |  Launch 4-quadrant tmux file manager bridge. Cleans up orphaned nnn processes on exit. |
 
 
 ### Export/Import Pipeline
