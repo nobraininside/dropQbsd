@@ -658,6 +658,7 @@ After a full installation, your system will have:
 │   ├── qimport                # Import files from drop zone
 │   ├── site_menu              # Password manager launcher
 │   ├── xterm_root             # Launch xterm with root color scheme
+│   ├── xterm_user             # Launch xterm with user color scheme
 │   ├── xterm_userdoc          # Launch xterm with userdoc color scheme
 │   ├── xterm_usermail         # Launch xterm with usermail color scheme
 │   └── xterm_userweb          # Launch xterm with userweb color scheme
