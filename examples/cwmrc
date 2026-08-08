@@ -21,16 +21,44 @@
 " ----------------------------------------------------------
 " command xterm          xterm_root
 " command xfe            xfe
-" command mc             "xterm_root -e mc"
-" command editor         "xterm_root -e vi"
+" command mc             "xterm_root mc"
+" command nnn             "xterm_root nnn"
+" command editor         "xterm_root vi"
 
 " ----------------------------------------------------------
-" SECTION 2 -- domain users (userdoc, usermail, userweb)
+" SECTION 2a -- domain users (userdoc)
 " ----------------------------------------------------------
 " command xterm          xterm_userdoc
 " command xfe            xfe
-" command mc             "xterm_userdoc -e mc"
-" command editor         "xterm_userdoc -e vi"
+" command mc             "xterm_userdoc mc"
+" command nnn            "xterm_userdoc nnn"
+" command editor         "xterm_userdoc vi"
+" command libreoffice    libreoffice
+" command lyx            lyx
+" command evince         evince
+" command vlc            vlc
+
+" ----------------------------------------------------------
+" SECTION 2b -- domain users (usermail)
+" ----------------------------------------------------------
+" command xterm          xterm_usermail
+" command xfe            xfe
+" command mc             "xterm_usermail mc"
+" command nnn            "xterm_usermail nnn"
+" command editor         "xterm_usermail vi"
+" command libreoffice    libreoffice
+" command lyx            lyx
+" command evince         evince
+" command vlc            vlc
+
+" ----------------------------------------------------------
+" SECTION 2c -- domain users (userweb)
+" ----------------------------------------------------------
+" command xterm          xterm_userweb
+" command xfe            xfe
+" command mc             "xterm_userweb mc"
+" command nnn            "xterm_userweb nnn"
+" command editor         "xterm_userweb vi"
 " command libreoffice    libreoffice
 " command lyx            lyx
 " command evince         evince
@@ -39,10 +67,11 @@
 " ----------------------------------------------------------
 " SECTION 3 -- conductor (user)
 " ----------------------------------------------------------
-" command xterm          xterm
+" command xterm          xterm_user
 " command xfe            xfe
-" command mc             "xterm -e mc"
-" command editor         "xterm -e vi"
+" command mc             "xterm_user mc"
+" command nnn            "xterm_user nnn"
+" command editor         "xterm_user vi"
 " command runweb         runweb
 " command runmail        runmail
 " command rundoc         rundoc
