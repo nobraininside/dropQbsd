@@ -317,6 +317,7 @@ Note: no `doas` prefix — `run_app` is setuid root, so `user` invokes it direct
 
 Interactive shell
 ```sh
+$ /opt/dropQbsd/bin/xterm_user
 $ /opt/dropQbsd/bin/xterm_userdoc
 $ /opt/dropQbsd/bin/xterm_usermail
 $ /opt/dropQbsd/bin/xterm_userweb
@@ -325,6 +326,7 @@ $ /opt/dropQbsd/bin/xterm_root
 
 With a command
 ```sh
+$ /opt/dropQbsd/bin/xterm_user top
 $ /opt/dropQbsd/bin/xterm_userdoc nnn
 $ /opt/dropQbsd/bin/xterm_usermail mutt
 $ /opt/dropQbsd/bin/xterm_userweb lynx
