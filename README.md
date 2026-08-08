@@ -345,8 +345,7 @@ $ file_bridge
 | `;m` | Move selected files to `/home/drop` via qmv |
 | `;i` | Import selected files from `/home/drop` via qimport |
 | `.` | Toggle hidden files in nnn |
-| `Ctrl+b d` | Detach session (reattach with `tmux attach -t file_bridge`) |
-| `Ctrl+b :kill-session` | Quit |
+| `Alt+k` | Quit |
 
 No configuration files required. Domain identification is handled by the tmux status bar (colored background + domain name), the active pane border (colored bright), and `NNN_COLORS` injected via `env` at launch. Plugin keybindings are mapped via `NNN_PLUG`.
 
