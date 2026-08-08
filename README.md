@@ -521,14 +521,27 @@ Three commands. Three habits. Ten minutes. Done.
 
 | Script | Run by | Purpose |
 | ------ | ------ | ------- |
+| `file_bridge` | user |  Launch 4-quadrant tmux file manager bridge across all domains. Includes `control_panel` in the top-left quadrant. Cleans up orphaned nnn processes on exit. |
+| `qimport` | Any user | Copy from drop zone to `~/Downloads` |
 | `qmv` | Any user | Move file/directory into `/home/drop` via atomic staging, set group and permissions |
 | `qcp` | Any user | Copy file/directory into `/home/drop` without deleting the original |
-| `qimport` | Any user | Copy from drop zone to `~/Downloads` |
 | `run_app` | user (setuid root) | Blind-gate binary. Escalates to root, execs `run_app_impl`. The only privileged entry point `user` can touch. |
 | `run_app_impl` | root (via `run_app`) | ksh script with all launch logic — X11 cookie, runtime dir, tmpfs, `su -l`. Editable without recompilation. |
 | `run_app_wrapper.c` | — (source only) | 10-line C source. Kept for reference; only needed if OpenBSD ABI breaks. |
-| `file_bridge` | user |  Launch 4-quadrant tmux file manager bridge. Cleans up orphaned nnn processes on exit. |
 
+### Launchers and Utilities
+
+| Script | Run by | Purpose |
+| ------ | ------ | ------- |
+| `control_panel` | user | ncurses dashboard — domain status, drop zone contents, system health |
+| `indicator_cwm` | user | Domain indicator for cwm/i3/dwm via `xsetroot` |
+| `indicator_xfce4` | user | Domain indicator for XFCE/DEs via OSD popup |
+| `site_menu` | user | Two-phase site launcher with `pass(1)` integration |
+| `xterm_root` | root | Color-coded xterm for root (dark red) |
+| `xterm_user` | user | Color-coded xterm for the conductor domain (black) |
+| `xterm_userdoc` | user | Color-coded xterm for userdoc domain (dark green) |
+| `xterm_usermail` | user | Color-coded xterm for usermail domain (dark orchid) |
+| `xterm_userweb` | user | Color-coded xterm for userweb domain (dark blue) |
 
 ### Export/Import Pipeline
 
