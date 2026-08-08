@@ -52,6 +52,7 @@ tmux select-pane -t "$SESSION:0.3" -T "userweb"
 # -- Even layout --------------------------------------------
 
 tmux select-layout -t "$SESSION" tiled
+tmux set-hook -t "$SESSION" client-resized "select-layout -t '$SESSION' tiled"
 
 # -- Status bar ---------------------------------------------
 
