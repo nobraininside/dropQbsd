@@ -4,13 +4,25 @@
 #
 #  Opens an xterm as usermail with the document domain
 #  color scheme (darkorchid3 background).
+#  Optionally accepts a command to run instead of an
+#  interactive shell.
+#
+#  Usage: xterm_usermail [command [args...]]
 #
 #  Path: /opt/dropQbsd/bin/xterm_usermail
 #  Permissions: chmod 755, root:wheel
 # ==========================================================
 
-/opt/dropQbsd/bin/run_app usermail xterm \
-    -bg darkorchid3 -fg white \
-    -fa "DejaVu Sans Mono" -fs 11 \
-    -u8 -ls \
-    -e /bin/ksh -c 'cd /home/usermail && ENV=/etc/kshrc exec /bin/ksh' "$@"
+if [ $# -gt 0 ]; then
+    /opt/dropQbsd/bin/run_app usermail xterm \
+        -bg darkorchid3 -fg white \
+        -fa "DejaVu Sans Mono" -fs 11 \
+        -ls \
+        -e /bin/ksh -c "cd /home/usermail && ENV=/etc/kshrc TERM=xterm-256color exec /bin/ksh -c \"\$@\"" -- "$@"
+else
+    /opt/dropQbsd/bin/run_app usermail xterm \
+        -bg darkorchid3 -fg white \
+        -fa "DejaVu Sans Mono" -fs 11 \
+        -u8 -ls \
+        -e /bin/ksh -c 'cd /home/usermail && ENV=/etc/kshrc exec /bin/ksh' "$@"
+fi
