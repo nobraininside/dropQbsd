@@ -2,15 +2,27 @@
 # ==========================================================
 #  dropQbsd -- xterm_userweb
 #
-#  Opens an xterm as usermail with the document domain
+#  Opens an xterm as userweb with the document domain
 #  color scheme (darkblue background).
+#  Optionally accepts a command to run instead of an
+#  interactive shell.
+#
+#  Usage: xterm_userweb [command [args...]]
 #
 #  Path: /opt/dropQbsd/bin/xterm_userweb
 #  Permissions: chmod 755, root:wheel
 # ==========================================================
 
-/opt/dropQbsd/bin/run_app userweb xterm \
-    -bg darkblue -fg white \
-    -fa "DejaVu Sans Mono" -fs 11 \
-    -u8 -ls \
-    -e /bin/ksh -c 'cd /home/userweb && ENV=/etc/kshrc exec /bin/ksh' "$@"
+if [ $# -gt 0 ]; then
+    /opt/dropQbsd/bin/run_app userweb xterm \
+        -bg darkblue -fg white \
+        -fa "DejaVu Sans Mono" -fs 11 \
+        -ls \
+        -e /bin/ksh -c "cd /home/userweb && ENV=/etc/kshrc TERM=xterm-256color exec /bin/ksh -c \"\$@\"" -- "$@"
+else
+    /opt/dropQbsd/bin/run_app userweb xterm \
+        -bg darkblue -fg white \
+        -fa "DejaVu Sans Mono" -fs 11 \
+        -u8 -ls \
+        -e /bin/ksh -c 'cd /home/userweb && ENV=/etc/kshrc exec /bin/ksh' "$@"
+fi
