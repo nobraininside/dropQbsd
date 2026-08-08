@@ -307,11 +307,20 @@ Note: no `doas` prefix — `run_app` is setuid root, so `user` invokes it direct
 
 **Terminal in a domain (color-coded):**
 
+Interactive shell
 ```sh
 $ /opt/dropQbsd/bin/xterm_userdoc
 $ /opt/dropQbsd/bin/xterm_usermail
 $ /opt/dropQbsd/bin/xterm_userweb
 $ /opt/dropQbsd/bin/xterm_root
+```
+
+With a command
+```sh
+$ /opt/dropQbsd/bin/xterm_userdoc nnn
+$ /opt/dropQbsd/bin/xterm_usermail mutt
+$ /opt/dropQbsd/bin/xterm_userweb lynx
+$ /opt/dropQbsd/bin/xterm_root syspatch
 ```
 
 ### File Bridge (tmux-based 4-quadrant file manager)
