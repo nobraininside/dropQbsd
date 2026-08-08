@@ -2,50 +2,62 @@
 # ==========================================================
 #  dropQbsd -- qimport
 #
-#  Imports a file or directory from the /home/drop exchange
-#  zone into the conductor's local storage (default:
-#  ~/Downloads).
+#  Imports a file or directory from /home/drop into the
+#  conductor's local storage (default: ~/Downloads).
+#
+#  Accepts:
+#    - Relative paths (auto-resolved inside /home/drop):
+#        qimport file2
+#        qimport folder1
+#    - Absolute paths (must be inside /home/drop):
+#        qimport /home/drop/folder1/file1
+#    - Optional destination:
+#        qimport file2 ~/Documents
 #
 #  Cleanup is handled by enforce_drop on its regular cycle.
-#  No sentinel is created -- the conductor does not write
-#  to the drop zone. Files are removed after the abandonment
-#  timeout (default: 30 minutes).
 #
 #  Path: /opt/dropQbsd/bin/qimport
 #  Permissions: chmod 755, root:wheel
 #
-#  Usage: qimport <file_or_directory_in_drop> [destination]
+#  Usage: qimport <path_in_drop> [destination]
 # ==========================================================
 
 set -eu
 
-FILE_INPUT=$1
-DEST=${2:-"$HOME/Downloads"}
+INPUT="$1"
+DEST="${2:-"$HOME/Downloads"}"
 
 #-----------------------------------------------------------------------------
-# RESOLVE SOURCE PATH
+# RESOLVE SOURCE PATH INSIDE /home/drop
 #-----------------------------------------------------------------------------
-FILE_DROP=$(realpath "$FILE_INPUT" 2>/dev/null) || true
-
-if [[ -z "$FILE_DROP" ]]; then
-    if [[ "$FILE_INPUT" = /* ]]; then
-        FILE_DROP="$FILE_INPUT"
-    else
-        FILE_DROP="$PWD/$FILE_INPUT"
-    fi
+if [[ "$INPUT" = /* ]]; then
+    # Absolute path — use as-is, validate it's inside /home/drop
+    FILE_DROP="$INPUT"
+else
+    # Relative path — resolve inside /home/drop
+    FILE_DROP="/home/drop/$INPUT"
 fi
+
+# Normalize (resolve .. and .)
+FILE_DROP=$(realpath "$FILE_DROP" 2>/dev/null) || FILE_DROP="$FILE_DROP"
 
 #-----------------------------------------------------------------------------
 # VALIDATE SOURCE IS INSIDE /home/drop
 #-----------------------------------------------------------------------------
 case "$FILE_DROP" in
-    /home/drop/*) ;;
+    /home/drop|/home/drop/*) ;;
     *)
         echo "Error: can only import files from the drop zone." >&2
-        echo "  Path given: $FILE_DROP" >&2
+        echo "  Resolved path: $FILE_DROP" >&2
         exit 1
         ;;
 esac
+
+# Prevent importing the drop zone root itself
+if [[ "$FILE_DROP" == "/home/drop" ]]; then
+    echo "Error: cannot import the entire drop zone." >&2
+    exit 1
+fi
 
 #-----------------------------------------------------------------------------
 # VERIFY SOURCE EXISTS
@@ -87,4 +99,3 @@ find "$TARGET" -type d -exec chmod 700 {} +
 find "$TARGET" -type f -exec chmod 600 {} +
 
 echo "Imported: $TARGET"
-
