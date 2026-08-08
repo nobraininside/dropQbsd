@@ -65,6 +65,7 @@ tmux bind-key -T root M-1 select-pane -t "$SESSION:0.0"
 tmux bind-key -T root M-2 select-pane -t "$SESSION:0.1"
 tmux bind-key -T root M-3 select-pane -t "$SESSION:0.2"
 tmux bind-key -T root M-4 select-pane -t "$SESSION:0.3"
+tmux bind-key -T root M-k kill-session -t "$SESSION"
 
 # -- Background watcher --------------------------------------
 
