@@ -1,3 +1,4 @@
+```ksh
 #!/bin/ksh
 # ==========================================================
 #  dropQbsd -- control_panel
@@ -99,13 +100,27 @@ truncate_name() {
     fi
 }
 
+# Get up to N unique process names for a user, joined with " | "
+get_procs() {
+    typeset user="$1" max="${2:-3}"
+    typeset procs=""
+    procs=$(ps -U "$user" -o comm= 2>/dev/null | sed 's/^ *//;s/ *$//' | sort -u | head -"$max" | tr '\n' '|' | sed 's/|$//;s/|/ | /g')
+    echo "$procs"
+}
+
 render_domain_line() {
     typeset r="$1" color="$2" label="$3" pid_count="$4" proc_name="$5"
+    typeset max_proc_len=$(( COLS - 30 ))
 
     tput cup "$r" 4
     printf "${color}%-10s${C_RESET}  " "$label"
 
     if [ "$pid_count" -gt 0 ]; then
+        # Truncate process list if it exceeds available width
+        if [ ${#proc_name} -gt "$max_proc_len" ]; then
+            proc_name=$(echo "$proc_name" | cut -c1-$(( max_proc_len - 3 )))
+            proc_name="${proc_name}..."
+        fi
         printf "${C_OK}ACTIVE${C_RESET}  ${C_DIM}%s${C_RESET}" "$proc_name"
     else
         printf "${C_DIM}idle${C_RESET}"
@@ -181,10 +196,9 @@ render() {
     um_pid=$(ps -U usermail -o pid= 2>/dev/null | wc -l | tr -d ' ')
     ud_pid=$(ps -U userdoc -o pid= 2>/dev/null | wc -l | tr -d ' ')
 
-    uw_proc=""; um_proc=""; ud_proc=""
-    [ "$uw_pid" -gt 0 ] && uw_proc=$(ps -U userweb -o comm= 2>/dev/null | head -1 | tr -d ' ')
-    [ "$um_pid" -gt 0 ] && um_proc=$(ps -U usermail -o comm= 2>/dev/null | head -1 | tr -d ' ')
-    [ "$ud_pid" -gt 0 ] && ud_proc=$(ps -U userdoc -o comm= 2>/dev/null | head -1 | tr -d ' ')
+    uw_proc=$(get_procs userweb 3)
+    um_proc=$(get_procs usermail 3)
+    ud_proc=$(get_procs userdoc 3)
 
     tmpfs_data=$(df -m 2>/dev/null | awk '/tmpfs/ {used+=$3; total+=$2} END {printf "%d/%d", used, total}')
 
@@ -369,3 +383,4 @@ main() {
 }
 
 main "$@"
+```
