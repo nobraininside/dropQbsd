@@ -221,6 +221,8 @@ dropQbsd is fully functional with just the base system. Several optional compone
 
 ### Moving Files Between Domains
 
+Files move through `/home/drop`, the only bridge between domains. Three commands handle all transfers, plus `file_bridge` for interactive use.
+
 **Copy a file into the drop zone (original stays in place):**
 
 ```sh
@@ -232,17 +234,29 @@ $ /opt/dropQbsd/bin/qcp ~/document.pdf
 ```sh
 $ /opt/dropQbsd/bin/qmv ~/document.pdf
 ```
-While plain `cp` and `mv` also work (the drop zone's SGID ensures correct
-group ownership), `qcp` and `qmv` are preferred. They apply correct
-permissions immediately, reset file timestamps to prevent premature
-cleanup, verify the copy succeeded, and stage files atomically — the file
-only appears in the drop zone when fully written and correctly locked down.
+While plain `cp` and `mv` also work (the drop zone's SGID ensures correct group ownership), `qcp` and `qmv` are preferred. They apply correct permissions immediately, reset file timestamps to prevent premature cleanup, verify the copy succeeded, and stage files atomically — the file only appears in the drop zone when fully written and correctly locked down.
 
 **Import from the drop zone into ~/Downloads:**
 
 ```sh
+# Absolute path
 $ /opt/dropQbsd/bin/qimport /home/drop/document.pdf
+
+# Relative path (auto-resolved inside /home/drop)
+$ /opt/dropQbsd/bin/qimport document.pdf
+$ /opt/dropQbsd/bin/qimport folder1
+
+# Custom destination
+$ /opt/dropQbsd/bin/qimport document.pdf ~/Documents
 ```
+`qimport` accepts relative paths and automatically resolves them inside `/home/drop` — no need to type the full path. Use `qimport file2` or `qimport folder1` directly.
+
+**Interactive transfer via file_bridge:**
+
+```sh
+$ file_bridge
+```
+Inside `nnn`, press `Space` to select files, then `;c` to copy, `;m` to move, or `;i` to import. All four domains are visible simultaneously — drag-and-drop mental model, keyboard-driven.
 
 ### Launching Apps in Domains (as `user`)
 
