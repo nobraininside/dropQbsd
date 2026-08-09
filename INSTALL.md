@@ -404,17 +404,22 @@ for d in userdoc usermail userweb; do
 
     cat > /home/$d/.config/nnn/plugins/qcp << 'EOF'
 #!/bin/sh
-for f in "$@"; do /opt/dropQbsd/bin/qcp "$f" /home/drop/; done
+nohup /opt/dropQbsd/bin/qcp "$@" /home/drop/ >/dev/null 2>&1 &
 EOF
 
     cat > /home/$d/.config/nnn/plugins/qmv << 'EOF'
 #!/bin/sh
-for f in "$@"; do /opt/dropQbsd/bin/qmv "$f" /home/drop/; done
+nohup /opt/dropQbsd/bin/qmv "$@" /home/drop/ >/dev/null 2>&1 &
 EOF
 
     cat > /home/$d/.config/nnn/plugins/qimport << 'EOF'
 #!/bin/sh
-for f in "$@"; do /opt/dropQbsd/bin/qimport "$f"; done
+for f in "$@"; do
+    case "$f" in
+        /*) nohup /opt/dropQbsd/bin/qimport "$f" >/dev/null 2>&1 & ;;
+        *)  nohup /opt/dropQbsd/bin/qimport "/home/drop/$f" >/dev/null 2>&1 & ;;
+    esac
+done
 EOF
 
     chmod +x /home/$d/.config/nnn/plugins/*
