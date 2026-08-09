@@ -37,17 +37,17 @@ tmux split-window -h -t "$SESSION:0.0" \
     "/opt/dropQbsd/bin/run_app userdoc env NNN_COLORS='2312' NNN_PLUG='c:qcp;m:qmv;i:qimport' nnn -H /home/userdoc"
 tmux select-pane -t "$SESSION:0.1" -T "userdoc"
 
-# -- Pane 2: bottom-left, usermail (orchid) -----------------
+# -- Pane 2: bottom-right, userweb (blue) -------------------
 
 tmux split-window -v -t "$SESSION:0.1" \
-    "/opt/dropQbsd/bin/run_app usermail env NNN_COLORS='5315' NNN_PLUG='c:qcp;m:qmv;i:qimport' nnn -H /home/usermail"
-tmux select-pane -t "$SESSION:0.2" -T "usermail"
-
-# -- Pane 3: bottom-right, userweb (blue) -------------------
-
-tmux split-window -v -t "$SESSION:0.2" \
     "/opt/dropQbsd/bin/run_app userweb env NNN_COLORS='6316' NNN_PLUG='c:qcp;m:qmv;i:qimport' nnn -H /home/userweb"
-tmux select-pane -t "$SESSION:0.3" -T "userweb"
+tmux select-pane -t "$SESSION:0.2" -T "userweb"
+
+# -- Pane 3: bottom-left, usermail (orchid) -----------------
+
+tmux split-window -h -t "$SESSION:0.2" \
+    "/opt/dropQbsd/bin/run_app usermail env NNN_COLORS='5315' NNN_PLUG='c:qcp;m:qmv;i:qimport' nnn -H /home/usermail"
+tmux select-pane -t "$SESSION:0.3" -T "usermail"
 
 # -- Even layout --------------------------------------------
 
