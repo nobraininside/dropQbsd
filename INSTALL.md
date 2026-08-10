@@ -22,6 +22,64 @@ Conductor user — create if missing, add to drop group if existing
 ```sh
 # useradd -m -G drop user 2>/dev/null || usermod -G drop user
 ```
+
+### Resource Limits (`/etc/login.conf`)
+
+Append these classes to `/etc/login.conf` to prevent resource exhaustion
+under heavy load. `userdoc` needs high open files for Syncthing; `usermail`
+needs extra memory and file descriptors for compressing and moving large
+mail archives (40+ GB); `userweb` gets generous limits for multiple
+browser tabs and disposable tmpfs sessions.
+
+```sh
+userdoc:\
+    :openfiles-cur=32768:\
+    :openfiles-max=32768:\
+    :tc=daemon:
+
+usermail:\
+    :openfiles-cur=32768:\
+    :openfiles-max=32768:\
+    :datasize-cur=2048M:\
+    :datasize-max=4096M:\
+    :memoryuse=2048M:\
+    :vmemoryuse=4096M:\
+    :stacksize-cur=128M:\
+    :stacksize-max=128M:\
+    :memorylocked-max=256M:\
+    :maxproc-cur=256:\
+    :maxproc-max=512:\
+    :tc=default:
+
+userweb:\
+    :openfiles-cur=8192:\
+    :openfiles-max=16384:\
+    :datasize-cur=1024M:\
+    :datasize-max=2048M:\
+    :memoryuse=1024M:\
+    :vmemoryuse=2048M:\
+    :maxproc-cur=256:\
+    :maxproc-max=512:\
+    :tc=default:
+
+user:\
+    :openfiles-cur=4096:\
+    :openfiles-max=8192:\
+    :datasize-cur=512M:\
+    :datasize-max=1G:\
+    :stacksize-cur=8M:\
+    :stacksize-max=64M:\
+    :memoryuse-cur=512M:\
+    :memoryuse-max=1G:\
+    :tc=default:
+```
+
+After editing, rebuild the login database:
+
+```sh
+# cap_mkdb /etc/login.conf
+```
+
 ---
 
 ## 2. Create Directory Structure
