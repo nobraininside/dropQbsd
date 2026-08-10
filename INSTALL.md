@@ -490,6 +490,26 @@ To verify manually:
 # cat /var/log/dropQbsd_integrity.log
 ```
 
+#### After Updating Scripts
+
+If you modify any of the monitored scripts (`run_app_impl`, `qmv`, `qcp`, `qimport`, `enforce_drop`, `enforce_sync`), `verify_integrity` will report a signature violation. This is expected. Regenerate the signature:
+
+```sh
+# cd /opt/dropQbsd
+# sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport libexec/enforce_drop libexec/enforce_sync | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
+# rm /root/dropQbsd.sec
+```
+
+If you no longer have the private key (`/root/dropQbsd.sec`), regenerate the key pair from scratch:
+
+```sh
+# cd /opt/dropQbsd
+# rm -f keys/dropQbsd.pub keys/dropQbsd_scripts.sha256.sig
+# signify -G -n -p keys/dropQbsd.pub -s /root/dropQbsd.sec
+# sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport libexec/enforce_drop libexec/enforce_sync | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
+# rm /root/dropQbsd.sec
+```
+
 ---
 
 ### Log Rotation
