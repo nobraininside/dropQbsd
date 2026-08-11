@@ -27,7 +27,7 @@ case "$USER" in
         exec /usr/local/bin/startxfce4
         ;;
     *)
-        exec /usr/local/bin/cwm
+        exec /usr/X11R6/bin/cwm
         ;;
 esac
 
