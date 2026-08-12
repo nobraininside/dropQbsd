@@ -9,6 +9,8 @@
 ```
 
 > Compartmentalization without virtualization. Just Unix, done right.
+> ~2,500 lines of ksh + 9 lines of C — small enough to audit in an afternoon.
+
 
 ![Status](https://img.shields.io/badge/status-beta-orange)
 ![Version](https://img.shields.io/badge/version-0.1.0-blue)
@@ -26,7 +28,26 @@ Each domain — web, mail, documents — runs as a dedicated user. They share no
 
 Runs comfortably on 1 GB of RAM. A disposable browser session needs ~500 MB of tmpfs; the base system uses ~300 MB.
 
-**Ten minutes to install. Rebuildable in thirty. Zero lock-in.**
+**Ten minutes to install. Rebuildable in thirty. ~2,500 lines of ksh + 9 lines of C. Zero lock-in.**
+
+---
+
+#### dropQbsd vs Qubes OS
+
+| | DROPQBSD | QUBES OS |
+| -- | ---------- | -------- |
+| Isolation mechanism | Unix users + permissions | Xen hypervisor + VMs |
+| RAM baseline | 1 GB | 8 GB |
+| Input isolation | None (shared X11 cookie) | Full (separate X servers) |
+| Kernel isolation | None (shared kernel) | Full (separate VM kernels) |
+| Disk usage | ~2 GB (OpenBSD base) | 30+ GB (VM images) |
+| Install time | 10 minutes | 1-2 hours |
+| Rebuild from scratch | 30 minutes | Hours/days |
+| Complexity |  ~2,500 lines of ksh + 9 lines of C | Xen, Qubes tools, GUI stack |
+| Privilege model | Blind-gate setuid binary, no doas for user | Dom0/Qubes Manager |
+| Threat model | Malware, network attacks, data leaks | Targeted state actors, kernel exploits |
+
+**Choose dropQbsd** if you want compartmentalization without the weight of virtualization. **Choose Qubes OS** if your threat model includes kernel exploits or targeted input sniffing.
 
 ---
 
@@ -197,23 +218,6 @@ dropQbsd is fully functional with just the base system. Several optional compone
 **Conductor compromise.** `user` can launch apps in any domain via `run_app`. If `user` is compromised, all domains are compromised — the conductor holds the keys. `pf` blocks `user` from browsing the web, but a local exploit or a malicious file executed as `user` is game over. Keep `user` minimal: no untrusted binaries, inspect files before importing.
 
 **Kernel-level attacks.** All domains share one kernel. A kernel exploit in one domain compromises everything. This is the tradeoff for avoiding virtualization.
-
-#### dropQbsd vs Qubes OS
-
-| | DROPQBSD | QUBES OS |
-| -- | ---------- | -------- |
-| Isolation mechanism | Unix users + permissions | Xen hypervisor + VMs |
-| RAM baseline | 1 GB | 8 GB |
-| Input isolation | None (shared X11 cookie) | Full (separate X servers) |
-| Kernel isolation | None (shared kernel) | Full (separate VM kernels) |
-| Disk usage | ~2 GB (OpenBSD base) | 30+ GB (VM images) |
-| Install time | 10 minutes | 1-2 hours |
-| Rebuild from scratch | 30 minutes | Hours/days |
-| Complexity |  ~2,500 lines of ksh + 9 lines of C | Xen, Qubes tools, GUI stack |
-| Privilege model | Blind-gate setuid binary, no doas for user | Dom0/Qubes Manager |
-| Threat model | Malware, network attacks, data leaks | Targeted state actors, kernel exploits |
-
-**Choose dropQbsd** if you want compartmentalization without the weight of virtualization. **Choose Qubes OS** if your threat model includes kernel exploits or targeted input sniffing.
 
 ---
 
@@ -638,56 +642,13 @@ The goal is not to add layers of abstraction but to remove them. If Unix users a
 
 ## A Message to Privacy Professionals
 
-**GDPR compliance is not a paperwork exercise.** If your organization processes personal data on Windows or macOS, you are running telemetry engines that phone home thousands of times per day — to Microsoft, to Apple, to third-party "partners" you never signed a data processing agreement with. You can draft privacy policies until your fingers bleed. The operating system undermines every word.
+If your organization processes personal data on Windows or macOS, you are running telemetry engines that phone home thousands of times per day to companies you never signed a data processing agreement with. The operating system undermines every word of your privacy policy.
 
-**Accountability**, the cornerstone of GDPR, rests on two pillars:
+dropQbsd on OpenBSD offers a different path: zero telemetry, fully auditable (~2,500 lines of ksh + 9 lines of C), and compartmentalized by design. No licenses to buy, no hardware to replace, no antivirus to renew.
 
-1. **Privacy by design** (Art. 25) — data protection must be built into the system, not bolted on after the fact.
-2. **Staff training** (Art. 39) — personnel must be educated on secure data handling.
+**→ [GDPR.md](GDPR.md):** Why dropQbsd satisfies GDPR accountability (Art. 25 and Art. 39) in a way no policy document ever could — and why "privacy by design" on closed-source systems is a legal fiction.
 
-Mainstream operating systems fail both. They are closed-source, unauditable, laden with telemetry, and so complex (hundreds of millions of lines of code) that vulnerabilities are inevitable — the defect rate is a mathematical certainty, not a bug to be patched.
-
-### The Alternative
-
-**OpenBSD** is the only operating system in the world that undergoes continuous, funded, line-by-line security auditing. It ships with zero telemetry. Its code base is small enough to be understood. It is privacy by design — not as a marketing slogan, but as an engineering fact.
-
-**dropQbsd** layers Qubes-style compartmentalization on top of OpenBSD without virtualization. Web browsing, email, and document storage run in separate security domains. A compromised browser cannot read your email. A compromised mail client cannot reach your file server. This is not a policy — it is enforced by Unix permissions and a strict firewall, policed every 60 seconds.
-
-### What This Means for Your Organization
-
-| | MAINSTREAM STACK | DROPQBSD ON OPENBSD |
-| -- | -- | -- |
-| **Telemetry** | Thousands of daily callbacks | Zero |
-| **Auditability** | Closed source, trust us | Fully auditable,  ~2,500 lines of ksh + 9 lines of C |
-| **Licensing cost** | Windows/Mac + Office + AV licenses | \$0 |
-| **Hardware lifecycle** | 5-7 years (forced obsolescence) | 10+ years (runs on 1 GB RAM) |
-| **Antivirus** | Mandatory, reactive, expensive | Unnecessary — compartmentalization prevents propagation |
-| **Privacy by design** | Impossible (closed source) | Inherent |
-| **Staff training** | "Don't click phishing links" | Learning a security-conscious OS — real education |
-
-### The Accountability Argument
-
-When your organization adopts dropQbsd, you satisfy GDPR accountability in a way that no policy document ever could:
-
-- **Privacy by design is not a claim — it is the architecture.** The system cannot exfiltrate data because it has no telemetry. Malware cannot propagate because domains are isolated.
-- **Staff training is not a checkbox webinar — it is the daily act** of using an operating system that requires and rewards security awareness. Your employees become security-conscious by necessity, not by decree.
-
-The budget shifts from remediating breaches and renewing licenses to training personnel — exactly where GDPR intended it.
-
-### A Challenge to DPOs and Security Consultants
-
-If you advise clients on GDPR compliance while deploying them on Windows, macOS, or even some mainstream Linux distributions, ask yourself: have you implemented privacy by design, or have you implemented privacy by document? Can you audit the operating system your client entrusts with personal data? Do you know what telemetry leaves the building at 3 AM?[^1].
-
-
-If the answer to any of these is no, the paperwork is a fig leaf.
-
-dropQbsd offers a different path: an auditable, telemetry-free, compartmentalized operating system that costs nothing to license, runs on hardware you already own, and turns compliance from a legal fiction into an engineering reality.
-
-**Security is simplicity. Privacy is auditable. Accountability is provable. Anything less is a gamble dressed in legalese.**
-
-[^1]: Yes, literally at 3 AM. Windows telemetry runs on a schedule that includes early-morning hours. It transmits hardware diagnostics, usage patterns, installed applications, and in some configurations, the content
-of documents and browsing history — all without explicit consent beyond the click-through EULA. macOS does the same via `rapportd`, `trustd`, and Transparencyd. Ubuntu collects system information via `ubuntu-report`
-and snap telemetry. None of these can be fully disabled without breaking functionality or voiding support agreements. OpenBSD ships with none of this. Zero.
+---
 
 ## Roadmap
 
