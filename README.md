@@ -209,7 +209,7 @@ dropQbsd is fully functional with just the base system. Several optional compone
 | Disk usage | ~2 GB (OpenBSD base) | 30+ GB (VM images) |
 | Install time | 10 minutes | 1-2 hours |
 | Rebuild from scratch | 30 minutes | Hours/days |
-| Complexity | ~500 lines of ksh + 10 lines of C | Xen, Qubes tools, GUI stack |
+| Complexity |  ~2,500 lines of ksh + 9 lines of C | Xen, Qubes tools, GUI stack |
 | Privilege model | Blind-gate setuid binary, no doas for user | Dom0/Qubes Manager |
 | Threat model | Malware, network attacks, data leaks | Targeted state actors, kernel exploits |
 
@@ -658,7 +658,7 @@ Mainstream operating systems fail both. They are closed-source, unauditable, lad
 | | MAINSTREAM STACK | DROPQBSD ON OPENBSD |
 | -- | -- | -- |
 | **Telemetry** | Thousands of daily callbacks | Zero |
-| **Auditability** | Closed source, trust us | Fully auditable, ~500 lines of ksh + 10 lines of C |
+| **Auditability** | Closed source, trust us | Fully auditable,  ~2,500 lines of ksh + 9 lines of C |
 | **Licensing cost** | Windows/Mac + Office + AV licenses | \$0 |
 | **Hardware lifecycle** | 5-7 years (forced obsolescence) | 10+ years (runs on 1 GB RAM) |
 | **Antivirus** | Mandatory, reactive, expensive | Unnecessary — compartmentalization prevents propagation |
