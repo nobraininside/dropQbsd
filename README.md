@@ -68,7 +68,7 @@ No domain can modify files once placed (enforced by 440 permissions). Cleanup is
 
 | File | Type | Role |
 |------|------|------|
-| `bin/run_app` | Compiled binary (setuid root) | Immutable gate — 10 lines of C, no logic, no attack surface |
+| `bin/run_app` | Compiled binary (setuid root) | Immutable gate — 9 lines of C, no logic, no attack surface |
 | `libexec/run_app_impl` | ksh script | All the logic — maintainable without recompilation |
 | `src/run_app_wrapper.c` | C source | Kept for reference; only needed if OpenBSD ABI breaks |
 
@@ -78,7 +78,7 @@ No domain can modify files once placed (enforced by 440 permissions). Cleanup is
 2. `run_app` calls `setuid(0)`, escalates to root, then `execv` transforms into `run_app_impl` passing all arguments through
 3. `run_app_impl` (now running as root) locates the X11 cookie from xenodm's auth directory, creates an isolated runtime directory (or tmpfs in disposable mode), sets `HOME`, `DISPLAY`, `XAUTHORITY`, `XDG_RUNTIME_DIR`, and launches the application via `su -l`
 
-The binary is the **blind gate**: it can do exactly one thing — call `run_app_impl`. No parsing, no branching, no logic. Immutable after compilation. If you need to add a domain, change paths, or tweak cleanup behavior, you edit `run_app_impl` — a plain ksh script. No recompilation. The attack surface stays frozen at 10 lines of C.
+The binary is the **blind gate**: it can do exactly one thing — call `run_app_impl`. No parsing, no branching, no logic. Immutable after compilation. If you need to add a domain, change paths, or tweak cleanup behavior, you edit `run_app_impl` — a plain ksh script. No recompilation. The attack surface stays frozen at 9 lines of C.
 
 **`doas.conf` is minimal** — only `permit nopass root`. `user` has no `doas` access at all. The compartmentalization is sealed: `user` cannot escalate to root through any path except the blind gate, and the blind gate can only launch domain applications.
 
