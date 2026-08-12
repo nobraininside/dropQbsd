@@ -85,4 +85,3 @@ if [ "$TOTAL_WRONG" -gt 0 ]; then
 fi
 
 exit 0
- 
