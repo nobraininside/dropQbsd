@@ -219,6 +219,8 @@ dropQbsd is fully functional with just the base system. Several optional compone
 
 **Kernel-level attacks.** All domains share one kernel. A kernel exploit in one domain compromises everything. This is the tradeoff for avoiding virtualization.
 
+**Application-level telemetry.** OpenBSD ships with zero telemetry, but applications you install — particularly Chromium and Firefox — may phone home independently. Use `ungoogled-chromium` or `qutebrowser` for a telemetry-free browser. This is outside dropQbsd's scope but worth knowing.
+
 ---
 
 ## Daily Usage
@@ -298,6 +300,7 @@ $ /opt/dropQbsd/bin/site_menu
 
 If the GPG keyring is locked, a warning dialog prompts you to unlock it manually and retry. Passwords are cleared from the clipboard after 30 seconds.
 
+Requires `pass(1)`, `zenity`, and `xclip`. See [INSTALL.md](INSTALL.md) for setup.
 
 **Mail client in its isolated domain:**
 
