@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-- OpenBSD (any supported release)
+- OpenBSD 7.5 or newer
 - No additional packages required for core functionality — everything is in the base system
 
 ---
