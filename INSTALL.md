@@ -5,7 +5,11 @@
 ## Prerequisites
 
 - OpenBSD 7.5 or newer
-- No additional packages required for core functionality — everything is in the base system
+- **Core functionality**: no additional packages — everything is in the base system
+- **Optional components** (install only what you need):
+  - `indicator_xfce4`: `dzen2`, `xdotool`
+  - `file_bridge`: `tmux`, `nnn`
+  - `site_menu`: `zenity`, `pass`, `xclip` (plus a browser)
 
 ---
 
