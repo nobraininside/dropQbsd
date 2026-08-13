@@ -126,7 +126,7 @@ This is the core of dropQbsd's privilege model. `run_app` is split into three fi
 
 | File | Purpose |
 |------|---------|
-| `src/run_app_wrapper.c` | C source — 10 lines, compiled once |
+| `src/run_app_wrapper.c` | C source — 9 lines, compiled once |
 | `bin/run_app` | Compiled setuid binary — the immutable gate `user` invokes |
 | `libexec/run_app_impl` | ksh script — all the logic, editable without recompilation |
 
