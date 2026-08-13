@@ -91,7 +91,7 @@ No domain can modify files once placed (enforced by 440 permissions). Cleanup is
 |------|------|------|
 | `bin/run_app` | Compiled binary (setuid root) | Immutable gate — 9 lines of C, no logic, no attack surface |
 | `libexec/run_app_impl` | ksh script | All the logic — maintainable without recompilation |
-| `src/run_app_wrapper.c` | C source | Kept for reference; only needed if  ABI breaks |
+| `src/run_app_wrapper.c` | C source | Kept for reference; only needed if OpenBSD ABI breaks |
 
 **How it works:**
 
@@ -219,7 +219,7 @@ dropQbsd is fully functional with just the base system. Several optional compone
 
 **Kernel-level attacks.** All domains share one kernel. A kernel exploit in one domain compromises everything. This is the tradeoff for avoiding virtualization.
 
-**Application-level telemetry.**  ships with zero telemetry, but applications you install — particularly Chromium and Firefox — may phone home independently. Use `ungoogled-chromium` or `qutebrowser` for a telemetry-free browser. This is outside dropQbsd's scope but worth knowing.
+**Application-level telemetry.** OpenBSD ships with zero telemetry, but applications you install — particularly Chromium and Firefox — may phone home independently. Use `ungoogled-chromium` or `qutebrowser` for a telemetry-free browser. This is outside dropQbsd's scope but worth knowing.
 
 ---
 
@@ -475,7 +475,7 @@ the `<updates>` PF table is populated on demand by each script.
 **Full update (patches + firmware + packages + orphan cleanup):**
 
 ```sh
-# /opt/dropQbsd/admin/update__via_pf
+# /opt/dropQbsd/admin/update_openbsd_via_pf
 ```
 
 **Security patches only:**
@@ -548,7 +548,7 @@ Three commands. Three habits. Ten minutes. Done.
 | `qcp` | Any user | Copy file/directory into `/home/drop` without deleting the original |
 | `run_app` | user (setuid root) | Blind-gate binary. Escalates to root, execs `run_app_impl`. The only privileged entry point `user` can touch. |
 | `run_app_impl` | root (via `run_app`) | ksh script with all launch logic — X11 cookie, runtime dir, tmpfs, `su -l`. Editable without recompilation. |
-| `run_app_wrapper.c` | — (source only) | 9-line C source. Kept for reference; only needed if  ABI breaks. |
+| `run_app_wrapper.c` | — (source only) | 9-line C source. Kept for reference; only needed if OpenBSD ABI breaks. |
 
 ### Launchers and Utilities
 
@@ -600,8 +600,8 @@ All update scripts log to `/var/log/dropQbsd_updates.log`.
 | `ensure_updates_table` | root | Populate PF `<updates>` table with Fastly CDN blocks and custom mirrors |
 | `pkg_add_via_pf` | root | Install/update packages through restrictive PF; flushes `<updates>` on exit |
 | `syspatch_via_pf` | root | Apply security patches through restrictive PF |
-| `sysupgrade_via_pf` | root | Upgrade to next  release through restrictive PF (reboots) |
-| `update__via_pf` | root | Full update: syspatch + fw_update + pkg_add -u + pkg_delete -a |
+| `sysupgrade_via_pf` | root | Upgrade to next OpenBSD release through restrictive PF (reboots) |
+| `update_openbsd_via_pf` | root | Full update: syspatch + fw_update + pkg_add -u + pkg_delete -a |
 
 ### Integrity
 
