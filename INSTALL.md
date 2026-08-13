@@ -769,8 +769,6 @@ After a full installation, your system will have:
 │   ├── ensure_updates_table   # Populate <updates> PF table
 │   ├── export_www_to_drop     # www archival
 │   ├── export_mail_to_drop    # Mail archival
-│   ├── indicator_cwm          # Domain indicator for cwm/i3/dwm
-│   ├── indicator_xfce4        # Domain indicator for XFCE/DEs
 │   ├── pull_www_from_drop     # www import
 │   ├── pull_mail_from_drop    # Mail import
 │   ├── root_snapshot          # Privileged data for control_panel
