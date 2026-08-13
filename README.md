@@ -26,9 +26,9 @@ No multi-gigabyte VM images. No Xen. No moving parts you can't audit in an after
 
 Each domain — web, mail, documents — runs as a dedicated user. They share nothing except a single policed exchange directory. A handful of ksh scripts, a solid `pf.conf`, and standard Unix permissions do the rest.
 
-Runs comfortably on 1 GB of RAM. A disposable browser session needs ~500 MB of tmpfs; the base system uses ~300 MB.
+Runs on 1 GB of RAM (~300 MB base system + ~500 MB tmpfs per disposable browser). Verified on 4 GB hardware; 2 GB recommended for comfortable daily use.
 
-**Ten minutes to install. Rebuildable in thirty. ~2,500 lines of ksh + 9 lines of C. Zero lock-in.**
+**Fifteen minutes to install. Rebuildable in thirty. ~2,500 lines of ksh + 9 lines of C. Zero lock-in.**
 
 ---
 
@@ -41,7 +41,7 @@ Runs comfortably on 1 GB of RAM. A disposable browser session needs ~500 MB of t
 | Input isolation | None (shared X11 cookie) | Full (separate X servers) |
 | Kernel isolation | None (shared kernel) | Full (separate VM kernels) |
 | Disk usage | ~2 GB (OpenBSD base) | 30+ GB (VM images) |
-| Install time | 10 minutes | 1-2 hours |
+| Install time | 15 minutes | 1-2 hours |
 | Rebuild from scratch | 30 minutes | Hours/days |
 | Complexity |  ~2,500 lines of ksh + 9 lines of C | Xen, Qubes tools, GUI stack |
 | Privilege model | Blind-gate setuid binary, no doas for user | Dom0/Qubes Manager |
@@ -91,7 +91,7 @@ No domain can modify files once placed (enforced by 440 permissions). Cleanup is
 |------|------|------|
 | `bin/run_app` | Compiled binary (setuid root) | Immutable gate — 9 lines of C, no logic, no attack surface |
 | `libexec/run_app_impl` | ksh script | All the logic — maintainable without recompilation |
-| `src/run_app_wrapper.c` | C source | Kept for reference; only needed if OpenBSD ABI breaks |
+| `src/run_app_wrapper.c` | C source | Kept for reference; only needed if  ABI breaks |
 
 **How it works:**
 
@@ -177,7 +177,7 @@ Export files are `root:drop 440` — no domain user can modify them. Integrity v
 ### What You Get
 
 - **Compartmentalization without virtualization.** Same security model as Qubes, zero overhead.
-- **Blind-gate privilege escalation.** `run_app` is a 10-line setuid binary that can only call `run_app_impl`. Logic stays in auditable ksh. Attack surface is frozen.
+- **Blind-gate privilege escalation.** `run_app` is a 9-line setuid binary that can only call `run_app_impl`. Logic stays in auditable ksh. Attack surface is frozen.
 - **Disposable browsers.** tmpfs-backed, nothing survives exit. No persistent profiles. Downloads survive via symlink bridge.
 - **Automated archival.** Email and websites compressed, verified, pulled across domains on schedule.
 - **Quarantine with audit trail.** Files with incorrect group ownership are   isolated with an explanation ticket. Rare in normal use (SGID on the drop zone forces correct group), but catches misconfigured scripts or malicious placement.
@@ -219,7 +219,7 @@ dropQbsd is fully functional with just the base system. Several optional compone
 
 **Kernel-level attacks.** All domains share one kernel. A kernel exploit in one domain compromises everything. This is the tradeoff for avoiding virtualization.
 
-**Application-level telemetry.** OpenBSD ships with zero telemetry, but applications you install — particularly Chromium and Firefox — may phone home independently. Use `ungoogled-chromium` or `qutebrowser` for a telemetry-free browser. This is outside dropQbsd's scope but worth knowing.
+**Application-level telemetry.**  ships with zero telemetry, but applications you install — particularly Chromium and Firefox — may phone home independently. Use `ungoogled-chromium` or `qutebrowser` for a telemetry-free browser. This is outside dropQbsd's scope but worth knowing.
 
 ---
 
@@ -475,7 +475,7 @@ the `<updates>` PF table is populated on demand by each script.
 **Full update (patches + firmware + packages + orphan cleanup):**
 
 ```sh
-# /opt/dropQbsd/admin/update_openbsd_via_pf
+# /opt/dropQbsd/admin/update__via_pf
 ```
 
 **Security patches only:**
@@ -548,7 +548,7 @@ Three commands. Three habits. Ten minutes. Done.
 | `qcp` | Any user | Copy file/directory into `/home/drop` without deleting the original |
 | `run_app` | user (setuid root) | Blind-gate binary. Escalates to root, execs `run_app_impl`. The only privileged entry point `user` can touch. |
 | `run_app_impl` | root (via `run_app`) | ksh script with all launch logic — X11 cookie, runtime dir, tmpfs, `su -l`. Editable without recompilation. |
-| `run_app_wrapper.c` | — (source only) | 10-line C source. Kept for reference; only needed if OpenBSD ABI breaks. |
+| `run_app_wrapper.c` | — (source only) | 9-line C source. Kept for reference; only needed if  ABI breaks. |
 
 ### Launchers and Utilities
 
@@ -600,8 +600,8 @@ All update scripts log to `/var/log/dropQbsd_updates.log`.
 | `ensure_updates_table` | root | Populate PF `<updates>` table with Fastly CDN blocks and custom mirrors |
 | `pkg_add_via_pf` | root | Install/update packages through restrictive PF; flushes `<updates>` on exit |
 | `syspatch_via_pf` | root | Apply security patches through restrictive PF |
-| `sysupgrade_via_pf` | root | Upgrade to next OpenBSD release through restrictive PF (reboots) |
-| `update_openbsd_via_pf` | root | Full update: syspatch + fw_update + pkg_add -u + pkg_delete -a |
+| `sysupgrade_via_pf` | root | Upgrade to next  release through restrictive PF (reboots) |
+| `update__via_pf` | root | Full update: syspatch + fw_update + pkg_add -u + pkg_delete -a |
 
 ### Integrity
 
@@ -637,7 +637,7 @@ Thirty minutes. No databases to restore. No daemon state to reconstruct.
 
 **dropQbsd** is not a distribution. It's a configuration. It doesn't fork OpenBSD — it sits on top, using tools battle-tested for decades.
 
-The goal is not to add layers of abstraction but to remove them. If Unix users and permissions already provide isolation, why add a hypervisor? If `cron` and `find` can police a shared directory, why run a daemon? If `ksh` and `pfctl` can manage network access for updates, why build a package manager wrapper? If a 10-line setuid C binary can gate privilege escalation, why give `user` a `doas` ticket to the whole system?
+The goal is not to add layers of abstraction but to remove them. If Unix users and permissions already provide isolation, why add a hypervisor? If `cron` and `find` can police a shared directory, why run a daemon? If `ksh` and `pfctl` can manage network access for updates, why build a package manager wrapper? If a 9-line setuid C binary can gate privilege escalation, why give `user` a `doas` ticket to the whole system?
 
 **Complexity is the enemy of security**. dropQbsd keeps it simple, auditable, and boring — exactly what you want from a security tool.
 
