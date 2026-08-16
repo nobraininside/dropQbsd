@@ -839,11 +839,6 @@ examples/
 ├── tables/                    # Example PF table configurations
 │   ├── mailserver_hosts       # Mail server hostnames template
 │   └── services_hosts         # Service IPs and hostnames template
-└── thunar/                    # Xfe file manager color schemes
-│   ├── gtk.css.user           # Thunar skin for user domain (copy to ~/.config/gtk-3.0/gtk.css)
-│   ├── gtk.css.userdoc        # Thunar skin for userweb domain (copy to ~/.config/gtk-3.0/gtk.css)
-│   ├── gtk.css.usermail       # Thunar skin for usermail domain (copy to ~/.config/gtk-3.0/gtk.css)
-│   ├── gtk.css.userweb        # Thunar skin for userdoc domain (copy to ~/.config/gtk-3.0/gtk.css)
 └── xfe/                       # Xfe file manager color schemes and scripts
     ├── scripts/               # Xfe custom scripts (copy to ~/.config/xfe/scripts/)
     |    ├── qcp               # Run /opt/dropQbsd/bin/qcp from Xfe
