@@ -164,7 +164,7 @@ Add to `~/.xsession` before the window manager line:
 /opt/dropQbsd/bin/indicator_cwm &
 ```
 
-**Detection:** the indicator checks the active window's title first (so xterms with `-title 'userweb'` are always detected correctly), then falls back to `_NET_WM_PID` and process owner, and finally matches `WM_CLASS` for apps like xfe and Thunar that don't expose their PID.
+**Detection:** the indicator checks the active window's title first (so xterms with `-title 'userweb'` are always detected correctly), then falls back to `_NET_WM_PID` and process owner, and finally matches `WM_CLASS` for apps like xfe that don't expose their PID.
 
 **Color mapping (consistent across all dropQbsd themes):**
 
@@ -204,7 +204,7 @@ dropQbsd is fully functional with just the base system. Several optional compone
 - **Syncthing** — LAN file synchronization for the document domain
 - **Site Menu + pass** — password manager integration with one-click site launching
 - **Integrity verification** — cryptographic checksums via `signify(1)`
-- **Color schemes** — coordinated skins for Midnight Commander, Xfe, Thunar and related editors per domain
+- **Color schemes** — coordinated skins for Midnight Commander, Xfe and related editors per domain
 
 ### Security Model
 
@@ -322,12 +322,12 @@ $ /opt/dropQbsd/bin/run_app usermail /usr/local/bin/claws-mail
 **File manager for documents:**
 
 ```sh
-$ /opt/dropQbsd/bin/run_app userdoc /usr/local/bin/thunar /home/userdoc
+$ /opt/dropQbsd/bin/run_app userdoc /usr/local/bin/xfe /home/userdoc
 ```
 
 Aliases for common commands are provided in `/etc/kshrc`
 (modify runweb/runmail/rundoc app according to your needs, e.g.
-claws-mail instead of thunderbird, xfe instead of thunar, etc):
+claws-mail instead of thunderbird, mc instead of xfe, etc):
 
 ```sh
 # Global (all users):
@@ -339,7 +339,7 @@ alias qimport='/opt/dropQbsd/bin/qimport'
 alias run='/opt/dropQbsd/bin/run_app'
 alias runweb='/opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir'
 alias runmail='/opt/dropQbsd/bin/run_app usermail /usr/local/bin/claws-mail'
-alias rundoc='/opt/dropQbsd/bin/run_app userdoc /usr/local/bin/thunar /home/userdoc'
+alias rundoc='/opt/dropQbsd/bin/run_app userdoc /usr/local/bin/xfe /home/userdoc'
 ```
 
 Note: no `doas` prefix — `run_app` is setuid root, so `user` invokes it directly. Global aliases (qcp, qmv, qimport) are available to all users; domain-launch aliases (runweb, runmail, rundoc) are available only to the conductor (user). Commands in `/opt/dropQbsd/bin/` are available to all users via PATH.
