@@ -93,13 +93,11 @@ After editing, rebuild the login database:
 # mkdir -p /home/drop/userweb_export
 # mkdir -p /home/drop/usermail_export
 # mkdir -p /home/drop/_quarantine
-# mkdir -p /etc/tables    # populated by dropQbsd admin scripts and manual config
 
 # chown root:drop /home/drop /home/drop/userweb_export /home/drop/usermail_export
 # chmod 2770 /home/drop    # SGID (2770) forces the 'drop' group on all files placed here
 # chmod 2770 /home/drop/userweb_export /home/drop/usermail_export
 # chmod 750 /home/drop/_quarantine
-# chmod 755 /etc/tables
 # chmod 700 /opt/dropQbsd/keys
 ```
 
@@ -164,7 +162,7 @@ $ /opt/dropQbsd/bin/xterm_userdoc
 Minimal — `user` gets no `doas` access at all:
 
 ```sh
-# cp etc/doas.conf /etc/doas.conf
+# cp templates/doas.conf /etc/doas.conf
 # chmod 440 /etc/doas.conf
 ```
 
@@ -501,7 +499,7 @@ Example configuration files are provided in `examples/` for a smoother daily wor
 **vi — editor configuration:**
 
 ```sh
-$ cp examples/exrc ~/.exrc
+$ cp examples/system/exrc ~/.exrc
 ```
 
 
@@ -511,7 +509,7 @@ box — no additional packages needed.
 **cwm — application menu:**
 
 ```sh
-$ cp examples/cwmrc ~/.cwmrc
+$ cp examples/system/cwmrc ~/.cwmr
 ```
 
 Edit `~/.cwmrc` and uncomment the section matching your role (root, domain user, or conductor). Provides a `Ctrl+/` application menu with domain-aware terminal launchers and commonly used applications. Requires no additional packages — `cwm` is in the base system.
@@ -576,9 +574,9 @@ Each domain user should use a distinct color scheme for immediate visual feedbac
 
 | Domain | Xfe background | mc skin |
 |--------|---------------|---------|
-| `userweb` | Blue | `examples/mc/userweb.ini` |
-| `usermail` | Orchid | `examples/mc/usermail.ini` |
-| `userdoc` | Green | `examples/mc/userdoc.ini` |
+| `userweb` | Blue | `examples/skins/mc/userweb.ini` |
+| `usermail` | Orchid | `examples/skins/mc/usermail.ini` |
+| `userdoc` | Green | `examples/skins/mc/userdoc.ini` |
 
 Install in each domain:
 
@@ -593,7 +591,7 @@ $ /opt/dropQbsd/bin/run_app userdoc xfe /home/userdoc
 $ /opt/dropQbsd/bin/run_app userdoc mc
 ```
 
-Xfe configuration files live in `~/.config/xfe/` inside each domain's home. Copy the example color schemes from `examples/xfe/` and adjust to taste.
+Xfe configuration files live in `~/.config/xfe/` inside each domain's home. Copy the example color schemes from `examples/skins/xfe/` and adjust to taste.
 
 ---
 
@@ -688,7 +686,7 @@ $ pass init your-gpg-key-id
 
 ```sh
 $ mkdir -p ~/.config/dropQbsd
-$ cp examples/sites.conf ~/.config/dropQbsd/sites.conf
+$ cp examples/system/sites.conf ~/.config/dropQbsd/sites.conf
 ```
 
 Edit `~/.config/dropQbsd/sites.conf` with your own sites. Format:
@@ -733,7 +731,7 @@ Set up Syncthing for `userdoc` with the Sync directory at `/home/userdoc/Sync`. 
 **Service setup:**
 
 ```sh
-# cp examples/rc.d/syncthing_userdoc /etc/rc.d/
+# cp templates/rc.d/syncthing_userdoc /etc/rc.d/
 # chmod 555 /etc/rc.d/syncthing_userdoc
 # rcctl enable syncthing_userdoc
 # rcctl start syncthing_userdoc
@@ -741,23 +739,7 @@ Set up Syncthing for `userdoc` with the Sync directory at `/home/userdoc/Sync`. 
 
 **Firewall:**
 
-Add these rules to `/etc/pf.conf`:
-
-```sh
-# Syncthing — incoming from LAN
-pass in quick on egress proto tcp from 192.168.0.0/16 to any port 22000
-pass in quick on egress proto udp from 192.168.0.0/16 to any port 21027
-
-# Syncthing — outgoing to LAN
-pass out quick on egress proto tcp from any to any port 22000 user userdoc flags S/SA
-pass out quick on egress proto udp from any to any port 21027 user userdoc
-```
-
-Reload:
-
-```sh
-# pfctl -f /etc/pf.conf
-```
+Syncthing rules are already in the policy (domains.conf declares tcp:22000@lan udp:21027@lan for both allow and allow_in). No manual pf.conf edits are needed. If your local.conf declares your LAN subnet correctly, the rules are generated automatically.
 
 **Configuration:**
 
