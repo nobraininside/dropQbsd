@@ -8,23 +8,22 @@
   the flying fortress
 ```
 
-> Compartmentalization without virtualization. Just Unix, done right.
+> Compartmentalization without virtualization. Just Unix, done right — on the BSD family.
 > ~2,500 lines of ksh + 9 lines of C — small enough to audit in an afternoon.
 
-
 ![Status](https://img.shields.io/badge/status-beta-orange)
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
+![Version](https://img.shields.io/badge/version-0.2.0-blue)
 ![License](https://img.shields.io/badge/license-ISC-green)
 
 ---
 
 ## What is this?
 
-Take the core insight of Qubes OS — security through compartmentalization — and strip away the hypervisor. **dropQbsd** uses native OpenBSD user separation instead of heavy virtualization.
+Take the core insight of Qubes OS — security through compartmentalization — and strip away the hypervisor. **dropQbsd** uses native BSD user separation instead of heavy virtualization. Born on OpenBSD, now targeting the BSD family.
 
 No multi-gigabyte VM images. No Xen. No moving parts you can't audit in an afternoon.
 
-Each domain — web, mail, documents — runs as a dedicated user. They share nothing except a single policed exchange directory. A handful of ksh scripts, a solid `pf.conf`, and standard Unix permissions do the rest.
+Each domain — web, mail, documents — runs as a dedicated user. They share nothing except a single policed exchange directory. A handful of ksh scripts, a declarative firewall policy, and standard Unix permissions do the rest.
 
 Runs on 1 GB of RAM (~300 MB base system + ~500 MB tmpfs per disposable browser). Verified on 4 GB hardware; 2 GB recommended for comfortable daily use.
 
@@ -114,7 +113,14 @@ Downloads made in disposable mode are bridged to the real `/home/$USER/Downloads
 
 ### Network Isolation
 
-`pf.conf` enforces strict per-domain rules:
+A **declarative policy** enforces strict per-domain rules. Two files
+describe your security posture:
+
+- `domains.conf` — the portable policy (identical on every install)
+- `local.conf` — your local configuration (subnet, mail, services)
+
+`gen_firewall` translates this policy into `pf.conf` for the target OS.
+The policy describes **intent**; the backend handles **syntax**.
 
 - **Default deny** — nothing gets out unless explicitly allowed
 - `userweb` reaches ports 80/443 only, blocked from LAN and localhost
@@ -122,7 +128,12 @@ Downloads made in disposable mode are bridged to the real `/home/$USER/Downloads
 - `userdoc` reaches LAN subnets and Syncthing ports only
 - Root has no permanent network access — only IPs in the `<updates>` table, populated on-demand
 
-Service IPs and mail server IPs are managed dynamically via PF tables, populated from configuration files in `/etc/tables/`. No provider IPs are exposed in the public repository.
+Service IPs and mail server IPs are managed dynamically via PF tables,
+populated from `local.conf`. No provider IPs are exposed in the public
+repository.
+
+OpenBSD and FreeBSD both use `pf`. NetBSD uses `npf`, which does not
+filter by user — it is on the roadmap, not yet supported.
 
 ### Domain Indicators
 
@@ -184,7 +195,7 @@ Export files are `root:drop 440` — no domain user can modify them. Integrity v
 - **Root web access on-demand.** `ensure_updates_table` populates the PF table, `pkg_add_via_pf` and `syspatch_via_pf` do their job. No telemetry. No background phoning home.
 - **Reinstallable in 30 minutes.** No databases, no daemons, no state you can't reconstruct from scripts and `/etc`.
 - **Integrity verification.** Critical scripts are checksummed and verified via `signify(1)` on a cron schedule. All dropQbsd components log to `/var/log/` (see Monitoring below).
-- **Dynamic PF tables.** Mail server and service IPs are managed via `/etc/tables/` — no provider details in the repository.
+- **Dynamic PF tables.** Mail server and service IPs are managed via `local.conf` — no provider details in the repository.
 
 ### Optional Components
 
@@ -587,8 +598,9 @@ They can also be run manually by their respective domain users.
 
 | Script | Run by | Purpose |
 | ------ | ------ | ------- |
-| `update_mailserver_table` | root | Resolve mail server hostnames via `userweb` DNS, populate `<mailserver>` table |
-| `update_services_table` | root | Populate `<services>` table from `/etc/tables/services_hosts` (static IPs and hostnames) |
+| `update_mailserver_table` | root | Resolve mail server hostnames via `userweb` DNS, populate `<mailserver>` table from `local.conf` |
+| `update_services_table` | root | Populate `<services>` table from `local.conf` (static IPs and hostnames) |
+| `ensure_updates_table` | root | Populate `<updates>` table with Fastly CDN blocks from `local.conf` |
 
 ### System Updates (root only)
 
@@ -597,7 +609,7 @@ All update scripts log to `/var/log/dropQbsd_updates.log`.
 
 | Script | Run by | Purpose |
 | ------ | ------ | ------- |
-| `ensure_updates_table` | root | Populate PF `<updates>` table with Fastly CDN blocks and custom mirrors |
+| `ensure_updates_table` | root | Populate PF `<updates>` table with Fastly CDN blocks from `local.conf` |
 | `pkg_add_via_pf` | root | Install/update packages through restrictive PF; flushes `<updates>` on exit |
 | `syspatch_via_pf` | root | Apply security patches through restrictive PF |
 | `sysupgrade_via_pf` | root | Upgrade to next OpenBSD release through restrictive PF (reboots) |
@@ -615,18 +627,19 @@ The entire system state is in a few places:
 
 - **Scripts** in `/opt/dropQbsd/`
 - **Users and groups** in `/etc/passwd`, `/etc/group`
-- **PF rules** in `/etc/pf.conf`
-- **PF table configs** in `/etc/tables/`
+- **Policy** in `/etc/dropQbsd/` (`domains.conf`, `local.conf`, `schema`)
+- **PF rules** generated in `/etc/pf.conf`
 - **Cron jobs** in `/var/cron/tabs/root`
 
 **To rebuild from scratch:**
 
-- Install OpenBSD
+- Install OpenBSD (or FreeBSD)
 - Copy the scripts to `/opt/dropQbsd/`
 - Run the user/group creation commands
 - Compile the `run_app` blind gate and set the setuid bit
-- Copy `pf.conf` and reload
-- Populate `/etc/tables/` with your provider IPs
+- Copy `domains.conf`, `schema`, and `local.conf` to `/etc/dropQbsd/`
+- Run `gen_firewall openbsd` (or `freebsd`) and reload
+- Populate `local.conf` with your provider IPs
 - Add cron jobs
 
 Thirty minutes. No databases to restore. No daemon state to reconstruct.
@@ -635,7 +648,7 @@ Thirty minutes. No databases to restore. No daemon state to reconstruct.
 
 ## Philosophy
 
-**dropQbsd** is not a distribution. It's a configuration. It doesn't fork OpenBSD — it sits on top, using tools battle-tested for decades.
+**dropQbsd** is not a distribution. It's a configuration. It doesn't fork the BSDs — it sits on top, using tools battle-tested for decades.
 
 The goal is not to add layers of abstraction but to remove them. If Unix users and permissions already provide isolation, why add a hypervisor? If `cron` and `find` can police a shared directory, why run a daemon? If `ksh` and `pfctl` can manage network access for updates, why build a package manager wrapper? If a 9-line setuid C binary can gate privilege escalation, why give `user` a `doas` ticket to the whole system?
 
@@ -647,7 +660,7 @@ The goal is not to add layers of abstraction but to remove them. If Unix users a
 
 If your organization processes personal data on Windows or macOS, you are running telemetry engines that phone home thousands of times per day to companies you never signed a data processing agreement with. The operating system undermines every word of your privacy policy.
 
-dropQbsd on OpenBSD offers a different path: zero telemetry, fully auditable (~2,500 lines of ksh + 9 lines of C), and compartmentalized by design. No licenses to buy, no hardware to replace, no antivirus to renew.
+dropQbsd on the BSD family offers a different path: zero telemetry, fully auditable (~2,500 lines of ksh + 9 lines of C), and compartmentalized by design.
 
 **→ [GDPR.md](GDPR.md):** Why dropQbsd satisfies GDPR accountability (Art. 25 and Art. 39) in a way no policy document ever could — and why "privacy by design" on closed-source systems is a legal fiction.
 
@@ -659,14 +672,21 @@ dropQbsd on OpenBSD offers a different path: zero telemetry, fully auditable (~2
 - [x] Disposable browser sessions (tmpfs-backed)
 - [x] Site menu with password manager integration
 - [x] Archival pipeline (email + websites → userdoc)
+- [x] Declarative firewall policy (`gen_firewall`, `domains.conf` + `local.conf`)
+- [ ] FreeBSD support (in testing)
+- [ ] NetBSD support (requires adapting isolation to `npf`)
+- [ ] dropQbsd-paired + server (WireGuard client-server, input isolation)
 - [ ] Install script (`install.sh`)
-- [ ] OpenBSD ports tree submission
+- [ ] Ports tree submission (OpenBSD first, then FreeBSD)
 
 ---
 
 ## Status ##
 
-dropQbsd is in active development. It works, it's used daily, but expect sharp edges. Contributions, bug reports, and real-world testing are welcome — open an issue or send a patch.
+dropQbsd is in active development. It works, it's used daily, but expect
+sharp edges. v0.2.0 introduces the declarative firewall policy and BSD
+portability groundwork. Contributions, bug reports, and real-world
+testing are welcome — open an issue or send a patch.
 
 ## Further reading ##
 
