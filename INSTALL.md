@@ -509,7 +509,7 @@ box — no additional packages needed.
 **cwm — application menu:**
 
 ```sh
-$ cp examples/system/cwmrc ~/.cwmr
+$ cp examples/system/cwmrc ~/.cwmrc
 ```
 
 Edit `~/.cwmrc` and uncomment the section matching your role (root, domain user, or conductor). Provides a `Ctrl+/` application menu with domain-aware terminal launchers and commonly used applications. Requires no additional packages — `cwm` is in the base system.
@@ -607,9 +607,19 @@ Generate a key pair and sign the critical scripts (keep the .sec key offline):
 # cd /opt/dropQbsd
 # rm -f keys/dropQbsd.pub keys/dropQbsd_scripts.sha256.sig
 # signify -G -n -p keys/dropQbsd.pub -s /root/dropQbsd.sec
-# sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport libexec/enforce_drop libexec/enforce_sync | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
+# sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport \
+#        libexec/enforce_drop libexec/enforce_sync \
+#        libexec/gen_firewall \
+#        libexec/update_mailserver_table \
+#        libexec/update_services_table \
+#        libexec/ensure_updates_table \
+#        /etc/dropQbsd/domains.conf \
+#        /etc/dropQbsd/local.conf \
+#        /etc/dropQbsd/schema \
+#   | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
 # rm /root/dropQbsd.sec
 ```
+
 The `verify_integrity` cron job (installed in step 9) checks these scripts every 5 minutes and logs any modifications to `/var/log/dropQbsd_integrity.log`.
 
 To verify manually:
@@ -621,11 +631,20 @@ To verify manually:
 
 #### After Updating Scripts
 
-If you modify any of the monitored scripts (`run_app_impl`, `qmv`, `qcp`, `qimport`, `enforce_drop`, `enforce_sync`), `verify_integrity` will report a signature violation. This is expected. Regenerate the signature:
+If you modify any of the monitored scripts or policy files, `verify_integrity` will report a signature violation. This is expected. Regenerate the signature:
 
 ```sh
 # cd /opt/dropQbsd
-# sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport libexec/enforce_drop libexec/enforce_sync | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
+# sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport \
+#        libexec/enforce_drop libexec/enforce_sync \
+#        libexec/gen_firewall \
+#        libexec/update_mailserver_table \
+#        libexec/update_services_table \
+#        libexec/ensure_updates_table \
+#        /etc/dropQbsd/domains.conf \
+#        /etc/dropQbsd/local.conf \
+#        /etc/dropQbsd/schema \
+#   | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
 # rm /root/dropQbsd.sec
 ```
 
@@ -635,7 +654,16 @@ If you no longer have the private key (`/root/dropQbsd.sec`), regenerate the key
 # cd /opt/dropQbsd
 # rm -f keys/dropQbsd.pub keys/dropQbsd_scripts.sha256.sig
 # signify -G -n -p keys/dropQbsd.pub -s /root/dropQbsd.sec
-# sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport libexec/enforce_drop libexec/enforce_sync | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
+# sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport \
+#        libexec/enforce_drop libexec/enforce_sync \
+#        libexec/gen_firewall \
+#        libexec/update_mailserver_table \
+#        libexec/update_services_table \
+#        libexec/ensure_updates_table \
+#        /etc/dropQbsd/domains.conf \
+#        /etc/dropQbsd/local.conf \
+#        /etc/dropQbsd/schema \
+#   | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
 # rm /root/dropQbsd.sec
 ```
 
