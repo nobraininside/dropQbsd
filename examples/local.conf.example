@@ -1,0 +1,94 @@
+# ==========================================================
+#  dropQbsd -- local.conf
+#
+#  YOUR local configuration. One file, one source of truth
+#  for all of dropQbsd.
+#
+#  HOW TO USE THIS FILE:
+#    1. Copy to /etc/dropQbsd/local.conf
+#    2. Uncomment and edit the sections you need
+#    3. Run: gen_firewall openbsd   (or freebsd)
+#    4. Update the tables (see INSTALL.md)
+#
+#  IMPORTANT:
+#    - Never commit real values to the repository.
+#    - root:wheel 644 (readable by all, writable by root).
+#    - Commented lines are INERT: uncomment them to activate.
+#
+#  Path: /etc/dropQbsd/local.conf
+# ==========================================================
+
+
+# ----------------------------------------------------------
+# [network] -- YOUR LOCAL NETWORK (REQUIRED)
+# ----------------------------------------------------------
+# The LAN subnet used by userdoc (file sharing, Syncthing)
+# and by any rule targeting @lan in the policy.
+#
+# Find it with:  ifconfig egress | grep inet
+#   inet 192.168.1.42  ->  subnet is 192.168.1.0/24
+#
+# Use the SUBNET, not your single IP:
+#   CORRECT: 192.168.1.0/24
+#   WRONG:   192.168.1.42
+[network]
+lan = 192.168.0.0/16
+
+
+# ----------------------------------------------------------
+# [updates] -- UPDATE MIRRORS (REQUIRED, DO NOT EDIT)
+# ----------------------------------------------------------
+# Fastly CDN blocks used by OpenBSD mirrors.
+# Used by ensure_updates_table to populate <updates>.
+# Official source: https://api.fastly.com/public-ip-list
+[updates]
+mirrors = 151.101.0.0/16 199.232.0.0/16 23.235.32.0/20 104.156.80.0/20
+
+
+# ----------------------------------------------------------
+# [mailserver] -- YOUR MAIL SERVERS (OPTIONAL)
+# ----------------------------------------------------------
+# Hostnames of your IMAP and SMTP servers.
+# update_mailserver_table resolves them via userweb DNS.
+#
+# Uncomment and replace the example values:
+# hosts = mail.yourdomain.com
+# or, if IMAP and SMTP differ:
+# hosts = imap.yourdomain.com smtp.yourdomain.com
+[mailserver]
+# hosts = mail.example.com imap.example.com smtp.example.com
+
+
+# ----------------------------------------------------------
+# [services] -- YOUR EXTERNAL SERVICES (OPTIONAL)
+# ----------------------------------------------------------
+# Static IPs and @hostnames that userweb must reach beyond
+# normal web browsing (ports 80/443).
+# Typical: cPanel, GitHub SSH, rsync servers.
+#
+# Format:
+#   - Static IP:  write as-is       (37.58.52.209)
+#   - Hostname:   prefix with @     (@ssh.github.com)
+#
+# Uncomment and replace the example values:
+[services]
+# hosts = 198.51.100.10 @ssh.github.com
+
+
+# ----------------------------------------------------------
+# [extra.*] -- YOUR PERSONAL EXCEPTIONS (OPTIONAL)
+# ----------------------------------------------------------
+# Add EXTRA allow rules on top of the general policy
+# (domains.conf). You may ONLY add "allow" here.
+#
+# Syntax: proto:port@target   (e.g. tcp:2083@table:services)
+#
+# Uncomment and adjust as needed:
+
+# Example: cPanel + GitHub SSH + rsync for the browser
+# [extra.userweb]
+# allow = tcp:2083@table:services tcp:2096@table:services tcp:443@table:services tcp:52820@table:services
+
+# Example: SSH toward the LAN (adjust port if non-standard)
+# [extra.userdoc]
+# allow = tcp:22@lan
