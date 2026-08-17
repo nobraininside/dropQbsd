@@ -2,48 +2,36 @@
 # ==========================================================
 #  dropQbsd -- update_mailserver_table
 #
-#  Resolves mail server hostnames via userweb (which has
-#  DNS access under the PF ruleset) and populates the
-#  <mailserver> PF table. Root never touches the network
+#  Resolves mail server hostnames via userweb and populates
+#  the <mailserver> PF table. Root never touches the network
 #  directly -- DNS resolution is delegated to userweb.
 #
-#  Uses host(1) from the OpenBSD base system. No packages
-#  required.
-#
-#  Hostnames are read from /etc/tables/mailserver_hosts.
+#  Hostnames read from /etc/dropQbsd/local.conf,
+#  section [mailserver], key "hosts".
 #
 #  Path: /opt/dropQbsd/libexec/update_mailserver_table
 #  Permissions: chmod 700, root:wheel
-#
-#  Cron: */15 * * * * /opt/dropQbsd/libexec/update_mailserver_table
 # ==========================================================
 
-HOSTS_FILE="/etc/tables/mailserver_hosts"
+LOCAL_CONF="/etc/dropQbsd/local.conf"
 PF_TABLE="mailserver"
 
-if [[ ! -f "$HOSTS_FILE" ]]; then
-    echo "Error: $HOSTS_FILE not found." >&2
+HOSTS=$(grep -A3 'mailserver' "$LOCAL_CONF" | grep 'hosts' | head -1 | sed 's/.*= *//')
+
+if [ -z "$HOSTS" ]; then
+    echo "Error: no hosts found in $LOCAL_CONF [mailserver] section." >&2
     exit 1
 fi
 
-#-----------------------------------------------------------------------------
-# RESOLVE HOSTNAMES AS userweb (which has DNS access)
-#-----------------------------------------------------------------------------
-# host(1) output format: "name has address 1.2.3.4"
-# We extract only the IPv4 address.
-RESOLVED=$(su -l userweb -c "
-    while IFS= read -r host; do
-        [[ \"\$host\" == \#* ]] && continue
-        [[ -z \"\$host\" ]] && continue
-        host=\$(echo \"\$host\" | sed 's/^ *//;s/ *\$//')
-        host \"\$host\" 2>/dev/null
-    done < $HOSTS_FILE
-" | sed -n 's/.* has address //p' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -u)
+RESOLVED=""
+for host in $HOSTS; do
+    result=$(su -l userweb -c "host $host 2>/dev/null" | sed -n 's/.* has address //p' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+    RESOLVED="$RESOLVED $result"
+done
 
-#-----------------------------------------------------------------------------
-# UPDATE PF TABLE
-#-----------------------------------------------------------------------------
-if [[ -n "$RESOLVED" ]]; then
+RESOLVED=$(echo "$RESOLVED" | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -u)
+
+if [ -n "$RESOLVED" ]; then
     echo "$RESOLVED" | pfctl -t "$PF_TABLE" -T replace -f -
     logger -t dropQbsd "mailserver table updated: $(echo "$RESOLVED" | wc -l | tr -d ' ') IPs"
 else
