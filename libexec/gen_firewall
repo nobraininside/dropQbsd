@@ -1,0 +1,424 @@
+#!/bin/ksh
+# ==========================================================
+#  dropQbsd -- gen_firewall
+#
+#  Generates a firewall ruleset from a declarative policy.
+#  Reads domains.conf (portable policy) and local.conf
+#  (site-specific config), then emits pf.conf for the
+#  target OS.
+#
+#  One policy, multiple backends. The policy describes
+#  intent; this script translates intent into syntax.
+#
+#  Usage:
+#    gen_firewall openbsd   -> /etc/pf.conf  (pf, OpenBSD)
+#    gen_firewall freebsd   -> /etc/pf.conf  (pf, FreeBSD)
+#    gen_firewall netbsd    -> honest refusal (npf lacks
+#                               per-user filtering)
+#
+#  Policy model (default deny, allowlist):
+#    - block all globally
+#    - "allow" entries are the ONLY things permitted
+#    - "deny = rfc1918|localhost" emits explicit blocks
+#      that reinforce generic allows (always first)
+#    - "deny = internet" is a FILTER: it strips any allow
+#      targeting the internet, leaving only specific targets
+#    - "deny = any" annihilates all allows (== network=deny)
+#    - "allow_in" emits pass-in rules (for inbound services)
+#
+#  Path: /opt/dropQbsd/libexec/gen_firewall
+#  Permissions: chmod 700, root:wheel
+#
+#  Files:
+#    /etc/dropQbsd/domains.conf          (policy, in repo)
+#    /etc/dropQbsd/local.conf            (site config, local)
+#    /etc/dropQbsd/schema                (valid domains)
+#    /etc/pf.conf                        (generated output)
+# ==========================================================
+
+POLICY_DIR="/etc/dropQbsd"
+DOMAINS_CONF="$POLICY_DIR/domains.conf"
+LOCAL_CONF="$POLICY_DIR/local.conf"
+SCHEMA_FILE="$POLICY_DIR/schema"
+OUTPUT_PF="/etc/pf.conf"
+TMP_OUTPUT="/tmp/pf.conf.gen.$$"
+
+VALID_DOMAINS=""
+network_lan=""
+
+die() {
+    echo "ERROR: $*" >&2
+    exit 1
+}
+
+usage() {
+    echo "Usage: gen_firewall openbsd|freebsd|netbsd" >&2
+}
+
+load_schema() {
+    typeset line
+    [ -f "$SCHEMA_FILE" ] || die "schema file not found: $SCHEMA_FILE"
+
+    VALID_DOMAINS=""
+    while IFS= read -r line; do
+        line="${line%%#*}"
+        line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        [ -z "$line" ] && continue
+        VALID_DOMAINS="$VALID_DOMAINS $line"
+    done < "$SCHEMA_FILE"
+
+    [ -n "$VALID_DOMAINS" ] || die "schema is empty: $SCHEMA_FILE"
+    VALID_DOMAINS=$(echo "$VALID_DOMAINS" | sed 's/^ //')
+}
+
+parse_ini() {
+    typeset FILE SECTION LINENO line KEY VALUE SEC EXISTING
+    FILE="$1"
+    [ -f "$FILE" ] || die "file not found: $FILE"
+
+    SECTION=""
+    LINENO=0
+
+    while IFS= read -r line; do
+        LINENO=$((LINENO + 1))
+
+        line="${line%%#*}"
+        line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        [ -z "$line" ] && continue
+
+        # section header
+        case "$line" in
+            '['*']')
+                SECTION="${line#?}"
+                SECTION="${SECTION%?}"
+                SECTION=$(echo "$SECTION" | tr '.' '_')
+                continue
+                ;;
+        esac
+
+        # key = value
+        if [ "${line%%=*}" != "$line" ]; then
+            KEY="${line%%=*}"
+            VALUE="${line#*=}"
+            KEY=$(echo "$KEY" | sed 's/[[:space:]]*$//')
+            VALUE=$(echo "$VALUE" | sed 's/^[[:space:]]*//')
+            [ -z "$SECTION" ] && die "$FILE:$LINENO: key '$KEY' outside any section"
+
+            # concatenate duplicate keys (e.g. multiple "allow" lines)
+            eval "EXISTING=\${${SECTION}_${KEY}:-}"
+            if [ -n "$EXISTING" ]; then
+                eval "${SECTION}_${KEY}=\"$EXISTING $VALUE\""
+            else
+                eval "${SECTION}_${KEY}=\"$VALUE\""
+            fi
+            continue
+        fi
+
+        die "$FILE:$LINENO: syntax error: $line"
+    done < "$FILE"
+}
+
+validate() {
+    typeset DOMAIN KEY VAL RULE
+    for DOMAIN in $VALID_DOMAINS default; do
+        for KEY in allow allow_in deny network role policy; do
+            eval "VAL=\${${DOMAIN}_${KEY}:-}"
+            [ -z "$VAL" ] && continue
+
+            case "$KEY" in
+                allow|allow_in)
+                    for RULE in $VAL; do
+                        case "$RULE" in
+                            tcp:*@*|udp:*@*|icmp:*@*|any:*@*) : ;;
+                            *) die "$DOMAIN: bad allow rule '$RULE' (expected proto:port@target)" ;;
+                        esac
+                    done
+                    ;;
+                deny)
+                    for RULE in $VAL; do
+                        case "$RULE" in
+                            rfc1918|localhost|internet|any) : ;;
+                            *) die "$DOMAIN: bad deny rule '$RULE' (expected rfc1918|localhost|internet|any)" ;;
+                        esac
+                    done
+                    ;;
+                network)
+                    [ "$VAL" = "deny" ] || die "$DOMAIN: network must be 'deny'"
+                    ;;
+                role)
+                    : ;;
+                policy)
+                    [ "$DOMAIN" = "default" ] || die "policy only valid in [default]"
+                    [ "$VAL" = "deny" ] || die "[default] policy must be 'deny'"
+                    ;;
+            esac
+        done
+    done
+}
+
+merge_local() {
+    typeset DOMAIN EXTRA KEY BAD BASE
+    for DOMAIN in $VALID_DOMAINS; do
+        eval "EXTRA=\${extra_${DOMAIN}_allow:-}"
+        [ -z "$EXTRA" ] && continue
+
+        for KEY in deny network role; do
+            eval "BAD=\${extra_${DOMAIN}_${KEY}:-}"
+            [ -n "$BAD" ] && die "[extra.$DOMAIN] may only contain 'allow' (found '$KEY')"
+        done
+
+        eval "BASE=\${${DOMAIN}_allow:-}"
+        if [ -n "$BASE" ]; then
+            eval "${DOMAIN}_allow=\"$BASE $EXTRA\""
+        else
+            eval "${DOMAIN}_allow=\"$EXTRA\""
+        fi
+    done
+}
+
+resolve_rule() {
+    typeset RULE PROTO REST PORT TARGET
+    RULE="$1"
+    PROTO="${RULE%%:*}"; REST="${RULE#*:}"
+    PORT="${REST%%@*}"; TARGET="${REST#*@}"
+
+    case "$TARGET" in
+        internet)   echo "$PROTO:$PORT@any" ;;
+        lan)        [ -n "$network_lan" ] || die "@lan used but [network] lan not set in local.conf"
+                    echo "$PROTO:$PORT@$network_lan" ;;
+        any)        echo "$PROTO:$PORT@any" ;;
+        table:*)    echo "$PROTO:$PORT@table:${TARGET#table:}" ;;
+        *)          die "unknown target '$TARGET' in rule '$RULE'" ;;
+    esac
+}
+
+normalize() {
+    typeset DOMAIN NET DENY ALLOW ALLOW_IN NEWALLOW RESOLVED RESOLVED_IN RULE
+    for DOMAIN in $VALID_DOMAINS; do
+        eval "NET=\${${DOMAIN}_network:-}"
+        eval "DENY=\${${DOMAIN}_deny:-}"
+        eval "ALLOW=\${${DOMAIN}_allow:-}"
+        eval "ALLOW_IN=\${${DOMAIN}_allow_in:-}"
+
+        [ "$NET" = "deny" ] && ALLOW=""
+
+        case " $DENY " in
+            *" any "*) ALLOW="" ;;
+        esac
+
+        case " $DENY " in
+            *" internet "*)
+                NEWALLOW=""
+                for RULE in $ALLOW; do
+                    case "$RULE" in
+                        *@internet) : ;;
+                        *) NEWALLOW="$NEWALLOW $RULE" ;;
+                    esac
+                done
+                ALLOW=$(echo "$NEWALLOW" | sed 's/^ //')
+                ;;
+        esac
+
+        RESOLVED=""
+        for RULE in $ALLOW; do
+            RESOLVED="$RESOLVED $(resolve_rule "$RULE")"
+        done
+        ALLOW=$(echo "$RESOLVED" | sed 's/^ //')
+        eval "${DOMAIN}_allow=\"$ALLOW\""
+
+        # resolve allow_in too (same logic, but for incoming)
+        RESOLVED_IN=""
+        for RULE in $ALLOW_IN; do
+            RESOLVED_IN="$RESOLVED_IN $(resolve_rule "$RULE")"
+        done
+        ALLOW_IN=$(echo "$RESOLVED_IN" | sed 's/^ //')
+        eval "${DOMAIN}_allow_in=\"$ALLOW_IN\""
+    done
+}
+
+expand_ports() {
+    typeset SPEC P START END N
+    SPEC="$1"
+
+    # "any" is a special port (no port restriction)
+    [ "$SPEC" = "any" ] && { echo "any"; return; }
+
+    echo "$SPEC" | tr ',' ' ' | while read -r P; do
+        case "$P" in
+            *-*)
+                START="${P%%-*}"; END="${P##*-}"
+                N="$START"
+                while [ "$N" -le "$END" ]; do
+                    echo "$N"
+                    N=$((N + 1))
+                done
+                ;;
+            *)
+                echo "$P"
+                ;;
+        esac
+    done
+}
+
+emit_domain() {
+    typeset DOMAIN DENY ALLOW ALLOW_IN RULE
+    DOMAIN="$1"
+
+    eval "DENY=\${${DOMAIN}_deny:-}"
+    eval "ALLOW=\${${DOMAIN}_allow:-}"
+    eval "ALLOW_IN=\${${DOMAIN}_allow_in:-}"
+
+    # 1. deny -> explicit block rules (ALWAYS first)
+    for RULE in $DENY; do
+        case "$RULE" in
+            rfc1918)
+                echo "block out quick log on egress proto tcp from any to <rfc1918> port { 80 443 } user $DOMAIN"
+                ;;
+            localhost)
+                echo "block out quick on egress proto tcp from any to 127.0.0.0/8 user $DOMAIN"
+                ;;
+        esac
+    done
+
+    # 2. outgoing allows (pass out)
+    emit_rules "$DOMAIN" "$ALLOW" "out"
+
+    # 3. incoming allows (pass in)
+    emit_rules "$DOMAIN" "$ALLOW_IN" "in"
+}
+
+emit_rules() {
+    typeset DOMAIN RULES DIRECTION RULE PROTO REST PORTSPEC TARGET KEYS K PORTS RPROTO RPORT RTARGET FOUND EX FROM_CLAUSE USER_CLAUSE PORT_CLAUSE FLAGS
+    DOMAIN="$1"
+    RULES="$2"
+    DIRECTION="$3"
+
+    [ -z "$RULES" ] && return
+
+    KEYS=""
+    for RULE in $RULES; do
+        PROTO="${RULE%%:*}"; REST="${RULE#*:}"
+        TARGET="${REST#*@}"
+        case "$TARGET" in
+            table:*) TARGET="<${TARGET#table:}>" ;;
+        esac
+        K="$PROTO:$TARGET"
+        FOUND=0
+        for EX in $KEYS; do
+            [ "$EX" = "$K" ] && FOUND=1
+        done
+        [ "$FOUND" -eq 0 ] && KEYS="$KEYS $K"
+    done
+
+    for K in $KEYS; do
+        PROTO="${K%%:*}"; TARGET="${K#*:}"
+        PORTS=""
+        for RULE in $RULES; do
+            RPROTO="${RULE%%:*}"; REST="${RULE#*:}"
+            RPORT="${REST%%@*}"; RTARGET="${REST#*@}"
+            case "$RTARGET" in
+                table:*) RTARGET="<${RTARGET#table:}>" ;;
+            esac
+            if [ "$RPROTO" = "$PROTO" ] && [ "$RTARGET" = "$TARGET" ]; then
+                PORTS="$PORTS $(expand_ports "$RPORT")"
+            fi
+        done
+        PORTS=$(echo "$PORTS" | tr ' ' '\n' | sort -n -u | tr '\n' ' ' | sed 's/^ //;s/ $//;s/  */ /g')
+
+        # build clauses based on direction
+        if [ "$DIRECTION" = "out" ]; then
+            FROM_CLAUSE="from any to $TARGET"
+            USER_CLAUSE="user $DOMAIN"
+        else
+            # incoming: policy target becomes the source (peer)
+            FROM_CLAUSE="from $TARGET to any"
+            USER_CLAUSE=""
+        fi
+
+        # port clause
+        if [ "$PORTS" = "any" ]; then
+            PORT_CLAUSE=""
+        elif [ "$(echo "$PORTS" | wc -w)" -eq 1 ]; then
+            PORT_CLAUSE="port $PORTS"
+        else
+            PORT_CLAUSE="port { $PORTS }"
+        fi
+
+        # flags only for tcp
+        if [ "$PROTO" = "tcp" ]; then
+            FLAGS="flags S/SA"
+        else
+            FLAGS=""
+        fi
+
+        echo "pass $DIRECTION quick on egress proto $PROTO $FROM_CLAUSE $PORT_CLAUSE $USER_CLAUSE $FLAGS" | sed 's/  */ /g; s/ $//'
+    done
+}
+
+emit_pf() {
+    typeset OS DOMAIN
+    OS="$1"
+
+    {
+        echo "# Generated by gen_firewall -- DO NOT EDIT BY HAND"
+        echo "# Source: domains.conf + local.conf"
+        echo ""
+        echo "set skip on lo"
+        echo "block all"
+        echo "antispoof quick for egress"
+        echo ""
+        echo "table <updates> persist"
+        echo "table <mailserver> persist"
+        echo "table <rfc1918> const { 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 }"
+        echo "table <services> persist"
+        echo ""
+        echo "pass out quick on egress proto udp from any port 68 to any port 67"
+        echo "pass out quick on egress proto udp from any to any port 123"
+        echo ""
+
+        for DOMAIN in $VALID_DOMAINS; do
+            emit_domain "$DOMAIN"
+        done
+
+        echo "pass out quick on egress proto tcp from any to <updates> port { 80 443 } flags S/SA"
+        echo ""
+    } > "$TMP_OUTPUT"
+}
+
+emit_netbsd_error() {
+    echo "ERROR: NetBSD backend not yet available." >&2
+    echo "" >&2
+    echo "dropQbsd isolation relies on per-user network filtering." >&2
+    echo "OpenBSD and FreeBSD provide this via pf(4) user rules." >&2
+    echo "NetBSD's npf(7) filters by address/interface, not by user." >&2
+    echo "" >&2
+    echo "Adapting the model to npf is on the roadmap." >&2
+    echo "No partial npf.conf generated: a firewall that silently" >&2
+    echo "drops per-user isolation would be worse than none." >&2
+}
+
+main() {
+    typeset OS
+    OS="${1:-}"
+
+    case "$OS" in
+        openbsd|freebsd) : ;;
+        netbsd)          emit_netbsd_error; exit 1 ;;
+        *)               usage; exit 1 ;;
+    esac
+
+    load_schema
+    parse_ini "$DOMAINS_CONF"
+    parse_ini "$LOCAL_CONF"
+
+    validate
+    merge_local
+    normalize
+
+    emit_pf "$OS"
+
+    mv "$TMP_OUTPUT" "$OUTPUT_PF"
+    echo "Wrote $OUTPUT_PF ($OS backend)"
+}
+
+main "$@"
