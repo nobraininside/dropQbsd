@@ -185,10 +185,9 @@ dropQbsd relies on a single, coherent environment across all users —
 local dotfiles will break domain isolation.
 
 ```sh
-# cp etc/pf.conf /etc/pf.conf
-# cp etc/profile /etc/profile
-# cp etc/kshrc /etc/kshrc
-# cp etc/xsession /etc/xsession
+# cp templates/profile /etc/profile
+# cp templates/kshrc /etc/kshrc
+# cp templates/xsession /etc/xsession
 
 # for u in user userweb usermail userdoc; do
     cp /etc/xsession /home/$u/.xsession
@@ -198,99 +197,169 @@ done
 # chown root:wheel /root/.xsession
 ```
 
-Review the locale settings in `/etc/profile` — the example uses English for system messages and Italian for time, monetary, and numeric formats. Adjust to your region or set all to `en_US.UTF-8`. The global shell aliases and per-user prompts are configured in `/etc/kshrc`.
+Review the locale settings in `/etc/profile` — the example uses English
+for system messages and Italian for time, monetary, and numeric formats.
+Adjust to your region or set all to `en_US.UTF-8`. The global shell
+aliases and per-user prompts are configured in `/etc/kshrc`.
 
-The `.xsession` file loads the system-wide environment and launches the desktop. The conductor (`user`) runs XFCE with `indicator_xfce4`; all other domains run cwm with `indicator_cwm`. Adjust to your preferred WM.
+The `.xsession` file loads the system-wide environment and launches the
+desktop. The conductor (`user`) runs XFCE with `indicator_xfce4`; all
+other domains run cwm with `indicator_cwm`. Adjust to your preferred WM.
 
 ---
 
-## 7. Configure PF Tables
+## 7. Create the dropQbsd Configuration Directory
 
-### Mail Server IPs
+dropQbsd v0.2.0 uses a **declarative firewall policy** instead of a
+hand-written `pf.conf`. Three files describe your security posture:
 
-Copy the example table files from the repository and edit them with your
-own providers:
-
-```sh
-# cp examples/tables/mailserver_hosts /etc/tables/
-# cp examples/tables/services_hosts /etc/tables/
-# chmod 644 /etc/tables/mailserver_hosts
-# chmod 644 /etc/tables/services_hosts
-```
-
-Edit each file:
-
-- **`/etc/tables/mailserver_hosts`** — mail server hostnames, used by `usermail`
-- **`/etc/tables/services_hosts`** — external service IPs/hostnames, used by `userweb` (prefix hostnames with `@`)
-
-Example `/etc/tables/mailserver_hosts`:
+| File | Purpose | Source |
+|------|---------|--------|
+| `domains.conf` | Portable policy (identical on every install) | `templates/domains.conf` |
+| `local.conf` | Your local config (subnet, mail, services) | `examples/system/local.conf.example` |
+| `schema` | Valid domains for this product | `templates/schema` |
 
 ```sh
-mail.example.com
-imap.example.com
-smtp.example.com
+# mkdir -p /etc/dropQbsd
+
+# cp templates/domains.conf /etc/dropQbsd/domains.conf
+# cp templates/schema /etc/dropQbsd/schema
+# cp examples/system/local.conf.example /etc/dropQbsd/local.conf
+
+# chmod 644 /etc/dropQbsd/domains.conf /etc/dropQbsd/schema /etc/dropQbsd/local.conf
+# chown root:wheel /etc/dropQbsd/domains.conf /etc/dropQbsd/schema /etc/dropQbsd/local.conf
 ```
 
-Example `/etc/tables/services_hosts`:
+### Edit local.conf
 
-```sh
-# Static IPs:
-198.51.100.10          # cPanel hosting
-# Hostnames (resolved each run via userweb DNS):
-@ssh.github.com        # GitHub SSH over 443
-```
+Open `/etc/dropQbsd/local.conf` and fill in your values. The file is
+heavily commented — read it carefully. Summary of the sections:
 
-### Updates IPs (will be filled by admin scripts)
+- **`[network] lan`** — your LAN subnet (REQUIRED). Used by `userdoc`
+  and by any rule targeting `@lan`.
+- **`[updates] mirrors`** — Fastly CDN blocks for OpenBSD mirrors.
+  Do NOT edit unless OpenBSD changes CDN provider.
+- **`[mailserver] hosts`** — your mail server hostnames (optional).
+  Resolved via `userweb` DNS by `update_mailserver_table`.
+- **`[services] hosts`** — external services `userweb` must reach beyond
+  ports 80/443 (optional). Static IPs written as-is; hostnames prefixed
+  with `@`.
+- **`[extra.*] allow`** — your personal exceptions (optional). You may
+  only ADD `allow` rules here; the base security posture in
+  `domains.conf` is not modifiable.
 
-```sh
-# touch /etc/tables/updates_ips
-# chmod 644 /etc/tables/updates_ips
-```
+**Do NOT edit `domains.conf`.** It is the portable policy, identical on
+every installation. Personal needs go in `[extra.*]` sections of
+`local.conf`.
 
 ### How PF Tables Work
 
-dropQbsd uses three PF tables to manage network access without exposing provider IPs in the firewall rules:
+dropQbsd uses three PF tables to manage network access without exposing
+provider IPs in the firewall rules:
 
-| Table | Config file | Update script | Purpose |
-|-------|-------------|---------------|---------|
-| `<mailserver>` | `/etc/tables/mailserver_hosts` | `update_mailserver_table` | Mail server IPs for `usermail` |
-| `<services>` | `/etc/tables/services_hosts` | `update_services_table` | External services (SSH, cPanel, GitHub) for `userweb` |
-| `<updates>` | `/etc/tables/updates_ips` | `ensure_updates_table` | OpenBSD mirror IPs for system updates |
+| Table | Config source | Update script | Purpose |
+|-------|---------------|---------------|---------|
+| `<mailserver>` | `[mailserver] hosts` | `update_mailserver_table` | Mail server IPs for `usermail` |
+| `<services>` | `[services] hosts` | `update_services_table` | External services for `userweb` |
+| `<updates>` | `[updates] mirrors` | `ensure_updates_table` | OpenBSD mirror IPs for system updates |
 
-**Adding an IP to a table:**
-
-```sh
-# One-time (persists until reboot or manual flush):
-# pfctl -t services -T add 198.51.100.10
-
-# Permanent (add to config file, survives reboot):
-# echo '198.51.100.10' >> /etc/tables/services_hosts
-# /opt/dropQbsd/libexec/update_services_table
-```
+All three scripts read from `local.conf` — there is no separate table
+configuration file anymore.
 
 **Adding a hostname (resolved automatically):**
 
-```sh
-# echo '@myhost.xyz' >> /etc/tables/services_hosts
-# /opt/dropQbsd/libexec/update_services_table
+Add it to the `[services]` section of `local.conf`, prefixed with `@`:
+
+```
+[services]
+hosts = 198.51.100.10 @myhost.xyz
 ```
 
-Hostnames prefixed with `@` are resolved via `userweb` DNS each time the update script runs (every 5 minutes via cron). This keeps IPs current without manual intervention.
+Hostnames prefixed with `@` are resolved via `userweb` DNS each time the
+update script runs (every 5 minutes via cron). This keeps IPs current
+without manual intervention.
 
 ---
 
-## 8. Reload the Firewall and populate tables
+## 8. Generate the Firewall
+
+Instead of copying a static `pf.conf`, generate it from the policy:
+
+```sh
+# /opt/dropQbsd/libexec/gen_firewall openbsd
+```
+
+This reads `domains.conf` + `local.conf` + `schema` from
+`/etc/dropQbsd/` and writes `/etc/pf.conf`.
+
+### Verify Syntax (without applying)
+
+```sh
+# pfctl -nf /etc/pf.conf
+```
+
+`pfctl -nf` checks the syntax WITHOUT loading the rules. If it reports
+errors, fix your policy files and regenerate. Do NOT apply a broken
+ruleset — a firewall that fails to load leaves you without protection.
+
+### Apply
 
 ```sh
 # pfctl -f /etc/pf.conf
 ```
 
-Populate the services and mailserver tables::
+### Populate the PF Tables
+
+Populate the `<mailserver>`, `<services>`, and `<updates>` tables from
+`local.conf`:
 
 ```sh
-# /opt/dropQbsd/libexec/update_services_table
 # /opt/dropQbsd/libexec/update_mailserver_table
+# /opt/dropQbsd/libexec/update_services_table
+# /opt/dropQbsd/libexec/ensure_updates_table
 ```
+
+These scripts read from `local.conf` (see section 7). They resolve
+hostnames via `userweb` DNS and populate the tables. Root never touches
+the network directly.
+
+**Note on ordering:** `gen_firewall` emits the table definitions
+(`table <mailserver> persist`, etc.) into `pf.conf`, so the tables exist
+— empty — at the moment `pfctl -f` loads the ruleset. The
+`update_*_table` scripts then fill them. This order (generate → verify →
+apply → populate) is intentional: the firewall loads with empty tables
+(blocking nothing by table membership), then the tables are populated
+with the resolved IPs.
+
+### Adding an IP to a table
+
+**One-time** (persists until reboot or manual flush):
+
+```sh
+# pfctl -t services -T add 198.51.100.10
+```
+
+**Permanent** (survives reboot — add to config, then reload):
+
+```sh
+# Add the IP/hostname to the [services] section of local.conf
+# then run:
+# /opt/dropQbsd/libexec/update_services_table
+```
+
+### Regenerating after policy changes
+
+Any time you edit `domains.conf` or `local.conf`, regenerate and reload:
+
+```sh
+# /opt/dropQbsd/libexec/gen_firewall openbsd
+# pfctl -nf /etc/pf.conf   # verify first
+# pfctl -f /etc/pf.conf    # then apply
+```
+
+The firewall is always derived from the policy — there is no separate
+hand-written `pf.conf` to keep in sync.
+
 
 ---
 
