@@ -693,6 +693,15 @@ testing are welcome — open an issue or send a patch.
 [dropQbsd — Compartmentalization without virtualization](https://blog.nicolabaudo.fr/dropqbsd-compartmentalization-without-virtualization/)
 — the architectural rationale, design decisions, and why Unix separation beats hypervisors for most threat models.
 
+[Before the AI acts, it narrates — telos and synthetic storytelling](https://blog.nicolabaudo.fr/before-the-ai-acts-it-narrates-telos-synthetic-storytelling/)
+— the philosophical ground: why the needle matters when you can't open the black box.
+
+## A note on tooling ##
+
+dropQbsd is written in ksh and C, fully auditable. It has been running daily on real hardware for months — the observations from that daily use are what sharpened the scripts, the permissions, and the cleanup cycles you see here.
+
+During development I used AI assistants for refactoring, debugging, and drafting — the architecture, the threat model, and every security-critical line are mine, reviewed by hand. The canonical repository lives on sourcehut (open source) rather than GitHub (closed source) for the same reason I don't pretend to be a purist about every tool: the goal is to minimize un-auditable dependencies where it matters, and to be honest about where it doesn't.
+
 ## License ##
 
 ISC. See [LICENSE](/nobraininside/dropQbsd/blob/main/LICENSE).
