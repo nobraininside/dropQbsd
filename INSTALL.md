@@ -174,9 +174,12 @@ Before installing, back up (or remove) any local dotfiles that would
 override the system-wide configuration:
 
 ```sh
-# mv ~/.profile   ~/.profile.bak
-# mv ~/.kshrc     ~/.kshrc.bak
-# mv ~/.shrc      ~/.shrc.bak
+ts=$(date +%Y%m%d_%H%M%S)
+for h in /root /home/user /home/userweb /home/usermail /home/userdoc; do
+    for f in .profile .shrc .kshrc .xsession .cshrc .login; do
+        [ -f "$h/$f" ] && mv "$h/$f" "$h/$f.bak.$ts"
+    done
+done
 ```
 
 dropQbsd relies on a single, coherent environment across all users —
