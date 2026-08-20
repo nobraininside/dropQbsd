@@ -128,7 +128,7 @@ The policy describes **intent**; the backend handles **syntax**.
 - `userdoc` reaches LAN subnets and Syncthing ports only
 - Root has no permanent network access — only IPs in the `<updates>` table, populated on-demand
 
-Service IPs and mail server IPs are managed dynamically via PF tables,
+Service IPs and mail server IPs are managed dynamically via firewall tables,
 populated from `local.conf`. No provider IPs are exposed in the public
 repository.
 
@@ -192,10 +192,10 @@ Export files are `root:drop 440` — no domain user can modify them. Integrity v
 - **Disposable browsers.** tmpfs-backed, nothing survives exit. No persistent profiles. Downloads survive via symlink bridge.
 - **Automated archival.** Email and websites compressed, verified, pulled across domains on schedule.
 - **Quarantine with audit trail.** Files with incorrect group ownership are   isolated with an explanation ticket. Rare in normal use (SGID on the drop zone forces correct group), but catches misconfigured scripts or malicious placement.
-- **Root web access on-demand.** `ensure_updates_table` populates the PF table, `pkg_add_via_pf` and `syspatch_via_pf` do their job. No telemetry. No background phoning home.
+- **Root web access on-demand.** `ensure_updates_table` populates the firewall table, `pkg_add_via_pf` and `syspatch_via_pf` do their job. No telemetry. No background phoning home.
 - **Reinstallable in 30 minutes.** No databases, no daemons, no state you can't reconstruct from scripts and `/etc`.
 - **Integrity verification.** Critical scripts are checksummed and verified via `signify(1)` on a cron schedule. All dropQbsd components log to `/var/log/` (see Monitoring below).
-- **Dynamic PF tables.** Mail server and service IPs are managed via `local.conf` — no provider details in the repository.
+- **Dynamic firewall tables.** Mail server and service IPs are managed via `local.conf` — no provider details in the repository.
 
 ### Optional Components
 
@@ -594,7 +594,7 @@ They can also be run manually by their respective domain users.
 | `enforce_drop` | root | Every minute | Fix permissions, quarantine violations, clean abandoned files. Logs to `/var/log/dropQbsd_drop.log`. |
 | `enforce_sync` | root | Every minute | Fix owner/group/permissions in Sync directory. Logs to `/var/log/dropQbsd_sync.log`. |
 
-### PF Table Management (cron)
+### Firewall Table Management (cron)
 
 | Script | Run by | Purpose |
 | ------ | ------ | ------- |
@@ -609,7 +609,7 @@ All update scripts log to `/var/log/dropQbsd_updates.log`.
 
 | Script | Run by | Purpose |
 | ------ | ------ | ------- |
-| `ensure_updates_table` | root | Populate PF `<updates>` table with Fastly CDN blocks from `local.conf` |
+| `ensure_updates_table` | root | Populate firewall `<updates>` table with Fastly CDN blocks from `local.conf` |
 | `pkg_add_via_pf` | root | Install/update packages through restrictive PF; flushes `<updates>` on exit |
 | `syspatch_via_pf` | root | Apply security patches through restrictive PF |
 | `sysupgrade_via_pf` | root | Upgrade to next BSD release through restrictive PF (reboots) |
