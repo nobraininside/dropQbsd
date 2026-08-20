@@ -39,7 +39,7 @@ Runs on 1 GB of RAM (~300 MB base system + ~500 MB tmpfs per disposable browser)
 | RAM baseline | 1 GB | 8 GB |
 | Input isolation | None (shared X11 cookie) | Full (separate X servers) |
 | Kernel isolation | None (shared kernel) | Full (separate VM kernels) |
-| Disk usage | ~2 GB (OpenBSD base) | 30+ GB (VM images) |
+| Disk usage | ~2 GB (BSD base) | 30+ GB (VM images) |
 | Install time | 15 minutes | 1-2 hours |
 | Rebuild from scratch | 30 minutes | Hours/days |
 | Complexity |  ~2,500 lines of ksh + 9 lines of C | Xen, Qubes tools, GUI stack |
@@ -230,7 +230,7 @@ dropQbsd is fully functional with just the base system. Several optional compone
 
 **Kernel-level attacks.** All domains share one kernel. A kernel exploit in one domain compromises everything. This is the tradeoff for avoiding virtualization.
 
-**Application-level telemetry.** OpenBSD ships with zero telemetry, but applications you install — particularly Chromium and Firefox — may phone home independently. Use `ungoogled-chromium` or `qutebrowser` for a telemetry-free browser. This is outside dropQbsd's scope but worth knowing.
+**Application-level telemetry.** BSD ships with zero telemetry, but applications you install — particularly Chromium and Firefox — may phone home independently. Use `ungoogled-chromium` or `qutebrowser` for a telemetry-free browser. This is outside dropQbsd's scope but worth knowing.
 
 ---
 
@@ -612,7 +612,7 @@ All update scripts log to `/var/log/dropQbsd_updates.log`.
 | `ensure_updates_table` | root | Populate PF `<updates>` table with Fastly CDN blocks from `local.conf` |
 | `pkg_add_via_pf` | root | Install/update packages through restrictive PF; flushes `<updates>` on exit |
 | `syspatch_via_pf` | root | Apply security patches through restrictive PF |
-| `sysupgrade_via_pf` | root | Upgrade to next OpenBSD release through restrictive PF (reboots) |
+| `sysupgrade_via_pf` | root | Upgrade to next BSD release through restrictive PF (reboots) |
 | `update_openbsd_via_pf` | root | Full update: syspatch + fw_update + pkg_add -u + pkg_delete -a |
 
 ### Integrity
