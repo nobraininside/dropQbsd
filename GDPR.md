@@ -13,11 +13,11 @@ Mainstream operating systems fail both. They are closed-source, unauditable, lad
 
 **OpenBSD** — the reference platform — is the only OS with continuous, funded, line-by-line security auditing. **FreeBSD** and **NetBSD** are supported, but OpenBSD remains the recommended target for the strongest security guarantees.
 
-**dropQbsd** layers Qubes-style compartmentalization on top of OpenBSD without virtualization. Web browsing, email, and document storage run in separate security domains. A compromised browser cannot read your email. A compromised mail client cannot reach your file server. This is not a policy — it is enforced by Unix permissions and a strict firewall, policed every 60 seconds.
+**dropQbsd** layers Qubes-style compartmentalization on top of BSD without virtualization. Web browsing, email, and document storage run in separate security domains. A compromised browser cannot read your email. A compromised mail client cannot reach your file server. This is not a policy — it is enforced by Unix permissions and a strict firewall, policed every 60 seconds.
 
 ### What This Means for Your Organization
 
-| | MAINSTREAM STACK | DROPQBSD ON OPENBSD |
+| | MAINSTREAM STACK | DROPQBSD ON BSD |
 | -- | -- | -- |
 | **Telemetry** | Thousands of daily callbacks | Zero |
 | **Auditability** | Closed source, trust us | Fully auditable, ~2,500 lines of ksh + 9 lines of C |
