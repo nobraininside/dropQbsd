@@ -137,14 +137,14 @@ filter by user — it is on the roadmap, not yet supported.
 
 ### Domain Indicators
 
-dropQbsd includes two scripts that show which domain the active
-window belongs to, so you never lose track of what compartment
-you're working in.
+dropQbsd includes two scripts that show which domain the active window belongs to, so you never lose track of what compartment you're working in.
 
 | Script | For | How it works |
 |--------|-----|--------------|
 | `indicator_xfce4` | XFCE, MATE, any DE | OSD popup overlay on domain change |
 | `indicator_cwm` | cwm, i3, dwm, spectrwm | Sets root window name via `xsetroot` |
+
+Both indicators are launched automatically by `~/.xsession` — but only for the conductor (`user`), whose desktop hosts windows from all domains via `run_app`. Domain users (`userdoc`, `usermail`, `userweb`) don't need an indicator since their sessions only ever contain their own windows. No manual configuration required.
 
 **indicator_xfce4** shows a large popup overlay centered on the active window whenever you switch domains. Requires `dzen2` and `xdotool`:
 
@@ -152,17 +152,7 @@ you're working in.
 doas pkg_add dzen2 xdotool
 ```
 
-Add to `~/.xsession` before the window manager line:
-
-```sh
-/opt/dropQbsd/bin/indicator_xfce4 &
-```
-
 **indicator_cwm** sets the X11 root window name. cwm, i3, and dwm display it automatically in their status bar — no extra configuration needed. Zero dependencies beyond base X11.
-
-```sh
-/opt/dropQbsd/bin/indicator_cwm &
-```
 
 **Detection:** the indicator checks the active window's title first (so xterms with `-title 'userweb'` are always detected correctly), then falls back to `_NET_WM_PID` and process owner, and finally matches `WM_CLASS` for apps like xfe that don't expose their PID.
 
