@@ -1,33 +1,27 @@
 # ==========================================================
 # dropQbsd -- .xsession
 #
-# X session startup. Sourced by xenodm at login.
+# X session startup. Sourced by xenodm(1) at login.
 # Copy to: ~/.xsession
 #
-# user:      indicator_xfce4 + XFCE (conductor desktop)
-# all others: indicator_cwm + cwm (domain compartments)
+# OpenBSD: xenodm sources ~/.xsession
+# FreeBSD: xdm sources ~/.xsession (symlink from .xinitrc if needed)
 # ==========================================================
 
 [ -f /etc/profile ] && . /etc/profile
 xrandr --dpi 96
 
-# --- dropQbsd domain indicator ---
 case "$USER" in
     user)
-        /opt/dropQbsd/bin/indicator_xfce4 &
-        ;;
-    *)
-        /opt/dropQbsd/bin/indicator_cwm &
-        ;;
-esac
-
-# --- window manager / desktop environment ---
-case "$USER" in
-    user)
-        exec /usr/local/bin/startxfce4
+        if command -v startxfce4 >/dev/null 2>&1; then
+            /opt/dropQbsd/bin/indicator_xfce4 &
+            exec /usr/local/bin/startxfce4
+        else
+            /opt/dropQbsd/bin/indicator_cwm &
+            exec /usr/X11R6/bin/cwm
+        fi
         ;;
     *)
         exec /usr/X11R6/bin/cwm
         ;;
 esac
-
