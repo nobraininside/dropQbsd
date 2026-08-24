@@ -203,9 +203,7 @@ for system messages and Italian for time, monetary, and numeric formats.
 Adjust to your region or set all to `en_US.UTF-8`. The global shell
 aliases and per-user prompts are configured in `/etc/kshrc`.
 
-The `.xsession` file loads the system-wide environment and launches the
-desktop. The conductor (`user`) runs XFCE with `indicator_xfce4`; all
-other domains run cwm with `indicator_cwm`. Adjust to your preferred WM.
+The `.xsession` file loads the system-wide environment and launches the desktop. The conductor (`user`) runs XFCE with `indicator_xfce4` (or cwm with `indicator_cwm` if XFCE is not installed); all other domains run cwm without an indicator — their desktop only ever shows windows from their own domain.
 
 ---
 
@@ -479,19 +477,11 @@ Set the theme per user via XFCE Settings → Appearance. This gives immediate vi
 doas pkg_add dzen2 xdotool
 ```
 
-Add to `/home/user/.xsession` before the WM line:
-
-```sh
-/opt/dropQbsd/bin/indicator_xfce4 &
-```
+No further configuration needed — the indicator is launched automatically by `~/.xsession` when user logs in with XFCE.
 
 ### Domain Indicator (cwm / Minimal WMs)
 
-No extra packages needed. Add to `/home/user/.xsession`:
-
-```sh
-/opt/dropQbsd/bin/indicator_cwm &
-```
+No extra packages needed. The indicator is launched automatically by `~/.xsession` when user logs in with cwm. Zero dependencies beyond base X11.
 
 ---
 
