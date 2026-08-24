@@ -698,11 +698,29 @@ testing are welcome — open an issue or send a patch.
 
 ## A note on tooling ##
 
-dropQbsd is written in ksh and C, fully auditable. It has been running daily on real hardware for months — the observations from that daily use are what sharpened the scripts, the permissions, and the cleanup cycles you see here.
+dropQbsd is written in ksh and C, fully auditable. It has been running daily
+on real hardware for months — the observations from that daily use are what
+sharpened the scripts, the permissions, and the cleanup cycles you see here.
 
-During development I used AI assistants for refactoring, debugging, and drafting — the architecture, the threat model, and every security-critical line are mine, reviewed by hand. The canonical repository lives on sourcehut (open source) rather than GitHub (closed source) for the same reason I don't pretend to be a purist about every tool: the goal is to minimize un-auditable dependencies where it matters, and to be honest about where it doesn't.
+I am a philosopher, not a programmer by trade. I would not have had the
+coding skills to build dropQbsd alone. AI assistants helped bridge that gap —
+generating drafts, refactoring, and debugging — but the architecture, the
+threat model, and every security-critical line are mine, reviewed by hand.
+The months of testing on real machines, the fixes driven by field
+observations, and the design decisions are not AI-generated. They are the
+result of using the tool daily and refusing to ship anything I didn't
+understand and couldn't verify.
+
+If you're a better programmer than I am — and many of you are — this project
+is an invitation. The code is open, the design is documented, and the
+philosophy is explicit. Help make it better.
+
+The canonical repository lives on sourcehut (open source) rather than GitHub
+(closed source) for the same reason I don't pretend to be a purist about
+every tool: the goal is to minimize un-auditable dependencies where it
+matters, and to be honest about where it doesn't.
 
 ## License ##
 
-ISC. See [LICENSE](/nobraininside/dropQbsd/blob/main/LICENSE).
+ISC. See [LICENSE](LICENSE).
 
