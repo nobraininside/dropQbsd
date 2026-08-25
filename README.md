@@ -261,7 +261,7 @@ $ /opt/dropQbsd/bin/qimport document.pdf ~/Documents
 **Interactive transfer via file_bridge:**
 
 ```sh
-$ file_bridge
+$ /opt/dropQbsd/bin/file_bridge
 ```
 Inside `nnn`, press `Space` to select files, then `;c` to copy, `;m` to move, or `;i` to import. All four domains are visible simultaneously — drag-and-drop mental model, keyboard-driven.
 
@@ -360,7 +360,7 @@ $ /opt/dropQbsd/bin/xterm_root syspatch
 `file_bridge` opens a tmux session with four quadrants: `control_panel` (top-left), and `nnn` instances for `userdoc` (top-right), `usermail` (bottom-left), `userweb` (bottom-right). The tmux status bar and active pane border change color to match the active domain — green for userdoc, orchid for usermail, blue for userweb, dark grey for control_panel. `nnn` directory colors follow the same scheme via `NNN_COLORS`.
 
 ```sh
-$ file_bridge
+$ /opt/dropQbsd/bin/file_bridge
 ```
 
 **Keys:**
