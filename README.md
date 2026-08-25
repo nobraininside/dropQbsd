@@ -106,7 +106,7 @@ The binary is the **blind gate**: it can do exactly one thing — call `run_app_
 
 ```sh
 $ /opt/dropQbsd/bin/run_app --disposable userweb qutebrowser --temp-basedir
-$ /opt/dropQbsd/bin/run_app --disposable 1G userweb chromium https://example.com
+$ /opt/dropQbsd/bin/run_app --disposable 1G userweb ungoogled-chromium https://example.com
 ```
 
 Downloads made in disposable mode are bridged to the real `/home/$USER/Downloads` via symlink — files survive browser exit.
@@ -220,7 +220,7 @@ dropQbsd is fully functional with just the base system. Several optional compone
 
 **Kernel-level attacks.** All domains share one kernel. A kernel exploit in one domain compromises everything. This is the tradeoff for avoiding virtualization.
 
-**Application-level telemetry.** BSD ships with zero telemetry, but applications you install — particularly Chromium and Firefox — may phone home independently. Use `ungoogled-chromium` or `qutebrowser` for a telemetry-free browser. This is outside dropQbsd's scope but worth knowing.
+**Application-level telemetry.** BSD ships with zero telemetry, but applications you install — particularly Chromium and Firefox — may phone home independently. Use `librewolf`, `ungoogled-chromium` or `qutebrowser` for a telemetry-free browser. This is outside dropQbsd's scope but worth knowing.
 
 ---
 
@@ -274,9 +274,10 @@ $ /opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/qutebrowser --te
 ```
 
 **Tip:** Each browser needs a different flag for temporary profiles:
-- Qutebrowser: `--temp-basedir`
 - Chromium / Ungoogled-chromium: `--temp-profile`
 - Firefox: `--private-window` (no persistent profile in private mode)
+- Librewolf: `--temp-profile --private-window`
+- Qutebrowser: `--temp-basedir`
 
 Disposable mode already destroys everything on exit — these flags add an
 extra layer by preventing the browser from writing to disk at all during
