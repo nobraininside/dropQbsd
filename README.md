@@ -651,7 +651,13 @@ The goal is not to add layers of abstraction but to remove them. If Unix users a
 
 If your organization processes personal data on Windows or macOS, you are running telemetry engines that phone home thousands of times per day to companies you never signed a data processing agreement with. The operating system undermines every word of your privacy policy.
 
-dropQbsd on the BSD family offers a different path: zero telemetry, fully auditable (~2,500 lines of ksh + 9 lines of C), and compartmentalized by design.
+dropQbsd on the BSD family offers a different path: zero telemetry,
+fully auditable (~2,500 lines of ksh + 9 lines of C), and
+compartmentalized by design. Its threat model — malware, phishing,
+data leaks between contexts — is scoped to the most common privacy
+failures in organizational settings, not to kernel exploits or
+targeted state actors (see the Qubes comparison above for where
+that boundary lies).
 
 **→ [GDPR.md](GDPR.md):** Why dropQbsd satisfies GDPR accountability (Art. 25 and Art. 39) in a way no policy document ever could — and why "privacy by design" on closed-source systems is a legal fiction.
 
