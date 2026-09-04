@@ -712,7 +712,7 @@ If you're a better programmer than I am — and many of you are — this project
 is an invitation. The code is open, the design is documented, and the
 philosophy is explicit. Help make it better.
 
-The canonical repository lives on sourcehut (open source) rather than GitHub
+The canonical repository lives on tangled (open source) rather than GitHub
 (closed source) for the same reason I don't pretend to be a purist about
 every tool: the goal is to minimize un-auditable dependencies where it
 matters, and to be honest about where it doesn't.
