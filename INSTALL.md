@@ -15,12 +15,14 @@
 
 ## 1. Create Users and Group
 
-```sh
-# groupadd drop
+Run as root
 
-# useradd -m -G drop userweb
-# useradd -m -G drop usermail
-# useradd -m -G drop userdoc
+```sh
+groupadd drop
+
+useradd -m -G drop userweb
+useradd -m -G drop usermail
+useradd -m -G drop userdoc
 ```
 Conductor user — create if missing, add to drop group if existing
 ```sh
@@ -88,17 +90,19 @@ After editing, rebuild the login database:
 
 ## 2. Create Directory Structure
 
-```sh
-# mkdir -p /opt/dropQbsd/{admin,bin,keys,libexec,src}
-# mkdir -p /home/drop/userweb_export
-# mkdir -p /home/drop/usermail_export
-# mkdir -p /home/drop/_quarantine
+As root:
 
-# chown root:drop /home/drop /home/drop/userweb_export /home/drop/usermail_export
-# chmod 2770 /home/drop    # SGID (2770) forces the 'drop' group on all files placed here
-# chmod 2770 /home/drop/userweb_export /home/drop/usermail_export
-# chmod 750 /home/drop/_quarantine
-# chmod 700 /opt/dropQbsd/keys
+```sh
+mkdir -p /opt/dropQbsd/{admin,bin,keys,libexec,src}
+mkdir -p /home/drop/userweb_export
+mkdir -p /home/drop/usermail_export
+mkdir -p /home/drop/_quarantine
+
+chown root:drop /home/drop /home/drop/userweb_export /home/drop/usermail_export
+chmod 2770 /home/drop    # SGID (2770) forces the 'drop' group on all files placed here
+chmod 2770 /home/drop/userweb_export /home/drop/usermail_export
+chmod 750 /home/drop/_quarantine
+chmod 700 /opt/dropQbsd/keys
 ```
 
 ---
@@ -111,13 +115,13 @@ Copy the repository directories to `/opt/dropQbsd/`:
 # cp -r admin bin libexec src /opt/dropQbsd/
 ```
 
-Set permissions:
+Set permissions (as root):
 
 ```sh
-# chmod 755 /opt/dropQbsd/bin/*
-# chmod 755 /opt/dropQbsd/libexec/*
-# chmod 700 /opt/dropQbsd/admin/*
-# chown -R root:wheel /opt/dropQbsd
+chmod 755 /opt/dropQbsd/bin/*
+chmod 755 /opt/dropQbsd/libexec/*
+chmod 700 /opt/dropQbsd/admin/*
+chown -R root:wheel /opt/dropQbsd
 ```
 
 ---
@@ -140,12 +144,14 @@ This is the core of dropQbsd's privilege model. `run_app` is split into three fi
 
 **Compile statically and set the setuid bit:**
 
+Run as root:
+
 ```sh
-# cc -static -o /opt/dropQbsd/bin/run_app /opt/dropQbsd/src/run_app_wrapper.c
-# chown root:wheel /opt/dropQbsd/bin/run_app
-# chmod 4755 /opt/dropQbsd/bin/run_app          # setuid root
-# chown root:wheel /opt/dropQbsd/libexec/run_app_impl
-# chmod 755 /opt/dropQbsd/libexec/run_app_impl
+cc -static -o /opt/dropQbsd/bin/run_app /opt/dropQbsd/src/run_app_wrapper.c
+chown root:wheel /opt/dropQbsd/bin/run_app
+chmod 4755 /opt/dropQbsd/bin/run_app          # setuid root
+chown root:wheel /opt/dropQbsd/libexec/run_app_impl
+chmod 755 /opt/dropQbsd/libexec/run_app_impl
 ```
 
 **Verify:**
@@ -159,7 +165,7 @@ $ /opt/dropQbsd/bin/xterm_userdoc
 
 ## 5. Configure doas.conf
 
-Minimal — `user` gets no `doas` access at all:
+Minimal — `user` gets no `doas` access at all. Run as root:
 
 ```sh
 # cp templates/doas.conf /etc/doas.conf
@@ -171,7 +177,7 @@ Minimal — `user` gets no `doas` access at all:
 ## 6. Install System Configuration Files
 
 Before installing, back up (or remove) any local dotfiles that would
-override the system-wide configuration:
+override the system-wide configuration. As root:
 
 ```sh
 ts=$(date +%Y%m%d_%H%M%S)
@@ -183,19 +189,20 @@ done
 ```
 
 dropQbsd relies on a single, coherent environment across all users —
-local dotfiles will break domain isolation.
+local dotfiles will break domain isolation. As root:
 
 ```sh
-# cp templates/profile /etc/profile
-# cp templates/kshrc /etc/kshrc
-# cp templates/xsession /etc/xsession
+cp templates/profile /etc/profile
+cp templates/kshrc /etc/kshrc
+cp templates/xsession /etc/xsession
 
-# for u in user userweb usermail userdoc; do
+for u in user userweb usermail userdoc; do
     cp /etc/xsession /home/$u/.xsession
     chown $u:$u /home/$u/.xsession
 done
-# cp /etc/xsession /root/.xsession
-# chown root:wheel /root/.xsession
+
+cp /etc/xsession /root/.xsession
+chown root:wheel /root/.xsession
 ```
 
 Review the locale settings in `/etc/profile` — the example uses English
@@ -218,15 +225,17 @@ hand-written `pf.conf`. Three files describe your security posture:
 | `local.conf` | Your local config (subnet, mail, services) | `examples/system/local.conf.example` |
 | `schema` | Valid domains for this product | `templates/schema` |
 
+Run as root:
+
 ```sh
-# mkdir -p /etc/dropQbsd
+mkdir -p /etc/dropQbsd
 
-# cp templates/domains.conf /etc/dropQbsd/domains.conf
-# cp templates/schema /etc/dropQbsd/schema
-# cp examples/system/local.conf.example /etc/dropQbsd/local.conf
+cp templates/domains.conf /etc/dropQbsd/domains.conf
+cp templates/schema /etc/dropQbsd/schema
+cp examples/system/local.conf.example /etc/dropQbsd/local.conf
 
-# chmod 644 /etc/dropQbsd/domains.conf /etc/dropQbsd/schema /etc/dropQbsd/local.conf
-# chown root:wheel /etc/dropQbsd/domains.conf /etc/dropQbsd/schema /etc/dropQbsd/local.conf
+chmod 644 /etc/dropQbsd/domains.conf /etc/dropQbsd/schema /etc/dropQbsd/local.conf
+chown root:wheel /etc/dropQbsd/domains.conf /etc/dropQbsd/schema /etc/dropQbsd/local.conf
 ```
 
 ### Edit local.conf
@@ -310,12 +319,12 @@ ruleset — a firewall that fails to load leaves you without protection.
 ### Populate the PF Tables
 
 Populate the `<mailserver>`, `<services>`, and `<updates>` tables from
-`local.conf`:
+`local.conf`. As root:
 
 ```sh
-# /opt/dropQbsd/libexec/update_mailserver_table
-# /opt/dropQbsd/libexec/update_services_table
-# /opt/dropQbsd/libexec/ensure_updates_table
+/opt/dropQbsd/libexec/update_mailserver_table
+/opt/dropQbsd/libexec/update_services_table
+/opt/dropQbsd/libexec/ensure_updates_table
 ```
 
 These scripts read from `local.conf` (see section 7). They resolve
@@ -348,12 +357,12 @@ with the resolved IPs.
 
 ### Regenerating after policy changes
 
-Any time you edit `domains.conf` or `local.conf`, regenerate and reload:
+Any time you edit `domains.conf` or `local.conf`, regenerate and reload (as root):
 
 ```sh
-# /opt/dropQbsd/libexec/gen_firewall openbsd
-# pfctl -nf /etc/pf.conf   # verify first
-# pfctl -f /etc/pf.conf    # then apply
+/opt/dropQbsd/libexec/gen_firewall openbsd
+pfctl -nf /etc/pf.conf   # verify first
+pfctl -f /etc/pf.conf    # then apply
 ```
 
 The firewall is always derived from the policy — there is no separate
@@ -406,11 +415,11 @@ HOME=/root
 15      8,10,12,14,16,18,20 * * *     su -l userdoc -c /opt/dropQbsd/libexec/pull_www_from_drop > /dev/null 2>&1
 ```
 
-All scripts use an atomic `mkdir` lock to prevent overlapping runs. The lock directories live in `/var/run/` and are cleared on reboot. If a script is killed mid-run, remove its lock manually:
+All scripts use an atomic `mkdir` lock to prevent overlapping runs. The lock directories live in `/var/run/` and are cleared on reboot. If a script is killed mid-run, remove its lock manually as root:
 
 ```sh
-# rmdir /var/run/enforce_drop.lock
-# rmdir /var/run/enforce_sync.lock
+rmdir /var/run/enforce_drop.lock
+rmdir /var/run/enforce_sync.lock
 ```
 
 ---
@@ -518,7 +527,7 @@ Edit `~/.cwmrc` and uncomment the section matching your role (root, domain user,
 ```
 #### nnn Plugins
 
-Each domain needs three nnn plugins for qcp/qmv/qimport. Create the plugin directory and scripts for each domain:
+Each domain needs three nnn plugins for qcp/qmv/qimport. Create the plugin directory and scripts for each domain. Run as root:
 
 ```sh
 for d in userdoc usermail userweb; do
@@ -577,11 +586,11 @@ Install in each domain:
 # /opt/dropQbsd/admin/pkg_add_via_pf xfe mc
 ```
 
-Launch via `run_app`:
+Launch via `run_app` (as conductor):
 
 ```sh
-$ /opt/dropQbsd/bin/run_app userdoc xfe /home/userdoc
-$ /opt/dropQbsd/bin/run_app userdoc mc
+/opt/dropQbsd/bin/run_app userdoc xfe /home/userdoc
+/opt/dropQbsd/bin/run_app userdoc mc
 ```
 
 Xfe configuration files live in `~/.config/xfe/` inside each domain's home. Copy the example color schemes from `examples/skins/xfe/` and adjust to taste.
@@ -594,70 +603,70 @@ dropQbsd can cryptographically verify that critical scripts have not been tamper
 
 **Setup:**
 
-Generate a key pair and sign the critical scripts (keep the .sec key offline):
+Generate a key pair and sign the critical scripts (keep the .sec key offline). Run as root:
 
 ```sh
-# cd /opt/dropQbsd
-# rm -f keys/dropQbsd.pub keys/dropQbsd_scripts.sha256.sig
-# signify -G -n -p keys/dropQbsd.pub -s /root/dropQbsd.sec
-# sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport \
-#        libexec/enforce_drop libexec/enforce_sync \
-#        libexec/gen_firewall \
-#        libexec/update_mailserver_table \
-#        libexec/update_services_table \
-#        libexec/ensure_updates_table \
-#        /etc/dropQbsd/domains.conf \
-#        /etc/dropQbsd/local.conf \
-#        /etc/dropQbsd/schema \
-#   | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
-# rm /root/dropQbsd.sec
+cd /opt/dropQbsd
+rm -f keys/dropQbsd.pub keys/dropQbsd_scripts.sha256.sig
+signify -G -n -p keys/dropQbsd.pub -s /root/dropQbsd.sec
+sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport \
+       libexec/enforce_drop libexec/enforce_sync \
+       libexec/gen_firewall \
+       libexec/update_mailserver_table \
+       libexec/update_services_table \
+       libexec/ensure_updates_table \
+       /etc/dropQbsd/domains.conf \
+       /etc/dropQbsd/local.conf \
+       /etc/dropQbsd/schema \
+  | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
+rm /root/dropQbsd.sec
 ```
 
 The `verify_integrity` cron job (installed in step 9) checks these scripts every 5 minutes and logs any modifications to `/var/log/dropQbsd_integrity.log`.
 
-To verify manually:
+To verify manually (as root):
 
 ```sh
-# /opt/dropQbsd/libexec/verify_integrity
-# cat /var/log/dropQbsd_integrity.log
+/opt/dropQbsd/libexec/verify_integrity
+cat /var/log/dropQbsd_integrity.log
 ```
 
 #### After Updating Scripts
 
-If you modify any of the monitored scripts or policy files, `verify_integrity` will report a signature violation. This is expected. Regenerate the signature:
+If you modify any of the monitored scripts or policy files, `verify_integrity` will report a signature violation. This is expected. Regenerate the signature (as root):
 
 ```sh
-# cd /opt/dropQbsd
-# sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport \
-#        libexec/enforce_drop libexec/enforce_sync \
-#        libexec/gen_firewall \
-#        libexec/update_mailserver_table \
-#        libexec/update_services_table \
-#        libexec/ensure_updates_table \
-#        /etc/dropQbsd/domains.conf \
-#        /etc/dropQbsd/local.conf \
-#        /etc/dropQbsd/schema \
-#   | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
-# rm /root/dropQbsd.sec
+cd /opt/dropQbsd
+sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport \
+       libexec/enforce_drop libexec/enforce_sync \
+       libexec/gen_firewall \
+       libexec/update_mailserver_table \
+       libexec/update_services_table \
+       libexec/ensure_updates_table \
+       /etc/dropQbsd/domains.conf \
+       /etc/dropQbsd/local.conf \
+       /etc/dropQbsd/schema \
+  | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
+rm /root/dropQbsd.sec
 ```
 
-If you no longer have the private key (`/root/dropQbsd.sec`), regenerate the key pair from scratch:
+If you no longer have the private key (`/root/dropQbsd.sec`), regenerate the key pair from scratch (as root):
 
 ```sh
-# cd /opt/dropQbsd
-# rm -f keys/dropQbsd.pub keys/dropQbsd_scripts.sha256.sig
-# signify -G -n -p keys/dropQbsd.pub -s /root/dropQbsd.sec
-# sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport \
-#        libexec/enforce_drop libexec/enforce_sync \
-#        libexec/gen_firewall \
-#        libexec/update_mailserver_table \
-#        libexec/update_services_table \
-#        libexec/ensure_updates_table \
-#        /etc/dropQbsd/domains.conf \
-#        /etc/dropQbsd/local.conf \
-#        /etc/dropQbsd/schema \
-#   | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
-# rm /root/dropQbsd.sec
+cd /opt/dropQbsd
+rm -f keys/dropQbsd.pub keys/dropQbsd_scripts.sha256.sig
+signify -G -n -p keys/dropQbsd.pub -s /root/dropQbsd.sec
+sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport \
+       libexec/enforce_drop libexec/enforce_sync \
+       libexec/gen_firewall \
+       libexec/update_mailserver_table \
+       libexec/update_services_table \
+       libexec/ensure_updates_table \
+       /etc/dropQbsd/domains.conf \
+       /etc/dropQbsd/local.conf \
+       /etc/dropQbsd/schema \
+  | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
+rm /root/dropQbsd.sec
 ```
 
 ---
@@ -703,11 +712,11 @@ This eliminates the risk of pasting credentials into the wrong site — phase 2 
 $ pass init your-gpg-key-id
 ```
 
-**Configure sites:**
+**Configure sites (as conductor):**
 
 ```sh
-$ mkdir -p ~/.config/dropQbsd
-$ cp examples/system/sites.conf ~/.config/dropQbsd/sites.conf
+mkdir -p ~/.config/dropQbsd
+cp examples/system/sites.conf ~/.config/dropQbsd/sites.conf
 ```
 
 Edit `~/.config/dropQbsd/sites.conf` with your own sites. Format:
@@ -722,11 +731,13 @@ Forum|https://forum.example.com||web/forum
 
 **Store passwords:**
 
+Run as conductor:
+
 ```sh
-$ pass insert finance/bank_id
-$ pass insert finance/bank_pw
-$ pass insert work/erp_id
-$ pass insert work/erp_pw
+pass insert finance/bank_id
+pass insert finance/bank_pw
+pass insert work/erp_id
+pass insert work/erp_pw
 ```
 
 **Launch:**
@@ -751,11 +762,13 @@ Set up Syncthing for `userdoc` with the Sync directory at `/home/userdoc/Sync`. 
 
 **Service setup:**
 
+Run as root:
+
 ```sh
-# cp templates/rc.d/syncthing_userdoc /etc/rc.d/
-# chmod 555 /etc/rc.d/syncthing_userdoc
-# rcctl enable syncthing_userdoc
-# rcctl start syncthing_userdoc
+cp templates/rc.d/syncthing_userdoc /etc/rc.d/
+chmod 555 /etc/rc.d/syncthing_userdoc
+rcctl enable syncthing_userdoc
+rcctl start syncthing_userdoc
 ```
 
 **Firewall:**
@@ -785,12 +798,12 @@ If remote devices show as disconnected:
 ### VLC in userdoc
 
 MIT-SHM (X11 shared memory) is not available across user boundaries.
-VLC will decode video but fail to render frames. Force software output:
+VLC will decode video but fail to render frames. Force software output (as conductor):
 
 ```sh
-    mkdir -p /home/userdoc/.config/vlc
-    printf '[core]\nvout=x11\navcodec-hw=none\n' > /home/userdoc/.config/vlc/vlcrc
-    chown -R userdoc:drop /home/userdoc/.config
+mkdir -p /home/userdoc/.config/vlc
+printf '[core]\nvout=x11\navcodec-hw=none\n' > /home/userdoc/.config/vlc/vlcrc
+chown -R userdoc:drop /home/userdoc/.config
 ```
 
 Works for any media player that relies on MIT-SHM or hardware acceleration.
