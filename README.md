@@ -14,6 +14,10 @@
 ![Status](https://img.shields.io/badge/status-beta-orange)
 ![Version](https://img.shields.io/badge/version-0.2.0-blue)
 ![License](https://img.shields.io/badge/license-ISC-green)
+![OpenBSD](https://img.shields.io/badge/OpenBSD-tested-brightgreen)
+![LOC](https://img.shields.io/badge/LOC-2.5k%20ksh%20%2B%209%20C-lightgrey)
+![Repo](https://img.shields.io/badge/repo-tangled.org-9cf)
+
 
 ---
 
@@ -65,7 +69,7 @@ dropQbsd brings **Qubes-like compartmentalization** to BSD **without virtualizat
 - **chroot** = **Insecure** (easily bypassed, no process isolation).
 - **Firejail** = **Linux-only** (not portable to BSD).
 
-** Why dropQbsd?**
+**Why dropQbsd?**
 - **Simpler than Qubes** (no hypervisor, no VMs, 1 GB RAM).
 - **More usable than Jails** (GUI support, no complex networking).
 - **More secure than chroot** (real process/user isolation).
@@ -741,10 +745,8 @@ If you're a better programmer than I am — and many of you are — this project
 is an invitation. The code is open, the design is documented, and the
 philosophy is explicit. Help make it better.
 
-The canonical repository lives on Tangled (open source) rather than GitHub
-(closed source) for the same reason I don't pretend to be a purist about
-every tool: the goal is to minimize un-auditable dependencies where it
-matters, and to be honest about where it doesn't.
+The canonical repository lives on Tangled, mirrored to Sourcehut and GitHub. I use the tools that fit the job, and I don't outsource the parts that matter: the code is auditable, the dependencies are few, and the trust boundary is explicit.
+
 
 ## License ##
 
