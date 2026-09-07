@@ -17,7 +17,8 @@
 ![OpenBSD](https://img.shields.io/badge/OpenBSD-tested-brightgreen)
 ![LOC](https://img.shields.io/badge/LOC-2.5k%20ksh%20%2B%209%20C-lightgrey)
 ![Repo](https://img.shields.io/badge/repo-tangled.org-9cf)
-
+![Mirror](https://img.shields.io/badge/mirror-GitHub-181717?logo=github)
+![Mirror](https://img.shields.io/badge/mirror-SourceHut-000000?logo=git)
 
 ---
 
