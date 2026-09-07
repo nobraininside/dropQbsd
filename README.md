@@ -22,7 +22,7 @@
 
 ---
 
-## What is this?
+## 1. What is this?
 
 Take the core insight of Qubes OS — security through compartmentalization — and strip away the hypervisor. **dropQbsd** uses native BSD user separation instead of heavy virtualization. Born on OpenBSD, now targeting the BSD family.
 
@@ -35,7 +35,7 @@ Runs on 1 GB of RAM (~300 MB base system + ~500 MB tmpfs per disposable browser)
 **Fifteen minutes to install. Rebuildable in thirty. ~2,500 lines of ksh + 9 lines of C. Zero lock-in.**
 
 
-###  **How dropQbsd Compares to Alternatives**
+### 1.1 How dropQbsd Compares to Alternatives
 
 dropQbsd brings **Qubes-like compartmentalization** to BSD **without virtualization**. Here’s how it stacks up against other isolation tools:
 
@@ -84,9 +84,9 @@ dropQbsd brings **Qubes-like compartmentalization** to BSD **without virtualizat
 
 ---
 
-## Architecture
+## 2 Architecture
 
-### The Four Domains
+### 2.1 The Four Domains
 
 | User | Role | Network |
 |------|------|---------|
@@ -97,7 +97,7 @@ dropQbsd brings **Qubes-like compartmentalization** to BSD **without virtualizat
 
 All belong to the `drop` group. Home directories are `chmod 700` — no cross-domain snooping.
 
-### The Drop Zone (`/home/drop`)
+### 2.2 The Drop Zone (`/home/drop`)
 
 The **only bridge** between domains. A shared directory with strict rules:
 
@@ -116,7 +116,7 @@ No domain can modify files once placed (enforced by 440 permissions). Cleanup is
 3. `qimport` copies the file out into `~/Downloads`.
 4. `enforce_drop` removes abandoned files after 30 minutes. No sentinels, no domain write access to the drop zone — cleanup is purely time-based.
 
-### The Conductor — `run_app` Architecture
+### 2.3 The Conductor — `run_app` Architecture
 
 `user` launches graphical apps inside any domain without switching users. The mechanism is a three-file split designed to eliminate the attack surface of privilege escalation:
 
@@ -145,7 +145,7 @@ $ /opt/dropQbsd/bin/run_app --disposable 1G userweb ungoogled-chromium https://e
 
 Downloads made in disposable mode are bridged to the real `/home/$USER/Downloads` via symlink — files survive browser exit.
 
-### Network Isolation
+### 2.4 Network Isolation
 
 A **declarative policy** enforces strict per-domain rules. Two files
 describe your security posture:
@@ -169,7 +169,7 @@ repository.
 OpenBSD and FreeBSD both use `pf`. NetBSD uses `npf`, which does not
 filter by user — it is on the roadmap, not yet supported.
 
-### Domain Indicators
+### 2.5 Domain Indicators
 
 dropQbsd includes two scripts that show which domain the active window belongs to, so you never lose track of what compartment you're working in.
 
@@ -200,7 +200,7 @@ doas pkg_add dzen2 xdotool
 | user (conductor) | White | #FFFFFF |
 | root | Bright red | #FF3333 |
 
-### Archival Pipeline
+### 2.6 Archival Pipeline
 
 ```
 usermail → export_mail_to_drop → usermail_export → pull_mail_from_drop → userdoc (1 backup)
@@ -209,7 +209,7 @@ userweb  → export_www_to_drop  → userweb_export  → pull_www_from_drop  →
 
 Export files are `root:drop 440` — no domain user can modify them. Integrity verified at each step.
 
-### What You Get
+### 2.7 What You Get
 
 - **Compartmentalization without virtualization.** Same security model as Qubes, zero overhead.
 - **Blind-gate privilege escalation.** `run_app` is a 9-line setuid binary that can only call `run_app_impl`. Logic stays in auditable ksh. Attack surface is frozen.
@@ -221,7 +221,7 @@ Export files are `root:drop 440` — no domain user can modify them. Integrity v
 - **Integrity verification.** Critical scripts are checksummed and verified via `signify(1)` on a cron schedule. All dropQbsd components log to `/var/log/` (see Monitoring below).
 - **Dynamic firewall tables.** Mail server and service IPs are managed via `local.conf` — no provider details in the repository.
 
-### Optional Components
+### 2.8 Optional Components
 
 dropQbsd is fully functional with just the base system. Several optional components are available for a smoother experience — see [INSTALL.md](INSTALL.md) for setup instructions:
 
@@ -230,9 +230,9 @@ dropQbsd is fully functional with just the base system. Several optional compone
 - **Integrity verification** — cryptographic checksums via `signify(1)`
 - **Color schemes** — coordinated skins for Midnight Commander, Xfe and related editors per domain
 
-### Security Model
+### 2.9 Security Model
 
-#### What dropQbsd Protects Against
+#### 2.9.1 What dropQbsd Protects Against
 
 - **Malware propagation between domains.** A compromised browser cannot read your email or access your documents.
 - **Network pivoting.** A compromised web domain cannot reach your mail server or LAN. RFC 1918 addresses are explicitly blocked for `userweb`.
@@ -241,7 +241,7 @@ dropQbsd is fully functional with just the base system. Several optional compone
 - **Silent policy violations.** Quarantine catches and explains every non-conforming file.
 - **Privilege escalation via `doas`.** `user` has no `doas` access. The only path to root is the blind-gate `run_app` binary, which can only launch domain applications.
 
-#### What dropQbsd Does NOT Protect Against
+#### 2.9.2 What dropQbsd Does NOT Protect Against
 
 **X11 input isolation.** X11 uses a single shared cookie (MIT-MAGIC-COOKIE-1) for all clients on a display. Any compromised domain can keylog all other domains' keystrokes, capture screenshots, and snoop clipboard contents. This is a fundamental X11 limitation — not a dropQbsd bug.
 
@@ -258,9 +258,9 @@ dropQbsd is fully functional with just the base system. Several optional compone
 
 ---
 
-## Daily Usage
+## 3. Daily Usage
 
-### Moving Files Between Domains
+### 3.1 Moving Files Between Domains
 
 Files move through `/home/drop`, the only bridge between domains. Three commands handle all transfers, plus `file_bridge` for interactive use.
 
@@ -299,7 +299,7 @@ $ /opt/dropQbsd/bin/file_bridge
 ```
 Inside `nnn`, press `Space` to select files, then `;c` to copy, `;m` to move, or `;i` to import. All four domains are visible simultaneously — drag-and-drop mental model, keyboard-driven.
 
-### Launching Apps in Domains (as `user`)
+### 3.2 Launching Apps in Domains (as `user`)
 
 **Disposable browser (tmpfs-backed, nothing survives):**
 
@@ -390,7 +390,7 @@ $ /opt/dropQbsd/bin/xterm_userweb lynx
 $ /opt/dropQbsd/bin/xterm_root syspatch
 ```
 
-### File Bridge (tmux-based 4-quadrant file manager)
+### 3.3 File Bridge (tmux-based 4-quadrant file manager)
 
 `file_bridge` opens a tmux session with four quadrants: `control_panel` (top-left), and `nnn` instances for `userdoc` (top-right), `usermail` (bottom-left), `userweb` (bottom-right). The tmux status bar and active pane border change color to match the active domain — green for userdoc, orchid for usermail, blue for userweb, dark grey for control_panel. `nnn` directory colors follow the same scheme via `NNN_COLORS`.
 
@@ -420,7 +420,7 @@ No configuration files required. Domain identification is handled by the tmux st
 
 Requirements: `tmux`, `nnn`, `control_panel`, plus `nnn` plugins for qcp/qmv/qimport (see INSTALL.md).
 
-### Editor and Window Manager Configuration
+### 3.4 Editor and Window Manager Configuration
 
 Example dotfiles for daily-use tools are provided in `examples/`. Copy them
 into your home directory and uncomment the section matching your role.
@@ -454,7 +454,7 @@ Edit the file and uncomment the section for your role:
 Launch the menu with `Ctrl+/`.
 
 
-### Control Panel
+### 3.5 Control Panel
 
 `control_panel` is an ncurses dashboard that shows compartment status, drop zone contents, and system health at a glance. Run it from the conductor:
 
@@ -480,7 +480,7 @@ The panel auto-refreshes every 15 seconds. No doas rules required — root authe
 Requires `/opt/dropQbsd/libexec/root_snapshot` on the system.
 
 
-### Archiving
+### 3.6 Archiving
 
 Export and pull operations are automated via root's crontab. To run them manually:
 
@@ -503,7 +503,7 @@ $ /opt/dropQbsd/libexec/pull_www_from_drop
 $ /opt/dropQbsd/libexec/pull_mail_from_drop
 ```
 
-### System Updates
+### 3.7 System Updates
 
 All update commands are run as root. Root has no permanent network access —
 the `<updates>` PF table is populated on demand by each script.
@@ -532,7 +532,7 @@ the `<updates>` PF table is populated on demand by each script.
 # /opt/dropQbsd/admin/sysupgrade_via_pf
 ```
 
-### Monitoring
+### 3.8 Monitoring
 
 **Check quarantine:**
 
@@ -564,7 +564,7 @@ $ tail /var/log/dropQbsd_updates.log     # System update operations
 
 ---
 
-## Demo
+## 4. Demo
 
 [![dropQbsd in three habits](thumbnail.jpg)](https://gnulinux.tube/w/aymeWDMEZMbk2YQMqnMm93)
 
@@ -572,9 +572,9 @@ Three commands. Three habits. Fifteen minutes. Done.
 
 ---
 
-## Scripts Reference
+## 5. Scripts Reference
 
-### Core Workflow
+### 5.1 Core Workflow
 
 | Script | Run by | Purpose |
 | ------ | ------ | ------- |
@@ -586,7 +586,7 @@ Three commands. Three habits. Fifteen minutes. Done.
 | `run_app_impl` | root (via `run_app`) | ksh script with all launch logic — X11 cookie, runtime dir, tmpfs, `su -l`. Editable without recompilation. |
 | `run_app_wrapper.c` | — (source only) | 9-line C source. Kept for reference; only needed if OpenBSD ABI breaks. |
 
-### Launchers and Utilities
+### 5.2 Launchers and Utilities
 
 | Script | Run by | Purpose |
 | ------ | ------ | ------- |
@@ -600,7 +600,7 @@ Three commands. Three habits. Fifteen minutes. Done.
 | `xterm_usermail` | user (conductor only) | Color-coded xterm for usermail domain (dark orchid) |
 | `xterm_userweb` | user (conductor only) | Color-coded xterm for userweb domain (dark blue) |
 
-### Export/Import Pipeline
+### 5.3 Export/Import Pipeline
 
 These scripts are run automatically by root's crontab on a schedule.
 They can also be run manually by their respective domain users.
@@ -612,14 +612,14 @@ They can also be run manually by their respective domain users.
 | `pull_www_from_drop` | userdoc | Import latest site archive, verify, keep 3 backups |
 | `pull_mail_from_drop` | userdoc | Import latest mail archive, verify, keep 1 backup |
 
-### Enforcement (cron)
+### 5.4 Enforcement (cron)
 
 | Script | Run by | Frequency | Purpose |
 | ------ | ------ | --------- | ------- |
 | `enforce_drop` | root | Every minute | Fix permissions, quarantine violations, clean abandoned files. Logs to `/var/log/dropQbsd_drop.log`. |
 | `enforce_sync` | root | Every minute | Fix owner/group/permissions in Sync directory. Logs to `/var/log/dropQbsd_sync.log`. |
 
-### Firewall Table Management (cron)
+### 5.5 Firewall Table Management (cron)
 
 | Script | Run by | Purpose |
 | ------ | ------ | ------- |
@@ -627,7 +627,7 @@ They can also be run manually by their respective domain users.
 | `update_services_table` | root | Populate `<services>` table from `local.conf` (static IPs and hostnames) |
 | `ensure_updates_table` | root | Populate `<updates>` table with Fastly CDN blocks from `local.conf` |
 
-### System Updates (root only)
+### 5.6 System Updates (root only)
 
 All update commands are run as root. Root has no permanent network access — the `<updates>` PF table is populated on demand by each script.
 All update scripts log to `/var/log/dropQbsd_updates.log`.
@@ -640,13 +640,13 @@ All update scripts log to `/var/log/dropQbsd_updates.log`.
 | `sysupgrade_via_pf` | root | Upgrade to next BSD release through restrictive PF (reboots) |
 | `update_openbsd_via_pf` | root | Full update: syspatch + fw_update + pkg_add -u + pkg_delete -a |
 
-### Integrity
+### 5.7 Integrity
 
 | Script | Run by | Purpose |
 | ------ | ------ | ------- |
 | `verify_integrity` | root (cron) | Generate SHA256 hashes, verify against signed checksums via `signify(1)`. Logs to `/var/log/dropQbsd_integrity.log`. |
 
-### Recovery
+### 5.8 Recovery
 
 The entire system state is in a few places:
 
@@ -671,7 +671,7 @@ Thirty minutes. No databases to restore. No daemon state to reconstruct.
 
 ---
 
-## Philosophy
+## 6. Philosophy
 
 **dropQbsd** is not a distribution. It's a configuration. It doesn't fork the BSDs — it sits on top, using tools battle-tested for decades.
 
@@ -681,7 +681,7 @@ The goal is not to add layers of abstraction but to remove them. If Unix users a
 
 ---
 
-## A Message to Privacy Professionals
+## 7. A Message to Privacy Professionals
 
 If your organization processes personal data on Windows or macOS, you are running telemetry engines that phone home thousands of times per day to companies you never signed a data processing agreement with. The operating system undermines every word of your privacy policy.
 
@@ -697,7 +697,7 @@ that boundary lies).
 
 ---
 
-## Roadmap
+## 8. Roadmap
 
 - [x] Desktop standalone — four domains, PF isolation, drop zone
 - [x] Disposable browser sessions (tmpfs-backed)
@@ -712,14 +712,14 @@ that boundary lies).
 
 ---
 
-## Status ##
+## 9. Status 
 
 dropQbsd is in active development. It works, it's used daily, but expect
 sharp edges. v0.2.0 introduces the declarative firewall policy and BSD
 portability groundwork. Contributions, bug reports, and real-world
 testing are welcome — open an issue or send a patch.
 
-## Further reading ##
+## 10. Further reading 
 
 [dropQbsd — Compartmentalization without virtualization](https://blog.nicolabaudo.fr/dropqbsd-compartmentalization-without-virtualization/)
 — the architectural rationale, design decisions, and why Unix separation beats hypervisors for most threat models.
@@ -727,7 +727,7 @@ testing are welcome — open an issue or send a patch.
 [Before the AI acts, it narrates — telos and synthetic storytelling](https://blog.nicolabaudo.fr/before-the-ai-acts-it-narrates-telos-synthetic-storytelling/)
 — the philosophical ground: why the needle matters when you can't open the black box.
 
-## A note on tooling ##
+## 11. A note on tooling
 
 dropQbsd is written in ksh and C, fully auditable. It has been running daily
 on real hardware for months — the observations from that daily use are what
@@ -749,7 +749,7 @@ philosophy is explicit. Help make it better.
 The canonical repository lives on Tangled, mirrored to Sourcehut and GitHub. I use the tools that fit the job, and I don't outsource the parts that matter: the code is auditable, the dependencies are few, and the trust boundary is explicit.
 
 
-## License ##
+## 12. License 
 
 ISC. See [LICENSE](LICENSE).
 
