@@ -34,34 +34,37 @@ Runs on 1 GB of RAM (~300 MB base system + ~500 MB tmpfs per disposable browser)
 
 **Fifteen minutes to install. Rebuildable in thirty. ~2,500 lines of ksh + 9 lines of C. Zero lock-in.**
 
-
 ### 1.1 How dropQbsd Compares to Alternatives
 
-dropQbsd brings **Qubes-like compartmentalization** to BSD **without virtualization**. Here’s how it stacks up against other isolation tools:
-
-
-   **Feature**               | **dropQbsd**                          | **Qubes OS**               | **FreeBSD Jails**          | **chroot**               | **Firejail**               |
- |---------------------------|---------------------------------------|----------------------------|----------------------------|---------------------------|----------------------------|
- | **Isolation Mechanism**   | Unix users + permissions + `pf`       | Xen hypervisor + VMs       | Kernel-level jails         | Filesystem-only           | Linux namespaces + seccomp |
- | **RAM Usage**             | **~1 GB** (1 GB min, 2 GB recommended) | 8+ GB                     | ~500 MB + per-jail         | Minimal                   | ~500 MB                    |
- | **Disk Usage**            | **~2 GB** (BSD base)                   | 30+ GB (VM images)         | ~1-2 GB + per-jail         | Minimal                   | Minimal                    |
- | **GUI Support**           | ✅ **Seamless (X11 cookie sharing)**   | ✅ (dedicated X servers)   | ❌ (X11 forwarding clunky)  | ❌                         | ✅ (X11 socket filtering)  |
- | **Input Isolation**       | ❌ (shared X11 cookie)                 | ✅ (separate X servers)    | ❌ (shared X11)             | ❌                         | ⚠️ (partial)               |
- | **Kernel Isolation**      | ❌ (shared kernel)                     | ✅ (separate VM kernels)   | ✅ (per-jail kernel)        | ❌                         | ❌                         |
- | **Network Isolation**     | ✅ **`pf` firewall (declarative policy)** | ✅ (per-VM networking)   | ✅ (per-jail networking)    | ❌                         | ✅ (network namespaces)    |
- | **Install Time**          | **15 min**                             | 1-2 hours                  | 30+ min                    | <5 min                     | <5 min                     |
- | **Rebuild Time**          | **30 min**                             | Hours/days                | ~1 hour                    | N/A                        | N/A                        |
- | **Complexity**            | **~2.5k LOC (ksh + C)**                | High (Xen + Qubes stack)  | Medium (jail config)       | Low                        | Medium (profiles)          |
- | **Auditability**          | ✅ **Best (2.5k LOC, no daemon)**       | ❌ (Xen + Qubes stack)     | ✅ (small kernel module)   | ✅                         | ⚠️ (complex seccomp)      |
- | **Portability**           | ✅ **OpenBSD + FreeBSD**               | ❌ (Xen-only)              | ❌ (FreeBSD-only)           | ✅ (any Unix)              | ❌ (Linux-only)            |
- | **Threat Model**          | ✅ **Malware, phishing, data leaks**   | ✅ **Kernel exploits, APTs** | ✅ **Kernel exploits**     | ❌ (easily bypassed)       | ✅ **App sandboxing**      |
- | **Desktop Usability**     | ✅ **Best (designed for desktop)**     | ✅                         | ❌ (server-focused)         | ❌                         | ✅                         |
- | **Attack Surface**        | **Minimal (9 lines C + ksh)**          | Large (Xen + Qubes)        | Medium                     | ❌ (easily bypassed)       | Medium                     |
- | **Mitigations for X11**   | ✅ **Disposable tmpfs, per-session cookies, XTEST disabled** | ✅ (full isolation) | ❌ | ❌ | ⚠️ |
-
+dropQbsd brings Qubes-like compartmentalization to BSD **without virtualization**. Here’s how it stacks up against other isolation tools:
+   **Feature**               | **dropQbsd**               | **Qubes OS**               | **FreeBSD Jails**          | **chroot** |
+ |---------------------------|----------------------------|----------------------------|----------------------------|-----------|
+ | **Isolation Mechanism**   | Unix users + `pf` firewall | Xen hypervisor + VMs       | Kernel-level jails         | Filesystem-only |
+ | **RAM Usage**             | ~1 GB (1 GB min)            | 8+ GB                      | ~500 MB + per-jail         | Minimal   |
+ | **Disk Usage**            | ~2 GB (BSD base)            | 30+ GB (VM images)         | ~1-2 GB + per-jail         | Minimal   |
+ | **Install Time**          | 15 min                     | 1-2 hours                  | 30+ min                    | <5 min    |
+ | **Rebuild Time**          | 30 min                     | Hours/days                | ~1 hour                    | N/A       |
+ | **Complexity**            | ~2.5k LOC (ksh + C)         | High (Xen + Qubes stack)  | Medium (jail config)       | Low       |
+ | **Auditability**          | ✅ Best (no daemon, tiny codebase) | ❌ (Xen + Qubes stack) | ✅ (small kernel module) | ✅ |
+ | **Configuration Effort**  | ✅ Minimal (edit `local.conf`) | ❌ (Complex VM networking, templates) | ⚠️ (Per-jail networking, storage) | ✅ |
+ | **Portability**           | OpenBSD + FreeBSD           | Xen-based (requires virtualization) | FreeBSD-only | ✅ (any Unix) |
+ | **GUI Support**           | Seamless (X11 cookie sharing) | ✅ | ❌ | ❌ |
+ | **Input Isolation**       | ❌ | ✅ | ❌ | ❌ |
+ | **Kernel Isolation**      | ❌ | ✅ | ✅ | ❌ |
+ | **Network Isolation**     | `pf` firewall (declarative policy) | ✅ | ✅ | ❌ |
+ | **Desktop Usability**     | ✅ (Seamless X11)           | ✅ (Dedicated X servers)   | ❌ (Server-focused)        | ❌ |
+ | **Attack Surface**        | ✅ Minimal (9 lines C + ksh) | ❌ Large (Xen + Qubes) | ⚠️ Medium | ❌ (easily bypassed) |
+ | **Threat Model Coverage** | ✅ ~95% of real-world threats | ✅ Top (kernel exploits, APTs) | ✅ Top (kernel exploits) | ❌ (easily bypassed) |
+ | **Target User**           | Desktop users & professionals | High-value targets | Server admins | Developers/testing |
+ | **Use Case**               | Personal data, privacy, professional/medical secrecy, corporate data | Classified data, whistleblowing, high-risk identities | Isolated services (databases, web apps, microservices) | Temporary environments (development, testing) |
 
 **Legend**:
 ✅ = Yes | ❌ = No | ⚠️ = Partial
+
+**Note on Threat Model Coverage**:
+*~95% of real-world cyber threats target user-space applications (e.g., browsers, email clients, office suites) and rely on human error (e.g., phishing, malicious attachments).
+dropQbsd mitigates these via domain isolation, disposable environments, and strict firewall policies.
+Sources: [Verizon DBIR 2024](https://www.verizon.com/business/resources/reports/dbir/) (90%+ of breaches involve phishing/malware), [CISA Top Exploited Vulnerabilities 2023](https://www.cisa.gov/news-events/news/top-routinely-exploited-vulnerabilities) (8/10 vulnerabilities in user-space apps), [Google Project Zero](https://googleprojectzero.blogspot.com/) (majority of exploits target user-space).*
 
 **Key Takeaways**:
 - **dropQbsd** = **Best for BSD desktop users** who want **Qubes-like security without virtualization**.
