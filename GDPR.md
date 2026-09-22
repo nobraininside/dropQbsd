@@ -1,52 +1,129 @@
-## A Message to Privacy Professionals
+# GDPR and Privacy Professionals
 
-**GDPR compliance is not a paperwork exercise.** If your organization processes personal data on Windows or macOS, you are running telemetry engines that phone home thousands of times per day — to Microsoft, to Apple, to third-party "partners" you never signed a data processing agreement with. You can draft privacy policies until your fingers bleed. The operating system undermines every word.
+*Why an auditable, telemetry-free, compartmentalized operating system removes a
+structural obstacle to GDPR accountability — and why policy documents alone
+cannot.*
 
-**Accountability**, the cornerstone of GDPR, rests on two pillars:
+---
 
-1. **Privacy by design** (Art. 25) — data protection must be built into the system, not bolted on after the fact.
-2. **Staff training** (Art. 39) — personnel must be educated on secure data handling.
+## 1. The structural problem
 
-Mainstream operating systems fail both. They are closed-source, unauditable, laden with telemetry, and so complex (hundreds of millions of lines of code) that vulnerabilities are inevitable — the defect rate is a mathematical certainty, not a bug to be patched.
+GDPR accountability rests on two pillars that most organisations treat as
+paperwork:
 
-### The Alternative
+1. **Data protection by design** (Art. 25) — protection must be built into the
+   system, not added after the fact.
+2. **Staff awareness and training** (Art. 39) — personnel must understand how
+   personal data is handled.
 
-**OpenBSD** — the reference platform — is the only OS with continuous, funded, line-by-line security auditing. **FreeBSD** and **NetBSD** are supported, but OpenBSD remains the recommended target for the strongest security guarantees.
+Mainstream operating systems make both difficult to satisfy in practice.
 
-**dropQbsd** layers Qubes-style compartmentalization on top of a BSD system without virtualization; OpenBSD is the reference platform, FreeBSD is in testing, NetBSD is on the roadmap. Web browsing, email, and document storage run in separate security domains. A compromised browser cannot read your email. A compromised mail client cannot reach your file server. This is not a policy — it is enforced by Unix permissions and a strict firewall, policed every 60 seconds.
+- **Telemetry is on by default.** Windows, macOS, and most mainstream Linux
+  distributions transmit system diagnostics, application usage, and — in some
+  configurations — document and browsing content to vendor infrastructure.
+  These transfers are governed by the vendor's terms, not by a data processing
+  agreement the controller negotiated.
+- **The processing logic is not auditable.** The controller cannot inspect what
+  the operating system collects, where it sends it, or under what conditions.
+- **The attack surface is not inspectable.** Hundreds of millions of lines of
+  closed code cannot be verified by the controller or their advisers.
 
-### What This Means for Your Organization
+This is not an argument that these systems are malicious. It is a statement
+about **what a controller can demonstrate**. Art. 5(2) places the burden of
+demonstrating compliance on the controller. Article 5(2) requires that you be
+able to *show* compliance — not merely assert it.
 
-| | MAINSTREAM STACK | DROPQBSD ON THE BSD FAMILY |
+You cannot demonstrate what you cannot inspect.
+
+---
+
+## 2. What dropQbsd provides
+
+**dropQbsd** layers Qubes-style compartmentalization on the BSD family without
+virtualization. Web browsing, email, and document storage run as separate Unix
+users, sharing nothing except a single policed exchange directory.
+
+The relevant properties for a controller are architectural, not procedural:
+
+| | Mainstream stack | dropQbsd on the BSD family |
 | -- | -- | -- |
-| **Telemetry** | Thousands of daily callbacks | Zero |
-| **Auditability** | Closed source, trust us | Fully auditable, ~2,500 lines of ksh + 9 lines of C |
-| **Licensing cost** | Windows/Mac + Office + AV licenses | \$0 |
-| **Hardware lifecycle** | 5-7 years (forced obsolescence) | 10+ years (runs on 1 GB RAM) |
-| **Antivirus** | Mandatory, reactive, expensive | Unnecessary — compartmentalization prevents propagation |
-| **Privacy by design** | Impossible (closed source) | Inherent |
-| **Staff training** | "Don't click phishing links" | Learning a security-conscious OS — real education |
+| **Telemetry** | Vendor-defined, on by default | None in the base system |
+| **Auditability** | Closed source | ~2,500 lines of `ksh` + 9 lines of C |
+| **Licensing cost** | OS + productivity + endpoint security | None (ISC license) |
+| **Endpoint security model** | Reactive scanning software with root access | Domain isolation enforced by Unix permissions and `pf` |
+| **Verification method** | Vendor representation, third-party audit | Direct source inspection |
 
-### The Accountability Argument
+**OpenBSD** is the reference platform: continuous, funded, line-by-line security
+auditing. **FreeBSD** is supported. **NetBSD** is on the roadmap.
 
-When your organization adopts dropQbsd, you satisfy GDPR accountability in a way that no policy document ever could:
+---
 
-- **Privacy by design is not a claim — it is the architecture.** The system cannot exfiltrate data because it has no telemetry. Malware cannot propagate because domains are isolated.
-- **Staff training is not a checkbox webinar — it is the daily act** of using an operating system that requires and rewards security awareness. Your employees become security-conscious by necessity, not by decree.
+## 3. The accountability argument
 
-The budget shifts from remediating breaches and renewing licenses to training personnel — exactly where GDPR intended it.
+Adopting dropQbsd changes what a controller can demonstrate:
 
-### A Challenge to DPOs and Security Consultants
+- **Data protection by design becomes architectural rather than declarative.**
+  The base system has no telemetry to disable. Cross-domain propagation is
+  prevented by Unix permissions and a default-deny firewall, policed every 60
+  seconds — not by policy.
+- **Staff awareness becomes operational rather than ceremonial.** Personnel
+  work daily with a system that requires deliberate action to move data between
+  contexts. This is not a substitute for a training programme; it is an
+  environment in which the training has a corresponding practice.
 
-If you advise clients on GDPR compliance while deploying them on Windows, macOS, or even some mainstream Linux distributions, ask yourself: have you implemented privacy by design, or have you implemented privacy by document? Can you audit the operating system your client entrusts with personal data? Do you know what telemetry leaves the building at 3 AM?[^1].
+What dropQbsd does **not** do is certify compliance. No architecture does.
+Compliance is assessed case by case, against the controller's own processing,
+purposes, and risk profile. What dropQbsd removes is a structural obstacle:
+the gap between what a controller claims about their systems and what they can
+actually verify.
 
+---
 
-If the answer to any of these is no, the paperwork is a fig leaf.
+## 4. A note on the limits
 
-dropQbsd offers a different path: an auditable, telemetry-free, compartmentalized operating system that costs nothing to license, runs on hardware you already own, and turns compliance from a legal fiction into an engineering reality.
+dropQbsd has documented limitations, and a controller evaluating it should read
+them before anything else (see [README.md](./README.md), "What dropQbsd does
+NOT protect against").
 
-**Security is simplicity. Privacy is auditable. Accountability is provable. Anything less is a gamble dressed in legalese.**
+The most significant is **X11 input isolation**: on a single desktop, X11 shares
+one cookie across all domains, so a compromised domain can observe input from
+others. Mitigations reduce the exposure window; they do not close it. The paired
+desktop/server configuration (roadmap) resolves this. Where a threat model
+requires input or kernel isolation today, Qubes OS is the appropriate tool.
 
-[^1]: Yes, literally at 3 AM. Windows telemetry runs on a schedule that includes early-morning hours. It transmits hardware diagnostics, usage patterns, installed applications, and in some configurations, the content
-of documents and browsing history — all without explicit consent beyond the click-through EULA. macOS does the same via `rapportd`, `trustd`, and Transparencyd. Ubuntu collects system information via `ubuntu-report`
-and snap telemetry. None of these can be fully disabled without breaking functionality or voiding support agreements. OpenBSD ships with none of this. Zero.
+A provider that does not state its limits is a provider whose limits you are
+about to discover.
+
+---
+
+## 5. On the separation of roles
+
+If a DPO also supplies the system they are assessing, the independence required
+by Art. 38(3) and Art. 39(1)(b) is compromised — not necessarily in intent, but
+in structure. The same principle that prevents a lawyer from advising a client
+and certifying the same matter applies here.
+
+**For a given controller, the roles must be separated:** either the provider of
+dropQbsd, or the DPO — not both. This is not a limitation of the project. It is
+the condition under which any recommendation of it remains credible.
+
+---
+
+## 6. For DPOs and security advisers
+
+If you advise clients on GDPR compliance while their processing runs on systems
+you cannot inspect, the question is worth asking directly:
+
+- Have you implemented data protection by design, or data protection by
+  documentation?
+- Can you verify what the operating system does with the personal data your
+  client processes?
+- Can you determine what leaves the network, under what legal basis, and to
+  whom?
+
+Where the answer is no, that gap is the controller's residual risk — not the
+vendor's.
+
+dropQbsd offers one path to closing part of it: an auditable, telemetry-free,
+compartmentalized system with no licensing cost, running on hardware you already
+own. It is not a compliance certificate. It is a verifiable foundation.

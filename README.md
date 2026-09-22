@@ -700,4 +700,4 @@ can, see [GDPR.md](./GDPR.md).
 
 ## 11. License
 
-
+SC. See [LICENSE](LICENSE).
