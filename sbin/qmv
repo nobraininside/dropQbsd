@@ -1,0 +1,176 @@
+# ==========================================================
+#  dropQbsd -- qmv
+#
+#  Moves a file or directory into the /home/drop exchange
+#  zone and sets correct permissions atomically.
+#
+#  The original is deleted ONLY after the copy is verified
+#  and permissions are locked down. This prevents data loss
+#  and closes the TOCTOU window where files sit in the drop
+#  zone with their original (potentially too open) permissions.
+#
+#  Workflow:
+#    1. Copy to a staging location inside /home/drop with
+#       restricted permissions from the start.
+#    2. Set group and staging permissions (700 dirs -- owner
+#       needs write to move files out of staging).
+#    3. Verify the copy succeeded.
+#    4. Move from staging into the drop zone proper.
+#    5. Apply final permissions (570 dirs -- group can
+#       traverse; 440 files -- read-only).
+#    6. Only then delete the original.
+#
+#  SCOPE: one file or directory per invocation, plus an optional
+#  destination. Passing more is an error, not a batch operation.
+#  To import several files from nnn, select them and use the
+#  plugin (nnnqmv), which loops over the selection.
+#
+#  Path: /opt/dropQbsd/sbin/qmv
+#  Permissions: chmod 755, root:wheel
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qmv SOURCE [DIRECTORY]
+#    OR
+#    Qmv SOURCE [DIRECTORY]
+# ==========================================================
+
+set -u
+
+DST="/home/drop"
+
+#-----------------------------------------------------------------------------
+# ARGUMENT CHECK
+#-----------------------------------------------------------------------------
+# Exactly one source. More than one is an error, not a batch
+# operation: each invocation is atomic and its verification
+# unambiguous. To process several files from nnn, select them
+# and use the nnnqcp plugin, which loops over the selection.
+if [ $# -lt 1 ]; then
+    echo "Usage: qmv <file_or_directory>" >&2
+    exit 1
+fi
+
+if [ $# -gt 1 ]; then
+    echo "Error: qmv accepts exactly one file or directory." >&2
+    echo "       For multiple files, select them in nnn and press ;m." >&2
+    exit 1
+fi
+
+TARGET="$1"
+
+#-----------------------------------------------------------------------------
+# ARGUMENT VALIDATION
+#-----------------------------------------------------------------------------
+if [ -z "$TARGET" ]; then
+    echo "Usage: qmv <file_or_directory>" >&2
+    exit 1
+fi
+
+if [ ! -e "$TARGET" ]; then
+    echo "Error: '$TARGET' not found." >&2
+    exit 1
+fi
+
+case "$(realpath "$TARGET")" in
+    /home/drop|/home/drop/*)
+        echo "Error: '$TARGET' is already inside the drop zone." >&2
+        exit 1
+        ;;
+esac
+
+case "$(realpath "$TARGET")" in
+    /|/bin|/bin/*|/sbin|/sbin/*|/usr|/usr/*|/etc|/etc/*|\
+    /var|/var/*|/root|/root/*|/tmp|/tmp/*)
+        echo "Error: refusing to operate on system path '$TARGET'." >&2
+        exit 1
+        ;;
+esac
+
+# Guard: never move a home directory itself
+TARGET_REAL=$(realpath "$TARGET")
+for h in /home/user /home/userdoc /home/usermail /home/userweb /root; do
+    if [ "$TARGET_REAL" = "$h" ]; then
+        echo "Error: refusing to move '$TARGET' (home directory)." >&2
+        exit 1
+    fi
+done
+
+#-----------------------------------------------------------------------------
+# PREPARE STAGING NAME
+#-----------------------------------------------------------------------------
+NAME=$(basename "$TARGET")
+DEST_PATH="$DST/$NAME"
+
+#-----------------------------------------------------------------------------
+# REFUSE TO OVERWRITE AN EXISTING ENTRY
+#-----------------------------------------------------------------------------
+# The drop zone is an exchange area, not a backup target: silently
+# replacing an entry another domain may be about to import is a data
+# loss waiting to happen. Fail explicitly instead.
+# Early exit here avoids copying anything when the destination
+# already exists; the final mv still uses -f to close the race
+# between this check and the move.
+if [ -e "$DEST_PATH" ]; then
+    echo "Error: '$NAME' already exists in the drop zone." >&2
+    echo "       Remove it first, or import it with Qimport." >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# COPY TO STAGING WITH RESTRICTED PERMISSIONS FROM THE START
+#-----------------------------------------------------------------------------
+STAGING="$DST/.staging.$$.$(date +%s)"
+mkdir "$STAGING"
+chmod 700 "$STAGING"
+
+# Copy WITHOUT -p: the source permissions are irrelevant here, since
+# the drop zone permissions are set explicitly below. -p would try to
+# preserve owner/group (which a non-root caller cannot do anyway) and
+# timestamps (which are reset later).
+if ! cp -R "$TARGET" "$STAGING/$NAME"; then
+    echo "Error: copy failed. Check file permissions on '$TARGET'." >&2
+    rm -rf "$STAGING"
+    exit 1
+fi
+
+chmod 700 "$STAGING"
+chgrp -R drop "$STAGING/$NAME"
+
+find "$STAGING/$NAME" -type d -exec chmod 700 {} +
+find "$STAGING/$NAME" -type f -exec chmod 440 {} +
+
+#-----------------------------------------------------------------------------
+# VERIFY THE COPY SUCCEEDED
+#-----------------------------------------------------------------------------
+SRC_FILES=$(find "$TARGET" -type f 2>/dev/null | wc -l | tr -d ' ')
+DST_FILES=$(find "$STAGING/$NAME" -type f 2>/dev/null | wc -l | tr -d ' ')
+SRC_DIRS=$(find "$TARGET" -type d 2>/dev/null | wc -l | tr -d ' ')
+DST_DIRS=$(find "$STAGING/$NAME" -type d 2>/dev/null | wc -l | tr -d ' ')
+
+if [ "$SRC_FILES" -ne "$DST_FILES" ] || [ "$SRC_DIRS" -ne "$DST_DIRS" ]; then
+    echo "Error: copy verification failed (files: $SRC_FILES/$DST_FILES, dirs: $SRC_
+DIRS/$DST_DIRS)." >&2
+    echo "Original '$TARGET' has NOT been deleted." >&2
+    rm -rf "$STAGING"
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# MOVE STAGING INTO PLACE AND APPLY FINAL PERMISSIONS
+#-----------------------------------------------------------------------------
+if mv -f "$STAGING/$NAME" "$DEST_PATH"; then
+    find "$DEST_PATH" -type d -exec chmod 570 {} +
+    find "$DEST_PATH" -type f -exec chmod 440 {} +
+    find "$DEST_PATH" -exec touch {} +
+    rmdir "$STAGING" 2>/dev/null || true
+else
+    echo "Error: move from staging failed. Staging left at $STAGING" >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# DELETE THE ORIGINAL - ONLY NOW, AFTER EVERYTHING SUCCEEDED
+#-----------------------------------------------------------------------------
+rm -rf "$TARGET"

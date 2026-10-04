@@ -1,0 +1,37 @@
+#!/bin/sh
+# ==========================================================
+#  dropQbsd -- nnnqimport
+#
+#  nnn plugin: import the selected file(s) from the drop zone
+#  into the domain's ~/Downloads.
+#  Invoked from nnn with ';i' (see NNN_PLUG in file_bridge).
+#
+#  Install:
+#      cp nnnqimport ~/.config/nnn/plugins/
+#      chmod +x ~/.config/nnn/plugins/nnnqimport
+#
+#  Notes:
+#    - Runs as the domain user (nnn runs inside the domain).
+#    - Loops over all selected files: nnn passes them as argv.
+#    - Relative paths are resolved inside /home/drop; absolute
+#      paths are passed through (qimport validates them).
+#    - The whole loop runs in a subshell in the background, so nnn
+#      returns immediately without spawning one process per file.
+#    - Errors are appended to $HOME/.cache/dropQbsd/nnn_plugins.log
+#      instead of being discarded.
+# ==========================================================
+
+LOGDIR="$HOME/.cache/dropQbsd"
+LOGFILE="$LOGDIR/nnn_plugins.log"
+mkdir -p "$LOGDIR" 2>/dev/null
+
+(
+    for f in "$@"; do
+        case "$f" in
+            /*) /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qimport "$f" \
+                    >>"$LOGFILE" 2>&1 ;;
+            *)  /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qimport "/home/drop/$f" \
+                    >>"$LOGFILE" 2>&1 ;;
+        esac
+    done
+) &

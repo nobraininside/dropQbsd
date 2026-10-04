@@ -1,0 +1,35 @@
+# ==========================================================
+#  dropQbsd -- xterm_userdoc
+#
+#  Opens an xterm as userdoc with the document domain
+#  color scheme (darkgreen background).
+#  Optionally accepts a command to run instead of an
+#  interactive shell.
+#
+#  Path: /opt/dropQbsd/sbin/xterm_userdoc
+#  Permissions: chmod 755, root:wheel
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_userdoc
+#    OR
+#    Xuserdoc
+# ==========================================================
+
+if [ $# -gt 0 ]; then
+    CMD="$*"
+    nohup /opt/dropQbsd/bin/run_app userdoc xterm \
+        -T "userdoc" \
+        -bg darkgreen -fg white \
+        -fa monospace -fs 12 \
+        -e "ksh -c '. /etc/dropQbsd/kshrc; exec $CMD'" \
+        </dev/null >/dev/null 2>&1 &
+else
+    nohup /opt/dropQbsd/bin/run_app userdoc xterm \
+        -T "userdoc" \
+        -bg darkgreen -fg white \
+        -fa monospace -fs 12 \
+        -e "ksh -c '. /etc/dropQbsd/kshrc; exec ksh -l'" \
+        </dev/null >/dev/null 2>&1 &
+fi

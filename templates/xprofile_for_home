@@ -1,0 +1,25 @@
+# ==========================================================
+#  dropQbsd -- xprofile_for_home
+#
+#  Per-user graphical session stub. Installed as ~/.xprofile
+#  in the home of every dropQbsd user (user, userdoc,
+#  usermail, userweb) and root.
+#
+#  Installation:
+#      cp /opt/dropQbsd/templates/xprofile_for_home ~/.xprofile
+#      chown <user>:<user> ~/.xprofile
+#      chmod 644 ~/.xprofile
+#
+#  Coverage:
+#    Graphical sessions started by SDDM or LightDM, which do
+#    NOT read ~/.profile.
+#
+#  Notes:
+#    - This file is a STUB. All logic lives in
+#      /etc/dropQbsd/kshrc, which is idempotent.
+#    - This file MUST be sourced, not executed.
+# ==========================================================
+
+if [ -f /etc/dropQbsd/kshrc ]; then
+    . /etc/dropQbsd/kshrc
+fi

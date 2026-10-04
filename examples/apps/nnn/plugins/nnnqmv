@@ -1,0 +1,32 @@
+#!/bin/sh
+# ==========================================================
+#  dropQbsd -- nnnqmv
+#
+#  nnn plugin: move the selected file(s) into the drop zone.
+#  Invoked from nnn with ';m' (see NNN_PLUG in file_bridge).
+#
+#  Install:
+#      cp nnnqmv ~/.config/nnn/plugins/
+#      chmod +x ~/.config/nnn/plugins/nnnqmv
+#
+#  Notes:
+#    - Runs as the domain user (nnn runs inside the domain).
+#    - Loops over all selected files: nnn passes them as argv.
+#    - The whole loop runs in a subshell in the background, so nnn
+#      returns immediately without spawning one process per file.
+#    - Errors are appended to $HOME/.cache/dropQbsd/nnn_plugins.log
+#      instead of being discarded: a refused move (destination
+#      exists) is visible to the user.
+#    - qmv deletes the original only after a verified copy.
+# ==========================================================
+
+LOGDIR="$HOME/.cache/dropQbsd"
+LOGFILE="$LOGDIR/nnn_plugins.log"
+mkdir -p "$LOGDIR" 2>/dev/null
+
+(
+    for f in "$@"; do
+        /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qmv "$f" \
+            >>"$LOGFILE" 2>&1
+    done
+) &

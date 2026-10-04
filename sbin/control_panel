@@ -1,0 +1,484 @@
+# ==========================================================
+#  dropQbsd -- control_panel
+#
+#  ncurses dashboard for monitoring compartment status,
+#  drop zone contents, and system health. Launched by the
+#  conductor (user). Root-level data (PF state, enforcement
+#  logs, integrity verification) is gated behind on-demand
+#  su - authentication triggered by pressing 'a'.
+#
+#  No doas rules, no persistent root processes, no changes
+#  to the privilege model.
+#
+#  v0.3.0 changes:
+#    - snapshot moved out of /tmp: now written by root_snapshot
+#      (as root) into /var/run/dropQbsd/ (root:wheel 0755),
+#      root:drop 0640. Owner is verified before trusting it.
+#      Expired snapshots are removed, not merely ignored.
+#    - snapshot lines are sanitized (ESC stripped, width-clamped)
+#      before printing: a poisoned file cannot inject ANSI.
+#    - SIGHUP (1) trapped: tmux kill-session (F5 in file_bridge)
+#      no longer leaves the terminal in raw mode.
+#    - Ctrl-C during su no longer resumes the panel.
+#    - truncate_name emits a single line.
+#    - stat failures during drop-zone scan no longer abort render.
+#    - printf formats are constant strings; variables are arguments.
+#    - REFRESH semantics documented: every root refresh
+#      re-authenticates (time-boxed privilege model).
+#
+#  Path: /opt/dropQbsd/sbin/control_panel
+#  Permissions: chmod 755, root:wheel
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/control_panel
+#    OR
+#    Control
+# ==========================================================
+
+SNAPSHOT_DIR="/var/run/dropQbsd"
+SNAPSHOT_FILE="$SNAPSHOT_DIR/control_panel_snapshot"
+SNAPSHOT_MAX_AGE=300
+REFRESH_INTERVAL=15
+DROP_ZONE="/home/drop"
+QUARANTINE_DIR="/home/drop/_quarantine"
+
+C_HEADER='\033[1;37m'
+C_DIM='\033[2;37m'
+C_USERWEB='\033[1;36m'
+C_USERMAIL='\033[1;35m'
+C_USERDOC='\033[1;32m'
+C_WARN='\033[1;33m'
+C_OK='\033[1;32m'
+C_LOCK='\033[1;31m'
+C_FILE='\033[0;37m'
+C_QUAR='\033[1;33m'
+C_RESET='\033[0m'
+
+COLS=80
+LINES=24
+RUNNING=1
+ROOT_AUTHED=0
+SNAPSHOT_AGE=0
+STTY_ORIG=""
+LAST_RENDER=0
+ABORT=0
+
+# -- cleanup: restore terminal, expire root snapshot ------------
+cleanup() {
+    RUNNING=0
+    [ -n "$STTY_ORIG" ] && stty "$STTY_ORIG" 2>/dev/null
+    tput cnorm 2>/dev/null
+    printf '%b' "$C_RESET"
+    clear
+
+    # The snapshot is NOT removed here: control_panel runs as 'user',
+    # which cannot unlink files in root-owned /var/run/dropQbsd (0750).
+    # Removal is the responsibility of root_snapshot (as root) and of
+    # the expiry check in root_snapshot_available() (line 123).
+}
+
+# SIGHUP (1): sent by tmux kill-session (F5 in file_bridge).
+# SIGINT (2) and SIGTERM (15): exit the panel cleanly.
+# Ctrl-C intentionally exits; it does not cancel an in-progress
+# su authentication (that is handled by the ABORT flag in
+# do_root_auth).
+trap 'ABORT=1; cleanup; exit 0' 1 2 15
+
+sigwinch_handler() {
+    COLS=$(tput cols 2>/dev/null || echo 80)
+    LINES=$(tput lines 2>/dev/null || echo 24)
+    clear
+    render
+}
+trap sigwinch_handler 28
+
+now_epoch() { date +%s; }
+
+hr() {
+    typeset w="$1" ch="${2:--}" i=0
+    while [ "$i" -lt "$w" ]; do
+        printf '%s' "$ch"
+        i=$(( i + 1 ))
+    done
+}
+
+# -- snapshot trust: owner MUST be root, else ignore ------------
+# The file is written by root_snapshot (running as root) into
+# root-owned /var/run/dropQbsd. user can read but not write it.
+# An owner check turns filesystem trust into a verified property.
+root_snapshot_available() {
+    [ -f "$SNAPSHOT_FILE" ] || return 1
+
+    # owner must be root (uid 0)
+    [ "$(stat -f '%u' "$SNAPSHOT_FILE" 2>/dev/null)" = "0" ] || return 1
+
+    typeset now snap_time
+    now=$(now_epoch)
+    snap_time=$(stat -f '%m' "$SNAPSHOT_FILE" 2>/dev/null)
+    [ -n "$snap_time" ] || return 1
+
+    SNAPSHOT_AGE=$(( now - snap_time ))
+
+    if [ "$SNAPSHOT_AGE" -ge "$SNAPSHOT_MAX_AGE" ]; then
+        # Expired: remove it (root-derived data must not linger)
+        rm -f "$SNAPSHOT_FILE" 2>/dev/null
+        return 1
+    fi
+    return 0
+}
+
+load_snapshot() {
+    if root_snapshot_available; then
+        ROOT_AUTHED=1
+    else
+        ROOT_AUTHED=0
+    fi
+}
+
+# -- truncate_name: ALWAYS emits exactly one line on stdout -----
+truncate_name() {
+    typeset name="$1" max="${2:-30}"
+    if [ "${#name}" -gt "$max" ]; then
+        print -r -- "$(print -r -- "$name" | cut -c1-$(( max - 3 )))..."
+    else
+        print -r -- "$name"
+    fi
+}
+
+# Get up to N unique process names for a user, joined with " | "
+get_procs() {
+    typeset user="$1" max="${2:-3}"
+    ps -U "$user" -o comm= 2>/dev/null \
+        | sed 's/^ *//;s/ *$//' | sort -u | head -"$max" \
+        | tr '\n' '|' | sed 's/|$//;s/|/ | /g'
+}
+
+render_domain_line() {
+    typeset r="$1" color="$2" label="$3" pid_count="$4" proc_name="$5"
+    typeset max_proc_len=$(( COLS - 30 ))
+
+    tput cup "$r" 4
+    printf '%b%-10s%b  ' "$color" "$label" "$C_RESET"
+
+    if [ "$pid_count" -gt 0 ]; then
+        # Truncate process list if it exceeds available width
+        if [ "${#proc_name}" -gt "$max_proc_len" ]; then
+            proc_name="$(print -r -- "$proc_name" | cut -c1-$(( max_proc_len - 3 )))..."
+        fi
+        printf '%bACTIVE%b  %b%s%b' "$C_OK" "$C_RESET" "$C_DIM" "$proc_name" "$C_RESET"
+    else
+        printf '%bidle%b' "$C_DIM" "$C_RESET"
+    fi
+}
+
+do_root_auth() {
+    typeset mode="$1" inner_y inner_x box_w box_h
+
+    stty "$STTY_ORIG" 2>/dev/null
+    tput cnorm 2>/dev/null
+    printf '%b\033[2J\033[H' "$C_RESET"
+
+    COLS=$(tput cols 2>/dev/null || echo 80)
+    LINES=$(tput lines 2>/dev/null || echo 24)
+
+    box_w=60
+    box_h=6
+    inner_x=$(( (COLS - box_w) / 2 ))
+    inner_y=$(( (LINES - box_h) / 2 - 2 ))
+
+    # ASCII-only box drawing: portable across OpenBSD/FreeBSD ksh
+    # (printf \xNN escapes are not POSIX and print literally on OpenBSD).
+    tput cup $inner_y $inner_x
+    printf '%b+' "$C_DIM"
+    hr $(( box_w - 2 )) '-'
+    printf '+%b' "$C_RESET"
+
+    tput cup $(( inner_y + 1 )) $inner_x
+    printf '%b|%b  %bdropQbsd - root %s%b' \
+        "$C_DIM" "$C_RESET" "$C_HEADER" "$mode" "$C_RESET"
+    tput cup $(( inner_y + 1 )) $(( inner_x + box_w - 1 ))
+    printf '%b|%b' "$C_DIM" "$C_RESET"
+
+    tput cup $(( inner_y + 2 )) $inner_x
+    printf '%b|' "$C_DIM"
+    hr $(( box_w - 2 )) '-'
+    printf '|%b' "$C_RESET"
+
+    tput cup $(( inner_y + 3 )) $inner_x
+    printf '%b|%b%*s%b|%b' \
+        "$C_DIM" "$C_RESET" $(( box_w - 2 )) "" "$C_DIM" "$C_RESET"
+    tput cup $(( inner_y + 4 )) $inner_x
+    printf '%b|%b%*s%b|%b' \
+        "$C_DIM" "$C_RESET" $(( box_w - 2 )) "" "$C_DIM" "$C_RESET"
+
+    tput cup $(( inner_y + 5 )) $inner_x
+    printf '%b+' "$C_DIM"
+    hr $(( box_w - 2 )) '-'
+    printf '+%b' "$C_RESET"
+
+    tput cup $(( inner_y + box_h + 1 )) 0
+
+    # su runs in foreground. If the user hits Ctrl-C here, the trap
+    # sets ABORT and we exit instead of resuming the panel with a
+    # half-finished authentication.
+    ABORT=0
+    su - root -c "/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/root_snapshot"
+    if [ "$ABORT" -eq 1 ]; then
+        cleanup
+        exit 0
+    fi
+
+    printf '\n'
+    printf '%b  Press ENTER to return to panel...%b' "$C_DIM" "$C_RESET"
+    read dummy
+
+    load_snapshot
+    tput civis 2>/dev/null
+    stty raw -echo min 0 time $(( REFRESH_INTERVAL * 10 )) 2>/dev/null
+    render
+}
+
+# -- sanitize a snapshot line before printing -------------------
+# Strips ESC (kills any ANSI injection from a hostile file) and
+# clamps to the printable width so long lines cannot wrap and
+# desync the layout.
+sanitize_line() {
+    typeset line="$1" max_width
+    max_width=$(( COLS - 8 ))
+    [ "$max_width" -lt 1 ] && max_width=1
+    line=$(print -r -- "$line" | tr -d '\033' | cut -c1-"$max_width")
+    print -r -- "$line"
+}
+
+render() {
+    typeset row n_files n_quar uw_pid um_pid ud_pid uw_proc um_proc ud_proc
+    typeset tmpfs_data dz_count dz_name dz_perms dz_age dz_age_min dz_type snap_line
+    typeset f dz_mtime
+
+    COLS=$(tput cols)
+    LINES=$(tput lines)
+    load_snapshot
+    clear
+
+    # Count items in drop zone (files + dirs, excluding export dirs and quarantine)
+    n_files=0; n_quar=0
+    for f in "$DROP_ZONE"/*; do
+        case "$f" in
+            */usermail_export|*/userweb_export|*/_quarantine) continue ;;
+        esac
+        [ -e "$f" ] && n_files=$(( n_files + 1 ))
+    done
+    for f in "$QUARANTINE_DIR"/*; do [ -f "$f" ] && n_quar=$(( n_quar + 1 )); done
+
+    uw_pid=$(ps -U userweb -o pid= 2>/dev/null | wc -l | tr -d ' ')
+    um_pid=$(ps -U usermail -o pid= 2>/dev/null | wc -l | tr -d ' ')
+    ud_pid=$(ps -U userdoc -o pid= 2>/dev/null | wc -l | tr -d ' ')
+
+    uw_proc=$(get_procs userweb 3)
+    um_proc=$(get_procs usermail 3)
+    ud_proc=$(get_procs userdoc 3)
+
+    row=0
+    tput cup $row 0
+    printf '%b  dropQbsd Control Panel%b' "$C_HEADER" "$C_RESET"
+    tput cup $row $(( COLS - 48 ))
+    if [ "$ROOT_AUTHED" -eq 1 ]; then
+        printf '%b[q]uit  [a]uth  [r]efresh root%b' "$C_DIM" "$C_RESET"
+    else
+        printf '%b[q]uit  [a]uth  [r]efresh%b' "$C_DIM" "$C_RESET"
+    fi
+
+    row=1
+    tput cup $row 0; printf '%b' "$C_DIM"; hr "$COLS"; printf '%b' "$C_RESET"
+
+    row=2
+    tput cup $row 2
+    printf '%bDOMAINS%b' "$C_HEADER" "$C_RESET"
+    row=3
+
+    render_domain_line $row "$C_USERDOC" "userdoc" "$ud_pid" "$ud_proc"
+    row=$(( row + 1 ))
+    render_domain_line $row "$C_USERMAIL" "usermail" "$um_pid" "$um_proc"
+    row=$(( row + 1 ))
+    render_domain_line $row "$C_USERWEB" "userweb" "$uw_pid" "$uw_proc"
+    row=$(( row + 1 ))
+
+    tput cup $row 4
+    printf '%b%-10s%b  %b%s files%b  %b%s quarantined%b' \
+        "$C_DIM" "dropzone" "$C_RESET" "$C_OK" "$n_files" "$C_RESET" "$C_DIM" "$n_quar" "$C_RESET"
+    row=$(( row + 1 ))
+
+    tput cup $row 0; printf '%b' "$C_DIM"; hr "$COLS"; printf '%b' "$C_RESET"
+    row=$(( row + 1 ))
+
+    tput cup $row 2
+    printf '%bDROP ZONE%b  %b%s%b' "$C_HEADER" "$C_RESET" "$C_DIM" "$DROP_ZONE" "$C_RESET"
+    row=$(( row + 1 ))
+
+    dz_count=0
+    for f in "$DROP_ZONE"/*; do
+        [ -e "$f" ] || continue
+
+        # Skip export directories and quarantine - infrastructure,
+        # not user-facing items in transit
+        case "$f" in
+            */usermail_export|*/userweb_export|*/_quarantine) continue ;;
+        esac
+
+        # Single stat call; skip silently if the file vanished between
+        # glob and stat (enforce_drop cleans every 60s).
+        # Format: "<mtime> <octal-perms>" -> take the last 4 digits.
+        dz_mtime=$(stat -f '%m %p' "$f" 2>/dev/null) || continue
+        dz_age_min=$(( ( $(now_epoch) - ${dz_mtime%% *} ) / 60 ))
+        dz_perms=$(print -r -- "${dz_mtime#* }" | tail -c 5)
+
+        # Only show items newer than 60 minutes (older items are stale
+        # and would be picked up by enforce_drop anyway)
+        [ "$dz_age_min" -gt 60 ] && continue
+
+        dz_count=$(( dz_count + 1 ))
+        [ "$dz_count" -gt 8 ] && break
+
+        dz_name=$(truncate_name "$(basename "$f")" 30)
+
+        if [ -d "$f" ]; then
+            dz_type="dir"
+        else
+            dz_type="file"
+        fi
+
+        dz_age=$dz_age_min
+
+        tput cup $row 4
+        printf '%b%-30s%b  %-5s  %4dm  ' "$C_FILE" "$dz_name" "$C_RESET" "$dz_perms" "$dz_age"
+
+        # Directories are always shown as ready (permissions enforced by SGID)
+        if [ "$dz_type" = "dir" ]; then
+            printf '%bdir%b' "$C_USERDOC" "$C_RESET"
+        else
+            case "$dz_perms" in
+                *440|*444) printf '%bready%b' "$C_OK" "$C_RESET" ;;
+                *)         printf '%bWARN%b' "$C_WARN" "$C_RESET" ;;
+            esac
+        fi
+        row=$(( row + 1 ))
+    done
+
+    for f in "$QUARANTINE_DIR"/*; do
+        [ -f "$f" ] || continue
+        dz_count=$(( dz_count + 1 ))
+        [ "$dz_count" -gt 8 ] && break
+
+        dz_name=$(truncate_name "$(basename "$f")" 30)
+
+        tput cup $row 4
+        printf '%b%-30s%b  %-5s  %4s  %bQUARANTINED%b' \
+            "$C_FILE" "$dz_name" "$C_RESET" "quar" "-" "$C_QUAR" "$C_RESET"
+        row=$(( row + 1 ))
+    done
+
+    if [ "$dz_count" -eq 0 ]; then
+        tput cup $row 4
+        printf '%b(empty)%b' "$C_DIM" "$C_RESET"
+        row=$(( row + 1 ))
+    fi
+
+    tput cup $row 0; printf '%b' "$C_DIM"; hr "$COLS"; printf '%b' "$C_RESET"
+    row=$(( row + 1 ))
+
+    tput cup $row 2
+    printf '%bSYSTEM%b' "$C_HEADER" "$C_RESET"
+    row=$(( row + 1 ))
+
+    if [ "$ROOT_AUTHED" -eq 1 ]; then
+        tput cup $row 4
+        printf '%bRoot authenticated%b %b(snapshot: %s ago)%b' \
+            "$C_OK" "$C_RESET" "$C_DIM" "${SNAPSHOT_AGE}s" "$C_RESET"
+        row=$(( row + 1 ))
+
+        if [ -f "$SNAPSHOT_FILE" ]; then
+            typeset snap_width=$(( COLS - 8 ))
+            [ "$snap_width" -lt 1 ] && snap_width=1
+            exec 4< "$SNAPSHOT_FILE"
+            while IFS= read -r snap_line <&4; do
+                [ -z "$snap_line" ] && continue
+                snap_line=$(sanitize_line "$snap_line")
+                tput cup $row 4
+                printf '%-*s' $(( COLS - 8 )) "$snap_line"
+                row=$(( row + 1 ))
+            done
+            exec 4<&-
+        fi
+    else
+        tput cup $row 4
+        printf '%bRoot data not available%b' "$C_LOCK" "$C_RESET"
+        row=$(( row + 1 ))
+
+        tput cup $row 4
+        printf '%b[ A = authenticate as root ]%b' "$C_DIM" "$C_RESET"
+        row=$(( row + 1 ))
+    fi
+
+    tput cup $(( LINES - 1 )) 0
+    printf '%b  dropQbsd %s' "$C_DIM" "$(uname -r)"
+    tput cup $(( LINES - 1 )) $(( COLS - 30 ))
+    printf 'refresh: r | %s' "$(date '+%H:%M:%S')"
+}
+
+input_loop() {
+    typeset key now
+
+    while [ "$RUNNING" -eq 1 ]; do
+        key=$(dd bs=1 count=1 2>/dev/null)
+
+        if [ -z "$key" ]; then
+            now=$(now_epoch)
+            if [ $(( now - LAST_RENDER )) -ge "$REFRESH_INTERVAL" ]; then
+                render
+                LAST_RENDER=$now
+            fi
+            continue
+        fi
+
+        LAST_RENDER=$(now_epoch)
+
+        if [ "$key" = "q" ]; then
+            cleanup
+            exit 0
+        fi
+
+        if [ "$key" = "a" ] && [ "$ROOT_AUTHED" -eq 0 ]; then
+            do_root_auth "authentication"
+            continue
+        fi
+
+        if [ "$key" = "r" ] && [ "$ROOT_AUTHED" -eq 1 ]; then
+            do_root_auth "refresh"
+            continue
+        fi
+
+        render
+    done
+}
+
+main() {
+    [ -t 0 ] || {
+        echo "control_panel: must be run from a terminal" >&2
+        exit 1
+    }
+
+    STTY_ORIG=$(stty -g)
+    stty raw -echo min 0 time $(( REFRESH_INTERVAL * 10 ))
+
+    tput civis 2>/dev/null
+    COLS=$(tput cols 2>/dev/null || echo 80)
+    LINES=$(tput lines 2>/dev/null || echo 24)
+    LAST_RENDER=$(now_epoch)
+    render
+    input_loop
+}
+
+main "$@"
+

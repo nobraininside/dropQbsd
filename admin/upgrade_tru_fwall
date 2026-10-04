@@ -1,0 +1,250 @@
+# =========================================================
+#  dropQbsd -- upgrade_tru_fwall
+#
+#  Upgrades the OS to the next release through restrictive
+#  PF. Populates the <updates> table, runs the upgrade tool.
+#  If the tool returns without rebooting, the table is
+#  flushed to restore default-deny for root.
+#
+#  OpenBSD:               sysupgrade (auto-reboot)
+#  FreeBSD (traditional): freebsd-update upgrade -r RELEASE
+#                         3-phase: prepare -> reboot -> install
+#                         (the post-reboot "freebsd-update install"
+#                         stages are the operator's job, reminded
+#                         at login -- see PENDING_REBOOT below)
+#  FreeBSD (PkgBase):     pkg upgrade -y -r RELEASE
+#                         (verify /etc/pkg/FreeBSD-base.conf points
+#                          to the new branch BEFORE running)
+#
+#  Run the full-update script first to ensure all patches
+#  and packages are current.
+#
+#  Path: /opt/dropQbsd/admin/upgrade_tru_fwall
+#  Permissions: chmod 700, root:wheel
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/upgrade_tru_fwall RELEASE
+#    OR
+#    Upgrade RELEASE        (e.g. 16.0-RELEASE on FreeBSD)
+#
+#  WARNING: on OpenBSD, sysupgrade reboots automatically.
+#  On FreeBSD the reboot decision stays with the operator:
+#  this script automates the SEQUENCE, not the MOMENT.
+# ==========================================================
+
+ENSURE_SCRIPT="/opt/dropQbsd/libexec/ensure_updates_table"
+UPD_MAILSERV="/opt/dropQbsd/libexec/update_mailserver_table"
+UPD_SERVICES="/opt/dropQbsd/libexec/update_services_table"
+LOGFILE="/var/log/dropQbsd/upgrade_tru_fwall.log"
+# PENDING_REBOOT: marker consumed by the login notice
+# (see /etc/dropQbsd/profile snippet in INSTALL.md).
+PENDING_REBOOT="/var/log/dropQbsd/upgrade_pending"
+FLUSH_ON_EXIT=1
+DNS_RULES_ADDED=0
+CLEANED=0
+
+log() {
+    msg="$1"
+    # Skip empty/whitespace-only messages: tools like pkg_delete -a emit a
+    # bare newline when there is nothing to do, which would log a
+    # timestamp-only line with no content.
+    echo "$msg" | grep -q '^[[:space:]]*$' && return
+    echo "$msg"
+    echo "$(date '+%F %T')  $msg" >> "$LOGFILE"
+}
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Must run as root." >&2
+    exit 2
+fi
+
+if [ ! -x "$ENSURE_SCRIPT" ]; then
+    echo "FATAL: $ENSURE_SCRIPT not found or not executable." >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# DETECT OS AND UPGRADE MECHANISM
+#-----------------------------------------------------------------------------
+OS=$(uname -s)
+TARGET_RELEASE="$1"
+PKGBASE=0
+
+if [ "$OS" = "FreeBSD" ]; then
+    # freebsd-update upgrade and pkg upgrade -r both REQUIRE a target
+    # release; without it the tool exits with a usage error.
+    if [ -z "$TARGET_RELEASE" ]; then
+        echo "Usage: $0 RELEASE   (e.g. 16.0-RELEASE)" >&2
+        exit 1
+    fi
+    if pkg info -e FreeBSD-runtime >/dev/null 2>&1; then
+        # PkgBase: upgrade via pkg -r RELEASE (manual, no auto-reboot).
+        # NOTE: verify /etc/pkg/FreeBSD-base.conf points to the new
+        # branch BEFORE running this.
+        PKGBASE=1
+        UPGRADE_CMD="pkg"
+        UPGRADE_ARGS="upgrade -y -r $TARGET_RELEASE"
+        UPGRADE_NOTE="(PkgBase: manual, review before reboot)"
+        LOCK_PROC="pkg"
+    else
+        # Traditional base. Run interactively (no --not-tty here):
+        # release upgrades ask decisions a human must make.
+        UPGRADE_CMD="freebsd-update"
+        UPGRADE_ARGS="upgrade -r $TARGET_RELEASE"
+        UPGRADE_NOTE="(traditional base)"
+        LOCK_PROC="freebsd-update"
+    fi
+else
+    UPGRADE_CMD="sysupgrade"
+    UPGRADE_ARGS=""
+    UPGRADE_NOTE="(OpenBSD: auto-reboot)"
+    LOCK_PROC="sysupgrade"
+fi
+
+#-----------------------------------------------------------------------------
+# CONCURRENCY CHECK — one upgrade operation at a time.
+# Run BEFORE touching pf: never open the network window for a doomed run.
+#-----------------------------------------------------------------------------
+BUSY=$(pgrep -x "$LOCK_PROC")
+if [ -n "$BUSY" ]; then
+    echo "Another $LOCK_PROC instance is running (pid: $(echo $BUSY | tr '\n' ' '))." >&2
+    echo "Kill it or wait, then retry." >&2
+    exit 3
+fi
+
+#-----------------------------------------------------------------------------
+# TEMPORARY DNS + HTTP/S ACCESS FOR ROOT
+#
+# The pass rules are PREPENDED, not appended: a block ... quick rule
+# in the main ruleset would shadow rules placed at the bottom.
+# No interface qualifier: the default route's interface may not match
+# every flow (IPv6, aliases).
+# Critical here: sysupgrade downloads a full release set and reboots
+# inside the command -- the window must work on the first try.
+#-----------------------------------------------------------------------------
+grant_dns() {
+    TMP_PF="/tmp/pf.dropQbsd.$$"
+    {
+        echo "pass out quick proto { udp tcp } from any to any port 53"
+        echo "pass out quick proto tcp from any to any port { 80 443 } flags S/SA"
+        cat /etc/pf.conf
+    } > "$TMP_PF"
+
+    if ! pfctl -nf "$TMP_PF"; then
+        log "FATAL: temporary ruleset failed syntax check."
+        rm -f "$TMP_PF"
+        exit 1
+    fi
+    if ! pfctl -f "$TMP_PF"; then
+        log "FATAL: pfctl failed to load the temporary ruleset."
+        rm -f "$TMP_PF"
+        exit 1
+    fi
+    rm -f "$TMP_PF"
+    DNS_RULES_ADDED=1
+
+    # pfctl -f empties <updates> (persist keeps the table defined,
+    # not its entries). Repopulate it before the update tools run.
+    "$ENSURE_SCRIPT"
+
+    log "Temporary DNS + HTTP/S access granted (will be removed after the run)."
+}
+
+#-----------------------------------------------------------------------------
+# RESTRICTIVE RULESET + TABLE RESTORATION
+#
+# pfctl -f empties ALL persistent tables, not just <updates>:
+# without repopulating <mailserver> and <services>, usermail and
+# userweb stay offline until their next cron cycle (up to 5 min).
+#-----------------------------------------------------------------------------
+revoke_dns() {
+    if [ "$DNS_RULES_ADDED" -eq 1 ]; then
+        pfctl -f /etc/pf.conf
+        DNS_RULES_ADDED=0
+        "$ENSURE_SCRIPT"
+        [ -x "$UPD_MAILSERV" ] && "$UPD_MAILSERV"
+        [ -x "$UPD_SERVICES" ] && "$UPD_SERVICES"
+        log "Temporary DNS access revoked; strict ruleset and tables restored."
+    fi
+}
+
+log "=== upgrade_tru_fwall starting ($OS) ==="
+"$ENSURE_SCRIPT" || exit $?
+
+#-----------------------------------------------------------------------------
+# CLEANUP — idempotent, runs on signals AND on exit.
+# On OpenBSD sysupgrade reboots the machine before returning, so this
+# normally never runs there; everywhere else it guarantees the strict
+# ruleset is restored even on abnormal exits.
+#-----------------------------------------------------------------------------
+cleanup() {
+    [ "$CLEANED" -eq 1 ] && return
+    CLEANED=1
+    revoke_dns
+    if [ "$1" = "signal" ]; then
+        log "Interrupted (signal received)."
+    else
+        log "Upgrade tool returned without rebooting."
+    fi
+    if [ "$FLUSH_ON_EXIT" -eq 1 ]; then
+        pfctl -t updates -T flush 2>/dev/null
+        log "<updates> table flushed."
+    else
+        log "<updates> table left populated (FLUSH_ON_EXIT=0)."
+        log "To flush manually: pfctl -t updates -T flush"
+    fi
+}
+trap 'cleanup signal; exit 130' 2 15
+trap 'cleanup' 0
+
+grant_dns
+
+# Run interactively (NOT inside $()): freebsd-update upgrade asks
+# release decisions a human must make, and sysupgrade inherits the tty.
+log "Running: $UPGRADE_CMD $UPGRADE_ARGS $UPGRADE_NOTE"
+$UPGRADE_CMD $UPGRADE_ARGS
+RC=$?
+
+revoke_dns
+
+#-----------------------------------------------------------------------------
+# POST-UPGRADE GUIDANCE
+#
+# On OpenBSD, sysupgrade normally reboots before reaching this point.
+# On FreeBSD the reboot decision stays with the operator: leave a
+# pending-reboot marker so the login notice (profile) reminds whoever
+# comes next that the upgrade is not finished, plus explicit
+# instructions in the log and on the terminal.
+#-----------------------------------------------------------------------------
+if [ "$OS" = "OpenBSD" ]; then
+    log "sysupgrade exited with code $RC -- no reboot occurred."
+else
+    log "$UPGRADE_CMD exited with code $RC -- review before reboot."
+
+    if [ $RC -eq 0 ]; then
+        # Leave the marker BEFORE telling the operator to reboot:
+        # a reboot without the notice would risk a half-finished
+        # upgrade going unnoticed.
+        [ -d "$(dirname "$PENDING_REBOOT")" ] || mkdir -p "$(dirname "$PENDING_REBOOT")"
+        printf 'dropQbsd release upgrade to %s prepared (%s)\n' \
+            "$TARGET_RELEASE" "$(date '+%F %T')" > "$PENDING_REBOOT"
+        log "Pending-reboot marker written: $PENDING_REBOOT"
+    fi
+
+    if [ "$PKGBASE" -eq 1 ]; then
+        log "IMPORTANT (PkgBase): after rebooting into the new world, run:"
+        log "  pkg upgrade -y        (sync remaining packages)"
+        log "Then remove the marker: rm -f $PENDING_REBOOT"
+    else
+        log "IMPORTANT (traditional base): this was phase 1 of 3."
+        log "After rebooting, run:"
+        log "  freebsd-update install"
+        log "  (repeat until it reports no more work, then: pkg upgrade -y)"
+        log "Then remove the marker: rm -f $PENDING_REBOOT"
+    fi
+fi
+
+log "=== upgrade_tru_fwall finished ==="
+exit $RC

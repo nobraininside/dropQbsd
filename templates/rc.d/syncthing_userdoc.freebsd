@@ -1,0 +1,74 @@
+#!/bin/sh
+# ================================================================
+# syncthing_userdoc.freebsd — Syncthing service for userdoc (FreeBSD)
+#
+# FreeBSD rc.d script. Install as:
+#     cp syncthing_userdoc_freebsd /usr/local/etc/rc.d/syncthing_userdoc
+#     chmod 555 /usr/local/etc/rc.d/syncthing_userdoc
+#
+# Enable at boot:
+#     sysrc syncthing_userdoc_enable="YES"
+#
+# Usage:
+#     service syncthing_userdoc start|stop|restart|status
+#
+# Web GUI: http://127.0.0.1:8384
+# ================================================================
+
+# PROVIDE: syncthing_userdoc
+# REQUIRE: LOGIN
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+name="syncthing_userdoc"
+rcvar="syncthing_userdoc_enable"
+
+load_rc_config $name
+
+: ${syncthing_userdoc_enable:="NO"}
+: ${syncthing_userdoc_user:="userdoc"}
+
+command="/usr/local/bin/syncthing"
+command_args="serve --home=/home/${syncthing_userdoc_user}/.config/syncthing --no-browser --gui-address=127.0.0.1:8384"
+procname="/usr/local/bin/syncthing"
+
+start_precmd="syncthing_userdoc_prestart"
+start_cmd="syncthing_userdoc_start"
+stop_cmd="syncthing_userdoc_stop"
+
+syncthing_userdoc_prestart() {
+    # Wait for /home to be mounted and the binary to be available.
+    # On systems with encrypted or network-mounted /home, the
+    # mount may not be ready when rc.d scripts first run.
+    n=0
+    while [ $n -lt 15 ]; do
+        [ -d /home/${syncthing_userdoc_user} ] && [ -x /usr/local/bin/syncthing ] && break
+        sleep 1
+        n=$((n + 1))
+    done
+}
+
+syncthing_userdoc_start() {
+    echo "Starting Syncthing as ${syncthing_userdoc_user}..."
+
+    # Syncthing can use many file descriptors during large syncs.
+    ulimit -n 32768
+
+    # Launch as the service user with restrictive umask.
+    # nice -n 10 lowers CPU priority so sync doesn't starve the desktop.
+    su -m "${syncthing_userdoc_user}" -c "
+        umask 007
+        export HOME=/home/${syncthing_userdoc_user}
+        cd /home/${syncthing_userdoc_user}
+        nice -n 10 ${command} ${command_args} >/home/${syncthing_userdoc_user}/syncthing.log 2>&1 &
+    "
+}
+
+syncthing_userdoc_stop() {
+    echo "Stopping Syncthing for ${syncthing_userdoc_user}..."
+    pkill -u "${syncthing_userdoc_user}" -x syncthing 2>/dev/null
+    echo "Syncthing stopped."
+}
+
+run_rc_command "$1"

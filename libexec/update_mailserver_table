@@ -1,4 +1,3 @@
-#!/bin/ksh
 # ==========================================================
 #  dropQbsd -- update_mailserver_table
 #
@@ -11,30 +10,70 @@
 #
 #  Path: /opt/dropQbsd/libexec/update_mailserver_table
 #  Permissions: chmod 700, root:wheel
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/update_mailserver_table
+#    OR
+#    Upmailserver
 # ==========================================================
 
-LOCAL_CONF="/etc/dropQbsd/local.conf"
 PF_TABLE="mailserver"
+LOCAL_CONF="/etc/dropQbsd/local.conf"
+LOGFILE="/var/log/dropQbsd/update_mailserver_table.log"
 
-HOSTS=$(grep -A3 'mailserver' "$LOCAL_CONF" | grep 'hosts' | head -1 | sed 's/.*= *//')
+log() {
+    msg="$1"
+    echo "$msg"
+    echo "$(date '+%F %T')  $msg" >> "$LOGFILE"
+}
 
-if [ -z "$HOSTS" ]; then
-    echo "Error: no hosts found in $LOCAL_CONF [mailserver] section." >&2
-    exit 1
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Must run as root." >&2
+    exit 2
 fi
 
+#-----------------------------------------------------------------------------
+# Parse [mailserver] section, key "hosts".
+#-----------------------------------------------------------------------------
+HOSTS=$(awk '
+    $0 == "[mailserver]" { s=1; next }
+    $0 ~ /^[[]/          { s=0 }
+    s && $0 ~ /^hosts[[:space:]]*=/ {
+        sub(/^hosts[[:space:]]*=[[:space:]]*/, "")
+        print
+        exit
+    }
+' "$LOCAL_CONF")
+
+if [ -z "$HOSTS" ]; then
+    log "No hosts configured in [mailserver] section; nothing to do."
+    exit 0
+fi
+
+#-----------------------------------------------------------------------------
+# Resolve each hostname via userweb DNS.
+#-----------------------------------------------------------------------------
 RESOLVED=""
 for host in $HOSTS; do
-    result=$(su -l userweb -c "host $host 2>/dev/null" | sed -n 's/.* has address //p' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+    result=$(su -l userweb -c "host $host 2>/dev/null" \
+        | sed -n 's/.* has address //p' \
+        | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
     RESOLVED="$RESOLVED $result"
 done
 
-RESOLVED=$(echo "$RESOLVED" | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -u)
+RESOLVED=$(echo "$RESOLVED" | tr ' ' '\n' \
+    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' \
+    | sort -u)
 
+#-----------------------------------------------------------------------------
+# Apply to the PF table and log the result.
+#-----------------------------------------------------------------------------
 if [ -n "$RESOLVED" ]; then
-    echo "$RESOLVED" | pfctl -t "$PF_TABLE" -T replace -f -
-    logger -t dropQbsd "mailserver table updated: $(echo "$RESOLVED" | wc -l | tr -d ' ') IPs"
+    OUT=$(echo "$RESOLVED" | pfctl -t "$PF_TABLE" -T replace -f - 2>&1)
+    log "$OUT"
+    log "mailserver table updated: $(echo "$RESOLVED" | wc -l | tr -d ' ') IPs"
 else
-    echo "Warning: no IPs resolved." >&2
+    log "Warning: no IPs resolved for $PF_TABLE."
 fi
-

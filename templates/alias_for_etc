@@ -1,0 +1,77 @@
+# ==========================================================
+#  dropQbsd -- alias_for_etc
+#
+#  Static alias definitions for dropQbsd.
+#  Every alias starts with a capital letter and points to
+#  the dropQbsd entry point for the corresponding script:
+#    - scripts in admin/, libexec/ and sbin/ are invoked
+#      through libexec/wrapper (shell selection + environment
+#      sanitization);
+#    - run_app (bin/) is a setuid binary and is invoked
+#      directly -- it does not need the wrapper.
+#
+#  Installation:
+#    1. Copy this file to /etc/dropQbsd/alias
+#    2. Set ownership and permissions:
+#         chown root:wheel /etc/dropQbsd/alias
+#         chmod 644 /etc/dropQbsd/alias
+#    3. Ensure it is sourced by the shell chain
+#       (/etc/dropQbsd/kshrc sources it automatically).
+#
+#  Usage:
+#    . /etc/dropQbsd/alias
+#
+#  Notes:
+#    - This file MUST be sourced (not executed) to define aliases.
+#    - Aliases are for INTERACTIVE use only: the shell reads $ENV
+#      only for interactive shells. Internal dropQbsd scripts use
+#      absolute paths, never aliases.
+#    - The file is loaded once per interactive session by
+#      /etc/dropQbsd/kshrc.
+# ==========================================================
+
+# --- Admin  ---
+alias Gen="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/gen_fwall"
+alias Patch="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/patch_tru_fwall"
+alias Pkg="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/pkg_tru_fwall"
+alias Update="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/update_tru_fwall"
+alias Upgrade="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/upgrade_tru_fwall"
+
+# --- Bin ---
+alias Run="/opt/dropQbsd/bin/run_app"
+
+# --- Libexec ---
+alias Endrop="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/enforce_drop"
+alias Ensync="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/enforce_sync"
+alias Enupdates="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/ensure_updates_table"
+alias Exmail="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/export_mail_to_drop"
+alias Exwww="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/export_www_to_drop"
+alias Immail="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/import_mail_from_drop"
+alias Imwww="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/import_www_from_drop"
+alias Upmailserver="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/update_mailserver_table"
+alias Upservices="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/update_services_table"
+alias Verify="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/verify_integrity"
+alias Wrapper="/opt/dropQbsd/libexec/wrapper"
+
+# --- Sbin ---
+alias Control="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/control_panel"
+alias File="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/file_bridge"
+alias Indicator="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/indicator_de"
+alias Qcp="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qcp"
+alias Qimport="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qimport"
+alias Qmv="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qmv"
+alias Site="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/site_menu"
+alias Xtroot="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_root"
+alias Xtuser="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_user"
+alias Xtuserdoc="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_userdoc"
+alias Xtusermail="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_usermail"
+alias Xtuserweb="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_userweb"
+
+
+
+
+
+
+
+
+

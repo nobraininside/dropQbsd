@@ -1,0 +1,35 @@
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
+SHELL=/bin/sh
+HOME=/root
+
+# --- dropQbsd: drop zone and sync enforcement ---
+*       *       *       *       *       /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/enforce_drop
+*       *       *       *       *       /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/enforce_sync
+
+# --- dropQbsd: PF table updates ---
+*/15    *       *       *       *       /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/update_mailserver_table
+*/5     *       *       *       *       /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/update_services_table
+
+# --- dropQbsd: integrity verification ---
+*/5     *       *       *       *       /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/verify_integrity
+
+# --- dropQbsd: mail archival (daily at 20:10) ---
+# Export can take 90+ minutes on large mailboxes (40+ GB). The
+# export/import pair is race-free by construction (atomic publish:
+# .tmp + rename; importers only match *.tar.gz), so the 23:10 import
+# either finds the complete archive or finds nothing (and exits 0) --
+# the next run imports it. See INSTALL.md.
+10      20      *       *       *       su -l usermail -c '/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/export_mail_to_drop > /dev/null 2>&1'
+
+# --- dropQbsd: mail import (daily at 23:10) ---
+10      23      *       *       *       su -l userdoc -c '/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/import_mail_from_drop > /dev/null 2>&1'
+
+# --- dropQbsd: www archival (every 2 hours at :00, 08:00-20:00) ---
+# Race-free by construction: exporters publish atomically (.tmp +
+# rename), importers only match *.tar.gz. If a copy runs long, that
+# slot's import finds nothing and exits 0; the next slot imports
+# the complete archive. See INSTALL.md.
+0       8,10,12,14,16,18,20 * * *     su -l userweb -c '/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/export_www_to_drop > /dev/null 2>&1'
+
+# --- dropQbsd: www import (15 min after each export) ---
+15      8,10,12,14,16,18,20 * * *     su -l userdoc -c '/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/import_www_from_drop > /dev/null 2>&1'

@@ -1,0 +1,136 @@
+# ==========================================================
+#  dropQbsd -- file_bridge
+#
+#  tmux-based 4-quadrant bridge. control_panel top-left,
+#  nnn instances for userdoc (green), usermail (orchid),
+#  userweb (blue) in the other three quadrants. NNN_COLORS
+#  set per-domain via run_app args (the setuid wrapper
+#  clears the environment, so NNN_* must travel as argv).
+#  Status bar + active pane border follow domain.
+#
+#  F1+F2+F3+F4: jump to quadrant. F5: kill session.
+#
+#  NOTE ON KEY BINDINGS:
+#    The F1-F5 bindings are installed in tmux's ROOT key table,
+#    i.e. they are global to the tmux server. While file_bridge
+#    is running, F1-F5 are captured in every tmux session on this
+#    machine. This is intentional: file_bridge is meant to be the
+#    only tmux session in use, and single-keystroke quadrant
+#    switching is part of its value. If you run other tmux
+#    sessions, expect their F1-F5 to be overridden.
+#
+#  Path: /opt/dropQbsd/sbin/file_bridge
+#  Permissions: chmod 755, root:wheel
+#
+#  Requirements: tmux, nnn, control_panel,
+#                nnn plugins: c, m, i
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/file_bridge
+#    OR
+#    File
+# ==========================================================
+
+SESSION="file_bridge"
+
+# -- Force-start the tmux server (FreeBSD: the socket doesn't
+#    exist until a server is active) ---------------------------
+tmux start-server 2>/dev/null
+
+# -- Teardown existing session ------------------------------
+tmux kill-session -t "$SESSION" 2>/dev/null || true
+sleep 0.3
+
+# -- Per-domain NNN variables (travel as argv) --------------
+NNN_PLUG_ARG="c:nnnqcp;m:nnnqmv;i:nnnqimport"
+
+DOC_BMS="h:/home/userdoc;d:/home/drop;D:/home/userdoc/Downloads"
+WEB_BMS="h:/home/userweb;d:/home/drop;D:/home/userweb/Downloads"
+MAIL_BMS="h:/home/usermail;d:/home/drop;D:/home/usermail/Downloads"
+
+# -- Pane 0: top-left, control_panel -----------------------
+tmux new-session -d -s "$SESSION" -n 'bridge' \
+    "/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/control_panel"
+tmux select-pane -t "$SESSION:0.0" -T "control"
+
+# -- Pane 1: top-right, userdoc (green) ---------------------
+tmux split-window -h -t "$SESSION:0.0" \
+    "/opt/dropQbsd/bin/run_app userdoc NNN_COLORS=2222 NNN_PLUG='$NNN_PLUG_ARG' NNN_BMS='$DOC_BMS' env TERM=tmux nnn -H /home/userdoc"
+tmux select-pane -t "$SESSION:0.1" -T "userdoc"
+
+# -- Pane 2: bottom-right, usermail (orchid) -------------------
+tmux split-window -v -t "$SESSION:0.1" \
+    "/opt/dropQbsd/bin/run_app usermail NNN_COLORS=5555 NNN_PLUG='$NNN_PLUG_ARG' NNN_BMS='$MAIL_BMS' env TERM=tmux nnn -H /home/usermail"
+tmux select-pane -t "$SESSION:0.2" -T "usermail"
+
+# -- Pane 3: bottom-left, userweb (blue) -----------------
+tmux split-window -h -t "$SESSION:0.2" \
+    "/opt/dropQbsd/bin/run_app userweb NNN_COLORS=6666 NNN_PLUG='$NNN_PLUG_ARG' NNN_BMS='$WEB_BMS' env TERM=tmux nnn -H /home/userweb"
+tmux select-pane -t "$SESSION:0.3" -T "userweb"
+
+# -- Even layout --------------------------------------------
+tmux select-layout -t "$SESSION" tiled
+tmux set-hook -t "$SESSION" client-resized "select-layout -t '$SESSION' tiled"
+
+# -- Status bar ---------------------------------------------
+tmux set-option -t "$SESSION" status-right ' %Y-%m-%d %H:%M '
+tmux set-option -t "$SESSION" window-status-format ''
+tmux set-option -t "$SESSION" window-status-current-format ''
+
+# -- Keyboard bindings --------------------------------------
+tmux bind-key -T root F1 select-pane -t "$SESSION:0.0"
+tmux bind-key -T root F2 select-pane -t "$SESSION:0.1"
+tmux bind-key -T root F3 select-pane -t "$SESSION:0.2"
+tmux bind-key -T root F4 select-pane -t "$SESSION:0.3"
+tmux bind-key -T root F5 kill-session -t "$SESSION"
+
+# -- Background watcher --------------------------------------
+# -- Background watcher (subshell: no file, no race, no /tmp) --
+(
+  while tmux has-session -t "$SESSION" 2>/dev/null; do
+    title=$(tmux list-panes -t "$SESSION" -F '#{?pane_active,#{pane_title},}' 2>/dev/null | grep -v '^$')
+    case "$title" in
+        userdoc)  bg='colour2'; border='fg=colour2,bright'; label=' userdoc ' ;;
+        usermail) bg='colour5'; border='fg=colour5,bright'; label=' usermail ' ;;
+        userweb)  bg='colour6'; border='fg=colour6,bright'; label=' userweb ' ;;
+        control)  bg='colour0'; border='fg=colour8,bright'; label=' control ' ;;
+        *)        bg='colour8'; border='fg=colour7';        label=' -- ' ;;
+    esac
+    tmux set-option -q -t "$SESSION" status-left "$label" 2>/dev/null
+    tmux set-option -q -t "$SESSION" status-style "fg=colour7,bg=$bg" 2>/dev/null
+    tmux set-option -q -w -t "$SESSION" pane-active-border-style "$border" 2>/dev/null
+    tmux set-option -q -w -t "$SESSION" pane-border-style 'fg=colour8' 2>/dev/null
+    sleep 0.3
+  done
+) &
+WATCHER_PID=$!
+
+# -- Cleanup -------------------------------------------------
+cleanup() {
+    tmux kill-session -t "$SESSION" 2>/dev/null
+
+    # Graceful first: SIGTERM to nnn instances (exact name match, not -f)
+    for user in userdoc usermail userweb; do
+        pkill -TERM -u "$user" -x nnn 2>/dev/null
+    done
+
+    # Grace period, then escalate to SIGKILL for survivors only
+    n=0
+    while [ "$n" -lt 5 ] && pgrep -u userdoc,usermail,userweb -x nnn >/dev/null 2>&1; do
+        sleep 0.2
+        n=$((n + 1))
+    done
+    for user in userdoc usermail userweb; do
+        pkill -KILL -u "$user" -x nnn 2>/dev/null
+    done
+
+    kill "$WATCHER_PID" 2>/dev/null
+    exit 0
+}
+trap cleanup EXIT INT TERM HUP
+
+# -- Attach -------------------------------------------------
+tmux attach-session -t "$SESSION"
+

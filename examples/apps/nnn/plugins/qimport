@@ -1,0 +1,7 @@
+#!/bin/sh
+for f in "$@"; do
+    case "$f" in
+        /*) nohup /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qimport "$f" >/dev/null 2>&1 & ;;
+        *)  nohup /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qimport "/home/drop/$f" >/dev/null 2>&1 & ;;
+    esac
+done

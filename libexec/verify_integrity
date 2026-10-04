@@ -1,58 +1,120 @@
-#!/bin/ksh
 # ==========================================================
 #  dropQbsd -- verify_integrity
 #
-#  Checks the integrity of critical dropQbsd scripts AND
-#  policy files using signify(1).
+#  Cryptographically verifies that critical scripts have not
+#  been tampered with, using signify(1). Runs every 5 minutes
+#  via cron as root.
 #
-#  Setup (one-time, private key kept offline):
-#    cd /opt/dropQbsd
-#    signify -G -n -p keys/dropQbsd.pub -s /root/dropQbsd.sec
-#    sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport \
-#           libexec/enforce_drop libexec/enforce_sync \
-#           libexec/gen_firewall \
-#           libexec/update_mailserver_table \
-#           libexec/update_services_table \
-#           libexec/ensure_updates_table \
-#           /etc/dropQbsd/domains.conf \
-#           /etc/dropQbsd/local.conf \
-#           /etc/dropQbsd/schema \
-#      | signify -S -s /root/dropQbsd.sec -m - \
-#          -x keys/dropQbsd_scripts.sha256.sig
-#    rm /root/dropQbsd.sec
+#  How it works:
+#    1. Reads /etc/dropQbsd/filelist (paths relative to
+#       /opt/dropQbsd, or absolute for /etc/dropQbsd files).
+#    2. sha256 each file in the list.
+#    3. Verify the resulting manifest against the detached
+#       signature keys/dropQbsd_scripts.sha256.sig using
+#       the PUBLIC key keys/dropQbsd.pub.
+#
+#  Key policy (v0.3.0):
+#    The private key /root/dropQbsd.sec is PASSPHRASE-
+#    ENCRYPTED on disk (signify -G -e). It is NOT plaintext
+#    and NOT offline: it stays in /root/ because this script
+#    never needs it -- verification is public-key only
+#    (signify -V). The private key is used ONLY during the
+#    rare interactive re-sign after a monitored file changes
+#    (see INSTALL.md, "Integrity Verification").
+#
+#    The passphrase lives ONLY in the operator's head or in
+#    a vault on ANOTHER device -- never on this disk.
+#
+#    Plaintext private keys on this disk are NOT acceptable:
+#    an attacker who can read one can re-sign their own
+#    tampering, and the verification becomes theater.
+#
+#    An offline key is an acceptable alternative: see
+#    INSTALL.md, "Integrity Verification", option 2.
+#
+#  This script is NOT in the filelist. It is the trust
+#  anchor: the file that checks the others cannot itself be
+#  checked by them. It is protected by the signature over
+#  the public key and by the private-key policy above.
 #
 #  Path: /opt/dropQbsd/libexec/verify_integrity
 #  Permissions: chmod 700, root:wheel
 #
-#  Cron: */5 * * * * /opt/dropQbsd/libexec/verify_integrity
+#  Cron: */5 * * * * /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/verify_integrity
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/verify_integrity
+#    OR
+#    Verify
 # ==========================================================
+
 
 PUBKEY="/opt/dropQbsd/keys/dropQbsd.pub"
 CHECKSUM_FILE="/opt/dropQbsd/keys/dropQbsd_scripts.sha256.sig"
-LOG="/var/log/dropQbsd_integrity.log"
-TMP="/tmp/verify_integrity_$$"
+FILELIST="/etc/dropQbsd/filelist"
+LOG="/var/log/dropQbsd/verify_integrity.log"
 
-cd /opt/dropQbsd || exit 1
+stamp() { date '+%Y-%m-%d %H:%M:%S'; }
 
-sha256 \
-    libexec/run_app_impl bin/qmv bin/qcp bin/qimport \
-    libexec/enforce_drop libexec/enforce_sync \
-    libexec/gen_firewall \
-    libexec/update_mailserver_table \
-    libexec/update_services_table \
-    libexec/ensure_updates_table \
-    /etc/dropQbsd/domains.conf \
-    /etc/dropQbsd/local.conf \
-    /etc/dropQbsd/schema \
-    > "$TMP" 2>&1
+# report: write a message to the terminal AND the log.
+# Interactive invocations (alias "Verify") get immediate feedback;
+# cron runs get the same line in the log (stdout from cron is discarded).
+# "report err MSG" writes the failure to stderr as well, so it stays
+# visible even when stdout is redirected.
+report() {
+    if [ "$1" = "err" ]; then
+        shift
+        printf '%s: %s\n' "$(stamp)" "$*" >&2
+        printf '%s: %s\n' "$(stamp)" "$*" >> "$LOG"
+    else
+        printf '%s: %s\n' "$(stamp)" "$*"
+        printf '%s: %s\n' "$(stamp)" "$*" >> "$LOG"
+    fi
+}
+
+cd /opt/dropQbsd || { report err "CANNOT cd /opt/dropQbsd"; exit 1; }
+
+# --- Setup sanity: distinguish "not configured" from "tampered" -----
+for f in "$FILELIST" "$PUBKEY" "$CHECKSUM_FILE"; do
+    if [ ! -r "$f" ]; then
+        report err "SETUP INCOMPLETE - missing $f"
+        exit 1
+    fi
+done
+
+TMP=$(mktemp /tmp/verify_integrity.XXXXXX) || exit 1
+trap 'rm -f "$TMP"' EXIT INT TERM
+
+# --- Build the file list ---------------------------------------------
+# Empty filelist would verify the wrong thing: fail loudly instead.
+FILES=$(cat "$FILELIST")
+if [ -z "$FILES" ]; then
+    report err "FILELIST EMPTY - $FILELIST"
+    exit 1
+fi
+
+# --- Verify every listed file exists BEFORE hashing ------------------
+for f in $FILES; do
+    if [ ! -f "$f" ]; then
+        report err "MISSING FILE $f"
+        exit 1
+    fi
+done
+
+sha256 $FILES > "$TMP" 2>&1
+
 
 OUTPUT=$(signify -V -p "$PUBKEY" -x "$CHECKSUM_FILE" -m "$TMP" 2>&1)
 RET=$?
-rm -f "$TMP"
 
 if [ $RET -eq 0 ]; then
-    printf '%s: OK\n' "$(date)" >> "$LOG"
+    report "OK - all monitored files verified against the signature"
 else
-    printf '%s: INTEGRITY VIOLATION\n' "$(date)" >> "$LOG"
+    report err "INTEGRITY VIOLATION - see $LOG for details"
     printf '%s\n' "$OUTPUT" >> "$LOG"
 fi
+
+

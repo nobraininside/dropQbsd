@@ -1,0 +1,294 @@
+# ======================================================
+#  dropQbsd -- update_tru_fwall
+#
+#  Full system update through restrictive PF.
+#
+#  OpenBSD:
+#    1. syspatch (system patches)
+#    2. fw_update (firmware)
+#    3. pkg_add -u (packages)
+#    4. pkg_delete -a (orphans)
+#
+#  FreeBSD (traditional):
+#    1. freebsd-update --not-tty fetch install (system patches)
+#    2. (firmware handled by pkg/freebsd-update)
+#    3. pkg upgrade -y (packages)
+#    4. pkg autoremove -y (orphans)
+#
+#  FreeBSD (PkgBase):
+#    1-3. pkg upgrade -y (base + packages together)
+#    4. pkg autoremove -y (orphans)
+#
+#  Path: /opt/dropQbsd/admin/update_tru_fwall
+#  Permissions: chmod 700, root:wheel
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/update_tru_fwall
+#    OR
+#    Update
+#
+#  Note: This does NOT perform a release upgrade.
+#        For release upgrades, run upgrade_tru_fwall.
+# ==========================================================
+
+ENSURE_SCRIPT="/opt/dropQbsd/libexec/ensure_updates_table"
+UPD_MAILSERV="/opt/dropQbsd/libexec/update_mailserver_table"
+UPD_SERVICES="/opt/dropQbsd/libexec/update_services_table"
+LOGFILE="/var/log/dropQbsd/update_tru_fwall.log"
+FLUSH_ON_EXIT=1
+DNS_RULES_ADDED=0
+CLEANED=0
+
+#-----------------------------------------------------------------------------
+# LOG FUNCTION
+#-----------------------------------------------------------------------------
+log() {
+    msg="$1"
+    # Skip empty/whitespace-only messages: tools like pkg_delete -a emit a
+    # bare newline when there is nothing to do, which would log a
+    # timestamp-only line ("2026-10-04 12:42:02") with no content.
+    echo "$msg" | grep -q '^[[:space:]]*$' && return
+    echo "$msg"
+    echo "$(date '+%F %T')  $msg" >> "$LOGFILE"
+}
+
+#-----------------------------------------------------------------------------
+# PRIVILEGE CHECK
+#-----------------------------------------------------------------------------
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Must run as root." >&2
+    exit 2
+fi
+
+#-----------------------------------------------------------------------------
+# DEPENDENCY CHECKS
+#-----------------------------------------------------------------------------
+if [ ! -x "$ENSURE_SCRIPT" ]; then
+    echo "FATAL: $ENSURE_SCRIPT not found or not executable." >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# DETECT OS AND UPDATE MECHANISM
+#-----------------------------------------------------------------------------
+OS=$(uname -s)
+PKGBASE=0
+if [ "$OS" = "FreeBSD" ]; then
+    if pkg info -e FreeBSD-runtime >/dev/null 2>&1; then
+        PKGBASE=1
+        LOCK_PROC="pkg"
+    else
+        LOCK_PROC="freebsd-update"
+    fi
+else
+    LOCK_PROC="syspatch"
+fi
+
+#-----------------------------------------------------------------------------
+# CONCURRENCY CHECK — one update operation at a time.
+# Run BEFORE touching pf: never open the network window for a doomed run.
+#-----------------------------------------------------------------------------
+BUSY=$(pgrep -x "$LOCK_PROC")
+[ -z "$BUSY" ] && BUSY=$(pgrep -x pkg 2>/dev/null)
+if [ -n "$BUSY" ]; then
+    echo "Another update/package operation is running (pid: $(echo $BUSY | tr '\n' ' '))." >&2
+    echo "Kill it or wait, then retry." >&2
+    exit 3
+fi
+
+#-----------------------------------------------------------------------------
+# TEMPORARY DNS + HTTP/S ACCESS FOR ROOT
+#
+# The pass rules are PREPENDED, not appended: a block ... quick rule
+# in the main ruleset would shadow rules placed at the bottom.
+# No interface qualifier: the default route's interface may not match
+# every flow (IPv6, aliases).
+#-----------------------------------------------------------------------------
+grant_dns() {
+    TMP_PF="/tmp/pf.dropQbsd.$$"
+    {
+        echo "pass out quick proto { udp tcp } from any to any port 53"
+        echo "pass out quick proto tcp from any to any port { 80 443 } flags S/SA"
+        cat /etc/pf.conf
+    } > "$TMP_PF"
+
+    if ! pfctl -nf "$TMP_PF"; then
+        log "FATAL: temporary ruleset failed syntax check."
+        rm -f "$TMP_PF"
+        exit 1
+    fi
+    if ! pfctl -f "$TMP_PF"; then
+        log "FATAL: pfctl failed to load the temporary ruleset."
+        rm -f "$TMP_PF"
+        exit 1
+    fi
+    rm -f "$TMP_PF"
+    DNS_RULES_ADDED=1
+
+    # pfctl -f empties <updates> (persist keeps the table defined,
+    # not its entries). Repopulate it before the update tools run.
+    "$ENSURE_SCRIPT"
+
+    log "Temporary DNS + HTTP/S access granted (will be removed after the run)."
+}
+
+#-----------------------------------------------------------------------------
+# RESTRICTIVE RULESET + TABLE RESTORATION
+#
+# pfctl -f empties ALL persistent tables, not just <updates>:
+# without repopulating <mailserver> and <services>, usermail and
+# userweb stay offline until their next cron cycle (up to 5 min).
+#-----------------------------------------------------------------------------
+revoke_dns() {
+    if [ "$DNS_RULES_ADDED" -eq 1 ]; then
+        pfctl -f /etc/pf.conf
+        DNS_RULES_ADDED=0
+        "$ENSURE_SCRIPT"
+        [ -x "$UPD_MAILSERV" ] && "$UPD_MAILSERV"
+        [ -x "$UPD_SERVICES" ] && "$UPD_SERVICES"
+        log "Temporary DNS access revoked; strict ruleset and tables restored."
+    fi
+}
+
+#-----------------------------------------------------------------------------
+# HEADER
+#-----------------------------------------------------------------------------
+log "=============================================="
+log "== dropQbsd SYSTEM UPDATE ($OS) ============="
+log "=============================================="
+
+#-----------------------------------------------------------------------------
+# CLEANUP — idempotent, runs on signals AND on exit
+#-----------------------------------------------------------------------------
+cleanup() {
+    [ "$CLEANED" -eq 1 ] && return
+    CLEANED=1
+    revoke_dns
+    if [ "$1" = "signal" ]; then
+        log "Update interrupted (signal received)."
+        log "Partial updates may have been applied. Re-run to complete."
+    fi
+    if [ "$FLUSH_ON_EXIT" -eq 1 ]; then
+        pfctl -t updates -T flush 2>/dev/null
+        log "<updates> table flushed."
+    fi
+}
+trap 'cleanup signal; exit 130' 2 15
+trap 'cleanup' 0
+
+#-----------------------------------------------------------------------------
+log "Step 1: Preparing PF table for updates..."
+"$ENSURE_SCRIPT" || exit $?
+
+#-----------------------------------------------------------------------------
+# 2. SYSTEM PATCHES + PACKAGES (branch by OS)
+#-----------------------------------------------------------------------------
+grant_dns
+
+if [ "$OS" = "FreeBSD" ] && [ "$PKGBASE" -eq 1 ]; then
+    # --- PkgBase: base + packages update together ---
+    log "Step 2: Updating base + packages (pkg upgrade, PkgBase)..."
+    OUT=$(pkg upgrade -y 2>&1)
+    RC_PKG=$?
+    RC_SP=$RC_PKG
+    RC_FW=0
+    log "$OUT"
+    log "  pkg upgrade: exit code $RC_PKG"
+
+    log "Step 3: Cleaning orphans (pkg autoremove)..."
+    OUT=$(pkg autoremove -y 2>&1)
+    RC_ORPHAN=$?
+    log "$OUT"
+    log "  pkg autoremove: exit code $RC_ORPHAN"
+
+elif [ "$OS" = "FreeBSD" ]; then
+    # --- Traditional FreeBSD. --not-tty: no tty inside $(). ---
+    log "Step 2: System patches (freebsd-update fetch install)..."
+    OUT=$(freebsd-update --not-tty fetch install 2>&1)
+    RC_SP=$?
+    log "$OUT"
+    log "  freebsd-update: exit code $RC_SP"
+
+    log "Step 3: Updating packages (pkg upgrade)..."
+    OUT=$(pkg upgrade -y 2>&1)
+    RC_PKG=$?
+    log "$OUT"
+    log "  pkg upgrade: exit code $RC_PKG"
+
+    log "Step 4: Cleaning orphans (pkg autoremove)..."
+    OUT=$(pkg autoremove -y 2>&1)
+    RC_ORPHAN=$?
+    log "$OUT"
+    log "  pkg autoremove: exit code $RC_ORPHAN"
+else
+    # --- OpenBSD ---
+    log "Step 2: System patches (syspatch)..."
+    OUT=$(syspatch 2>&1)
+    RC_SP=$?
+    log "$OUT"
+    if [ "$RC_SP" -eq 2 ]; then
+        # syspatch exits 2 when there is nothing to apply.
+        log "  syspatch: no patches to apply."
+        RC_SP=0
+    else
+        log "  syspatch: exit code $RC_SP"
+    fi
+
+    log "Step 3: Firmware (fw_update)..."
+    OUT=$(fw_update 2>&1)
+    RC_FW=$?
+    log "$OUT"
+    log "  fw_update: exit code $RC_FW"
+
+    log "Step 4: Packages (pkg_add -u)..."
+    OUT=$(pkg_add -u 2>&1)
+    RC_PKG=$?
+    log "$OUT"
+    if [ "$RC_PKG" -eq 1 ] && echo "$OUT" | grep -q "Couldn't find updates for"; then
+        # pkg_add -u exits 1 when some packages have no update.
+        log "  pkg_add -u: some packages have no update (not a failure)."
+        RC_PKG=0
+    else
+        log "  pkg_add -u: exit code $RC_PKG"
+    fi
+
+    log "Step 5: Orphans (pkg_delete -a)..."
+    OUT=$(pkg_delete -a 2>&1)
+    RC_ORPHAN=$?
+    log "$OUT"
+    log "  pkg_delete -a: exit code $RC_ORPHAN"
+fi
+
+revoke_dns
+
+#-----------------------------------------------------------------------------
+# SUMMARY
+#-----------------------------------------------------------------------------
+log "----------------------------------------------"
+log "Update complete ($OS)."
+if [ "$OS" = "OpenBSD" ]; then
+    log "  syspatch:    $RC_SP"
+    log "  fw_update:   $RC_FW"
+    log "  pkg_add -u:  $RC_PKG"
+elif [ "$PKGBASE" -eq 1 ]; then
+    log "  pkg upgrade: $RC_PKG"
+    log "  autoremove:  $RC_ORPHAN"
+else
+    log "  freebsd-update: $RC_SP"
+    log "  pkg upgrade:    $RC_PKG"
+    log "  autoremove:     $RC_ORPHAN"
+fi
+
+# Worst exit code across all steps, so the caller (alias/cron)
+# actually sees the failure.
+RC_WORST=0
+for rc in $RC_SP $RC_FW $RC_PKG $RC_ORPHAN; do
+    [ "$rc" -gt "$RC_WORST" ] && RC_WORST=$rc
+done
+
+log "Full log: $LOGFILE"
+log "----------------------------------------------"
+
+exit $RC_WORST

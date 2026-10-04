@@ -1,0 +1,174 @@
+# ==========================================================
+#  dropQbsd -- qimport
+#
+#  Imports a file or directory from /home/drop into the
+#  user's local storage (default: ~/Downloads).
+#
+#  Accepts:
+#    - Relative paths (auto-resolved inside /home/drop):
+#        qimport file2
+#        qimport folder1
+#    - Absolute paths (must be inside /home/drop):
+#        qimport /home/drop/folder1/file1
+#    - Optional destination:
+#        qimport file2 ~/Documents
+#
+#  Cleanup is handled by enforce_drop on its regular cycle.
+#
+#  v0.3.0 changes:
+#    - The wrapper sanitizes the environment: this script now
+#      rebuilds HOME and USER from the passwd database via
+#      real uid (set -u would abort on the unset variables).
+#      Identity comes from the kernel, not from the caller's
+#      environment.
+#
+#  SCOPE: one file or directory per invocation, plus an optional
+#  destination. Passing more is an error, not a batch operation.
+#  To import several files from nnn, select them and use the
+#  plugin (nnnqimport), which loops over the selection.
+#
+#  Path: /opt/dropQbsd/sbin/qimport
+#  Permissions: chmod 755, root:wheel
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qimport SOURCE [DIRECTORY]
+#    OR
+#    Qimport SOURCE [DIRECTORY]
+# ==========================================================
+
+set -eu
+
+#-----------------------------------------------------------------------------
+# IDENTITY: rebuild HOME and USER from passwd (wrapper unsets them)
+#-----------------------------------------------------------------------------
+UID_R=$(id -ru)
+USER=$(awk -F: -v u="$UID_R" '$3 == u {print $1; exit}' /etc/passwd)
+HOME=$(awk -F: -v u="$UID_R" '$3 == u {print $6; exit}' /etc/passwd)
+if [ -z "$USER" ] || [ -z "$HOME" ]; then
+    echo "Error: cannot resolve caller identity (uid $UID_R)." >&2
+    exit 1
+fi
+export HOME USER
+
+#-----------------------------------------------------------------------------
+# ARGUMENT CHECK
+#-----------------------------------------------------------------------------
+# One source, plus an optional destination. More than two
+# arguments is an error, not a batch operation: each invocation
+# is atomic and its verification unambiguous. To import several
+# files from nnn, select them and use the nnnqimport plugin,
+# which loops over the selection.
+if [ $# -lt 1 ]; then
+    echo "Usage: qimport <source> [destination]" >&2
+    exit 1
+fi
+
+if [ $# -gt 2 ]; then
+    echo "Error: qimport accepts at most two arguments." >&2
+    echo "       For multiple files, select them in nnn and press ;i." >&2
+    exit 1
+fi
+
+INPUT="$1"
+DEST="${2:-"$HOME/Downloads"}"
+
+#-----------------------------------------------------------------------------
+# RESOLVE SOURCE PATH INSIDE /home/drop
+#-----------------------------------------------------------------------------
+if [[ "$INPUT" = /* ]]; then
+    FILE_DROP="$INPUT"
+else
+    FILE_DROP="/home/drop/$INPUT"
+fi
+
+FILE_DROP=$(realpath "$FILE_DROP" 2>/dev/null) || FILE_DROP="$FILE_DROP"
+
+#-----------------------------------------------------------------------------
+# VALIDATE SOURCE IS INSIDE /home/drop
+#-----------------------------------------------------------------------------
+case "$FILE_DROP" in
+    /home/drop|/home/drop/*) ;;
+    *)
+        echo "Error: can only import files from the drop zone." >&2
+        echo "  Resolved path: $FILE_DROP" >&2
+        exit 1
+        ;;
+esac
+
+if [[ "$FILE_DROP" == "/home/drop" ]]; then
+    echo "Error: cannot import the entire drop zone." >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# VERIFY SOURCE EXISTS
+#-----------------------------------------------------------------------------
+if [[ ! -e "$FILE_DROP" ]]; then
+    echo "Error: '$FILE_DROP' not found in the drop zone." >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# VERIFY DESTINATION
+#-----------------------------------------------------------------------------
+if [[ ! -d "$DEST" ]]; then
+    echo "Error: destination '$DEST' does not exist." >&2
+    exit 1
+fi
+
+if [[ ! -w "$DEST" ]]; then
+    echo "Error: destination '$DEST' is not writable." >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# REFUSE TO OVERWRITE AN EXISTING ENTRY
+#-----------------------------------------------------------------------------
+# The drop zone is an exchange area: an entry may be imported more than
+# once, but silently replacing something already in the destination is
+# a data loss waiting to happen. Fail explicitly instead.
+FILENAME=$(basename "$FILE_DROP")
+TARGET="$DEST/$FILENAME"
+
+if [[ -e "$TARGET" ]]; then
+    echo "Error: '$FILENAME' already exists in $DEST." >&2
+    echo "       Remove it first, or choose another destination." >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# COPY FROM DROP ZONE TO DESTINATION
+#-----------------------------------------------------------------------------
+if ! cp -R "$FILE_DROP" "$DEST/"; then
+    echo "Error: copy failed." >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# VERIFY THE COPY SUCCEEDED
+#-----------------------------------------------------------------------------
+SRC_FILES=$(find "$FILE_DROP" -type f 2>/dev/null | wc -l | tr -d ' ')
+DST_FILES=$(find "$TARGET" -type f 2>/dev/null | wc -l | tr -d ' ')
+SRC_DIRS=$(find "$FILE_DROP" -type d 2>/dev/null | wc -l | tr -d ' ')
+DST_DIRS=$(find "$TARGET" -type d 2>/dev/null | wc -l | tr -d ' ')
+
+if [ "$SRC_FILES" -ne "$DST_FILES" ] || [ "$SRC_DIRS" -ne "$DST_DIRS" ]; then
+    echo "Error: copy verification failed (files: $SRC_FILES/$DST_FILES, dirs: $SRC_DIRS/$DST_DIRS)." >&2
+    rm -rf "$TARGET"
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# SET LOCAL PERMISSIONS
+#-----------------------------------------------------------------------------
+# -R does not follow symlinks by default on BSD (behaves as -P):
+# a symlink in the drop zone cannot cause chown to act on its target.
+chown -R "$USER:$USER" "$TARGET"
+find "$TARGET" -type d -exec chmod 700 {} +
+find "$TARGET" -type f -exec chmod 600 {} +
+
+echo "Imported: $TARGET"
+
+

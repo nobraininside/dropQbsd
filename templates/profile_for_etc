@@ -1,0 +1,58 @@
+# ==========================================================
+#  dropQbsd -- profile_for_etc
+#
+#  Global environment variables for the dropQbsd framework.
+#  Sourced by /etc/dropQbsd/kshrc.
+#
+#  Installation:
+#      cp /opt/dropQbsd/templates/profile_for_etc /etc/dropQbsd/profile
+#      chown root:wheel /etc/dropQbsd/profile
+#      chmod 644 /etc/dropQbsd/profile
+#
+#  Notes:
+#    - Variables ONLY. Shell options and prompt go in kshrc.
+#    - Idempotent: sourcing twice changes nothing.
+# ==========================================================
+
+# --- Core Directories ---
+export DROPQBSD_DIR="/opt/dropQbsd"
+export DROPQBSD_ETC="/etc/dropQbsd"
+export DROPQBSD_LOG="/var/log/dropQbsd"
+export DROPQBSD_RUN="/var/run/dropQbsd"
+
+# --- Path Configuration ---
+# bin/ for every user: run_app is setuid and safe to invoke directly.
+# sbin/ and libexec/ are NOT added: their scripts carry no shebang
+# and must be invoked through the wrapper (use the aliases).
+case ":$PATH:" in
+    *":$DROPQBSD_DIR/bin:"*) ;;
+    *) PATH="$PATH:$DROPQBSD_DIR/bin" ;;
+esac
+export PATH
+
+# admin/ is root-only (mode 700).
+if [ "$(id -u)" -eq 0 ]; then
+    case ":$PATH:" in
+        *":$DROPQBSD_DIR/admin:"*) ;;
+        *) PATH="$PATH:$DROPQBSD_DIR/admin" ;;
+    esac
+    export PATH
+fi
+
+# --- System-Specific Variables ---
+if [ "$(uname -s)" = "OpenBSD" ] || [ "$(uname -s)" = "FreeBSD" ]; then
+    export PF_RULES="/etc/pf.conf"
+fi
+
+# --- Editor ---
+export EDITOR="${EDITOR:-vi}"
+
+# --- Unfinished release upgrade notice ---
+# Written by upgrade_tru_fwall before the operator reboots; removed
+# manually once the post-reboot stages are complete.
+if [ -f /var/log/dropQbsd/upgrade_pending ]; then
+    echo ">>> dropQbsd: release upgrade PENDING -- the reboot has not"
+    echo ">>> been completed with the post-reboot install steps."
+    cat /var/log/dropQbsd/upgrade_pending
+    echo ">>> See /var/log/dropQbsd/upgrade_tru_fwall.log for the exact steps."
+fi

@@ -1,0 +1,55 @@
+# ==========================================================
+#  dropQbsd -- xterm_root
+#
+#  Opens an xterm hosting a root login shell (su -), with the
+#  dropQbsd admin color scheme (darkred background).
+#  Optionally accepts a command to run as root instead of an
+#  interactive shell.
+#
+#  v0.3.0 changes:
+#    - The wrapper sanitizes the environment: this script now
+#      DECLARES what it needs instead of inheriting it.
+#    - HOME rebuilt from passwd via real uid — the xterm (and
+#      its X11 cookie) belongs to the INVOKING user, not root:
+#      the su - happens INSIDE the terminal.
+#    - XAUTHORITY falls back to $HOME/.Xauthority when the
+#      session does not export it (xenodm keeps the cookie
+#      only in the canonical file).
+#    - Fail fast if xterm is not available.
+#
+#  Path: /opt/dropQbsd/sbin/xterm_root
+#  Permissions: chmod 755, root:wheel
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_root
+#    OR
+#    Xroot
+# ==========================================================
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/X11R6/bin:/usr/local/bin:/usr/local/sbin
+export PATH
+
+command -v xterm >/dev/null 2>&1 || { echo "xterm_root: xterm not in PATH" >&2; exit 1; }
+
+# HOME rebuilt from passwd via real uid (the wrapper unsets it).
+UID_R=$(id -ru)
+HOME=$(awk -F: -v u="$UID_R" '$3 == u {print $6; exit}' /etc/passwd)
+[ -z "$HOME" ] && { echo "xterm_root: cannot resolve home directory" >&2; exit 1; }
+export HOME
+
+# X11 cookie: canonical file when the session exports nothing.
+[ -z "$XAUTHORITY" ] && export XAUTHORITY="$HOME/.Xauthority"
+
+if [ $# -gt 0 ]; then
+    exec xterm -T "root" -bg darkred -fg white \
+        -fa monospace -fs 12 \
+        -u8 \
+        -e su - -c "$*"
+else
+    exec xterm -T "root" -bg darkred -fg white \
+        -fa monospace -fs 12 \
+        -u8 \
+        -e su -
+fi

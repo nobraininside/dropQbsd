@@ -1,0 +1,78 @@
+# ==========================================================
+#  dropQbsd -- build_run_app
+#
+#  Compiles src/run_app.c and restores ownership and the
+#  setuid bit on the resulting binary.
+#
+#  Compiling by hand creates a NEW file with the compiler's
+#  default mode: the setuid bit is lost on every rebuild.
+#  A binary without it fails at runtime with:
+#      dropQbsd: setuid(0) failed: Operation not permitted
+#  This script makes that mistake impossible.
+#
+#  Path: /opt/dropQbsd/admin/build_run_app
+#  Permissions: chmod 700, root:wheel
+#
+#  Usage (as root):
+#    /opt/dropQbsd/admin/build_run_app
+# ==========================================================
+
+set -eu
+
+SRC="/opt/dropQbsd/src/run_app.c"
+BIN="/opt/dropQbsd/bin/run_app"
+
+#-----------------------------------------------------------------------------
+# PRIVILEGE CHECK
+#-----------------------------------------------------------------------------
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Must run as root (chown and chmod 4755 require it)." >&2
+    exit 2
+fi
+
+#-----------------------------------------------------------------------------
+# SOURCE CHECK
+#-----------------------------------------------------------------------------
+if [ ! -f "$SRC" ]; then
+    echo "FATAL: source not found: $SRC" >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# COMPILE
+#-----------------------------------------------------------------------------
+# -static is MANDATORY: a dynamically linked setuid binary is
+# exposed to LD_PRELOAD-style injection before main() runs.
+echo "Compiling $SRC -> $BIN ..."
+cc -static -o "$BIN" "$SRC"
+
+#-----------------------------------------------------------------------------
+# RESTORE OWNERSHIP AND SETUID BIT
+#-----------------------------------------------------------------------------
+chown root:wheel "$BIN"
+chmod 4755 "$BIN"
+
+#-----------------------------------------------------------------------------
+# VERIFY
+#-----------------------------------------------------------------------------
+echo ""
+echo "Build OK:"
+ls -l "$BIN"
+
+# Confirm the setuid bit is present (mode 4755 -> -rwsr-xr-x)
+if [ ! -u "$BIN" ]; then
+    echo "WARNING: setuid bit not set on $BIN" >&2
+    exit 1
+fi
+
+# Confirm the binary is statically linked (no NEEDED entries)
+if command -v readelf >/dev/null 2>&1; then
+    if readelf -d "$BIN" 2>/dev/null | grep -q NEEDED; then
+        echo "WARNING: $BIN is dynamically linked." >&2
+        echo "         Check that -static was honoured by the compiler." >&2
+        exit 1
+    fi
+fi
+
+echo "OK: setuid bit present, statically linked."
+

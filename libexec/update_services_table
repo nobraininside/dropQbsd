@@ -1,4 +1,3 @@
-#!/bin/ksh
 # ==========================================================
 #  dropQbsd -- update_services_table
 #
@@ -8,32 +7,93 @@
 #
 #  Path: /opt/dropQbsd/libexec/update_services_table
 #  Permissions: chmod 700, root:wheel
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/update_services_table
+#    OR
+#    Upservices
 # ==========================================================
 
 LOCAL_CONF="/etc/dropQbsd/local.conf"
 PF_TABLE="services"
+LOGFILE="/var/log/dropQbsd/update_services_table.log"
 
-HOSTS=$(grep -A3 'services' "$LOCAL_CONF" | grep 'hosts' | head -1 | sed 's/.*= *//')
+log() {
+    msg="$1"
+    echo "$msg"
+    echo "$(date '+%F %T')  $msg" >> "$LOGFILE"
+}
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Must run as root." >&2
+    exit 2
+fi
+
+#-----------------------------------------------------------------------------
+# Parse [services] section, key "hosts".
+#
+# Uses awk instead of grep -A3 because the config file may contain
+# comments mentioning "services" or "hosts" before the real section.
+# The literal comparison $0 == "[services]" avoids backslash escapes,
+# which are easily corrupted by copy/paste.
+#-----------------------------------------------------------------------------
+HOSTS=$(awk '
+    $0 == "[services]" { s=1; next }
+    $0 ~ /^[[]/        { s=0 }
+    s && $0 ~ /^hosts[[:space:]]*=/ {
+        sub(/^hosts[[:space:]]*=[[:space:]]*/, "")
+        print
+        exit
+    }
+' "$LOCAL_CONF")
 
 if [ -z "$HOSTS" ]; then
+    log "No hosts configured in [services] section; nothing to do."
     exit 0
 fi
 
-pfctl -t "$PF_TABLE" -T flush 2>/dev/null
+#-----------------------------------------------------------------------------
+# Build the full list of IPs first, then apply in one shot.
+#
+# Static IPs are used as-is. Hostnames prefixed with @ are resolved via
+# userweb DNS (the only domain with DNS access). One su invocation per
+# hostname keeps stdin untouched and mirrors the working pattern used by
+# update_mailserver_table.
+#-----------------------------------------------------------------------------
+RESOLVED=""
 
 for entry in $HOSTS; do
     case "$entry" in
         @*)
             HOSTNAME="${entry#@}"
-            RESOLVED=$(su -l userweb -c "host $HOSTNAME 2>/dev/null" | sed -n 's/.* has address //p' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
-            if [ -n "$RESOLVED" ]; then
-                for ip in $RESOLVED; do
-                    pfctl -t "$PF_TABLE" -T add "$ip" 2>/dev/null
-                done
-            fi
+            ip=$(su -l userweb -c "host $HOSTNAME 2>/dev/null" \
+                | sed -n 's/.* has address //p' \
+                | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+            RESOLVED="$RESOLVED $ip"
             ;;
         *)
-            pfctl -t "$PF_TABLE" -T add "$entry" 2>/dev/null
+            RESOLVED="$RESOLVED $entry"
             ;;
     esac
 done
+
+# Normalize: one IP per line, keep only valid IPv4, deduplicate, sort.
+RESOLVED=$(echo "$RESOLVED" | tr ' ' '\n' \
+    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' \
+    | sort -u)
+
+#-----------------------------------------------------------------------------
+# Apply to the PF table and log the result.
+#
+# A single -T replace with a pre-validated list avoids the failure mode
+# where a flush followed by failed adds leaves the table empty.
+#-----------------------------------------------------------------------------
+if [ -n "$RESOLVED" ]; then
+    OUT=$(echo "$RESOLVED" | pfctl -t "$PF_TABLE" -T replace -f - 2>&1)
+    log "$OUT"
+    log "services table updated: $(echo "$RESOLVED" | wc -l | tr -d ' ') IPs"
+else
+    log "Warning: no IPs resolved for $PF_TABLE."
+fi

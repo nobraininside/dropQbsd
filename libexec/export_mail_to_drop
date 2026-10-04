@@ -1,4 +1,3 @@
-#!/bin/ksh
 # ==========================================================
 #  dropQbsd -- export_mail_to_drop
 #
@@ -13,7 +12,18 @@
 #  Path: /opt/dropQbsd/libexec/export_mail_to_drop
 #  Permissions: chmod 755, root:wheel
 #
-#  Usage: export_mail_to_drop (run as usermail)
+#  Usage: export_mail_to_drop [-v] (run as usermail)
+#    -v   Verbose output
+#
+#  Orphaned .tmp cleanup time is set in the CLEANUP section.
+#  Archive retention is handled by enforce_drop (cron).
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage (-v verbose output). Run as usermail:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/export_mail_to_drop [-v]
+#    OR
+#    Exmail [-v]
 # ==========================================================
 
 set -eu
@@ -23,12 +33,37 @@ SRC="/home/usermail/.mail"
 DST="/home/drop/usermail_export"
 
 #-----------------------------------------------------------------------------
+# VERBOSE FLAG
+#-----------------------------------------------------------------------------
+VERBOSE=0
+if [ "${1:-}" = "-v" ]; then
+    VERBOSE=1
+fi
+msg() {
+    if [ "$VERBOSE" -eq 1 ]; then
+        echo "[INFO] $*"
+    fi
+}
+
+#-----------------------------------------------------------------------------
+# GUARD: DOMAIN OWNER CHECK
+#-----------------------------------------------------------------------------
+# Refuse to run as the wrong user. The export targets a domain's
+# private directory, and mktemp would otherwise fail with a cryptic
+# "Permission denied" that hides the real mistake. Fail loudly instead.
+if [ "$(id -un)" != "usermail" ]; then
+    echo "[ERROR] This script must run as 'usermail'." >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
 # PRE-FLIGHT CHECKS
 #-----------------------------------------------------------------------------
 if [ ! -d "$SRC" ]; then
     echo "[ERROR] Source directory '$SRC' not found." >&2
     exit 1
 fi
+msg "Source OK: $SRC"
 
 #-----------------------------------------------------------------------------
 # DISK SPACE CHECK
@@ -37,6 +72,7 @@ if [ "$(df -P /home | awk 'NR==2 {print $5+0}')" -gt 90 ]; then
     echo "[ERROR] /home usage > 90%. Aborting." >&2
     exit 1
 fi
+msg "Disk usage OK"
 
 #-----------------------------------------------------------------------------
 # PREPARE DESTINATION
@@ -51,6 +87,7 @@ trap 'rm -rf "$TMPDIR"' EXIT INT TERM
 
 ARCHIVE="$TMPDIR/mail_$(date +%Y%m%d_%H%M%S).tar.gz"
 FILENAME=$(basename "$ARCHIVE")
+msg "Compressing: $ARCHIVE"
 nice -n 10 tar -czf "$ARCHIVE" -C "$SRC" .
 
 #-----------------------------------------------------------------------------
@@ -60,21 +97,27 @@ if ! tar -tzf "$ARCHIVE" >/dev/null 2>&1; then
     echo "[ERROR] Archive corrupt after compression." >&2
     exit 1
 fi
+msg "Archive integrity OK"
 
 #-----------------------------------------------------------------------------
-# TRANSFER TO DROP ZONE
+# TRANSFER TO DROP ZONE (atomic: no partial archive can ever be seen)
 #-----------------------------------------------------------------------------
+# Copy under a .tmp name INSIDE the drop zone, then rename. Same
+# filesystem => mv is rename(2), atomic. import_* scripts ignore
+# every *.tmp file, so an export in progress is invisible to them.
 # enforce_drop (cron, every 60s) will set the correct 440 permissions.
-# usermail cannot chmod here -- the export directory is root:drop.
-if ! cp "$ARCHIVE" "$DST/"; then
+if ! cp "$ARCHIVE" "$DST/$FILENAME.tmp"; then
     echo "[ERROR] Failed to copy archive to drop zone." >&2
     exit 1
 fi
+mv "$DST/$FILENAME.tmp" "$DST/$FILENAME"
+msg "Copied to drop zone (atomic rename)"
 
 #-----------------------------------------------------------------------------
-# ROTATE OLD ARCHIVES (> 2 hours)
+# CLEANUP: orphaned .tmp from a killed run of THIS script.
+# Archive retention lives in enforce_drop (single source of truth).
+# adjust time to your needs: "-mtime +1" for 1 day, "-mmin +60" for 60 minutes
 #-----------------------------------------------------------------------------
-find "$DST" -type f -name 'mail_*.tar.gz' -mmin +120 -delete 2>/dev/null
+find "$DST" -type f -name 'mail_*.tar.gz.tmp' -mmin +360 -delete 2>/dev/null
 
 echo "Export completed: $FILENAME"
-

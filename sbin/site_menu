@@ -1,0 +1,218 @@
+# ==========================================================
+#  dropQbsd -- site_menu
+#
+#  Two-phase login flow via OK button:
+#    1. Select site → OK = "Copy ID" → browser opens, ID
+#       copied to clipboard, window stays open.
+#    2. Same site pre-selected, others hidden → OK = "Copy
+#       Password" → password copied (30s timer), closes.
+#
+#  If GPG passphrase is expired, a warning dialog tells the
+#  user to unlock the keyring manually and retry.
+#
+#  Path: /opt/dropQbsd/sbin/site_menu
+#  Permissions: chmod 755, root:wheel
+#
+#  Requirements: zenity, pass, xclip, and a browser
+#
+#  sites.conf format:
+#    Label|URL|id_entry|pass_entry
+#    Bank (my_id)|https://bank.com|finance/bank_id|finance/bank_pw
+#    Gmail|https://mail.google.com||mail/gmail
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/site_menu
+#    OR
+#    Site
+# ==========================================================
+
+UID_R=$(id -ru)
+HOME=$(awk -F: -v u="$UID_R" '$3 == u {print $6; exit}' /etc/passwd)
+if [ -z "$HOME" ]; then
+    echo "Error: cannot resolve home directory (uid $UID_R)." >&2
+    exit 1
+fi
+export HOME
+
+CONF="$HOME/.config/dropQbsd/sites.conf"
+
+BROWSER="${BROWSER:-/usr/local/bin/ungoogled-chromium}"
+BROWSER_FLAGS="${BROWSER_FLAGS:---temp-profile}"
+RUN_APP="${RUN_APP:-/opt/dropQbsd/bin/run_app}"
+
+RUNDIR="$HOME/.cache/dropQbsd"
+mkdir -p "$RUNDIR"
+chmod 700 "$RUNDIR"
+
+CLIPBOARD_PID_FILE="$RUNDIR/clipboard_clear.pid"
+STATE_FILE="$RUNDIR/site_menu_state"
+PASS_CACHE="$RUNDIR/site_menu_cache"
+
+# -- Check dependencies -------------------------------------
+
+if ! command -v zenity >/dev/null 2>&1; then
+    echo "Error: zenity is required." >&2; exit 1
+fi
+if [[ ! -f "$CONF" ]]; then
+    echo "Error: $CONF not found." >&2; exit 1
+fi
+
+# -- Parse sites.conf ---------------------------------------
+
+cache_sites() {
+    > "$PASS_CACHE"
+    while IFS='|' read -r label url id_entry pass_entry; do
+        [[ "$label" == \#* ]] && continue
+        [[ -z "$label" ]] && continue
+        label=$(echo "$label" | sed 's/^ *//;s/ *$//')
+        url=$(echo "$url" | sed 's/^ *//;s/ *$//')
+        id_entry=$(echo "$id_entry" | sed 's/^ *//;s/ *$//')
+        pass_entry=$(echo "$pass_entry" | sed 's/^ *//;s/ *$//')
+        printf '%s|%s|%s|%s\n' "$label" "$url" "$id_entry" "$pass_entry" >> "$PASS_CACHE"
+    done < "$CONF"
+}
+
+lookup() {
+    local target="$1"
+    local field="$2"
+    while IFS='|' read -r label url id_entry pass_entry; do
+        if [[ "$label" == "$target" ]]; then
+            case "$field" in
+                url)        echo "$url" ;;
+                id_entry)   echo "$id_entry" ;;
+                pass_entry) echo "$pass_entry" ;;
+            esac
+            return
+        fi
+    done < "$PASS_CACHE"
+}
+
+build_menu() {
+    local filter="$1"
+    local menu=""
+    while IFS='|' read -r label url id_entry pass_entry; do
+        if [[ -n "$filter" && "$label" != "$filter" ]]; then
+            continue
+        fi
+        menu="${menu}${label}\n"
+    done < "$PASS_CACHE"
+    printf '%b' "$menu"
+}
+
+# -- Unlock GPG keyring -------------------------------------
+
+unlock_gpg() {
+    local entry="$1"
+
+    # Quick check with pinentry disabled — fails instantly if locked
+    if PASSWORD_STORE_GPG_OPTS="--pinentry-mode cancel --batch" \
+        pass show "$entry" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    # Keyring locked — tell user to unlock manually and retry
+    zenity --warning \
+        --title="dropQbsd — GPG Locked" \
+        --text="GPG keyring is locked.\n\nOpen an xterm and run:\n\n  pass ${entry}\n\nthen close the xterm and click the\nsame site again to retry." \
+        --ok-label="OK" \
+        --width=450 2>/dev/null
+
+    return 1
+}
+
+# -- Clipboard helpers --------------------------------------
+
+copy_id() {
+    local id_entry="$1"
+    [[ -z "$id_entry" ]] && return 0
+    command -v pass >/dev/null 2>&1 || return 0
+
+    unlock_gpg "$id_entry" || return 1
+
+    local id_value
+    id_value=$(pass show "$id_entry" 2>/dev/null | head -1)
+    if [[ -n "$id_value" ]]; then
+        printf '%s' "$id_value" | xclip -selection clipboard -i 2>/dev/null
+        return 0
+    fi
+    return 1
+}
+
+copy_pass() {
+    local pass_entry="$1"
+    [[ -z "$pass_entry" ]] && return 0
+    command -v pass >/dev/null 2>&1 || return 0
+
+    unlock_gpg "$pass_entry" || return 1
+
+    if [[ -f "$CLIPBOARD_PID_FILE" ]]; then
+        kill "$(cat "$CLIPBOARD_PID_FILE")" 2>/dev/null || true
+    fi
+
+    local pw_value
+    pw_value=$(pass show "$pass_entry" 2>/dev/null | head -1)
+    if [[ -n "$pw_value" ]]; then
+        printf '%s' "$pw_value" | xclip -selection clipboard -i 2>/dev/null
+        (
+            sleep 30
+            printf '' | xclip -selection clipboard -i 2>/dev/null
+            rm -f "$CLIPBOARD_PID_FILE"
+        ) &
+        echo $! > "$CLIPBOARD_PID_FILE"
+        return 0
+    fi
+    return 1
+}
+
+# -- Main loop ----------------------------------------------
+
+cache_sites
+
+while true; do
+    CURRENT_PHASE=""
+    [[ -f "$STATE_FILE" ]] && CURRENT_PHASE=$(cat "$STATE_FILE")
+
+    if [[ -n "$CURRENT_PHASE" ]]; then
+        MENU=$(build_menu "$CURRENT_PHASE")
+        BUTTON_LABEL="Copy Password"
+        ZENITY_TITLE="dropQbsd — Confirm Password"
+        ZENITY_TEXT="Click OK to copy password for:"
+    else
+        MENU=$(build_menu "")
+        BUTTON_LABEL="Copy ID"
+        ZENITY_TITLE="dropQbsd Sites"
+        ZENITY_TEXT="Select a site:"
+    fi
+
+    CHOSEN=$(printf '%b' "$MENU" | zenity --list \
+        --title="$ZENITY_TITLE" \
+        --text="$ZENITY_TEXT" \
+        --column="Site" \
+        --ok-label="$BUTTON_LABEL" \
+        --width=300 --height=400 2>/dev/null)
+
+    if [[ -z "$CHOSEN" ]]; then
+        rm -f "$STATE_FILE" "$PASS_CACHE"
+        exit 0
+    fi
+
+    if [[ "$CHOSEN" == "$CURRENT_PHASE" ]]; then
+        PASS_ENTRY=$(lookup "$CHOSEN" pass_entry)
+        if copy_pass "$PASS_ENTRY"; then
+            rm -f "$STATE_FILE" "$PASS_CACHE"
+            exit 0
+        fi
+    else
+        URL=$(lookup "$CHOSEN" url)
+        ID_ENTRY=$(lookup "$CHOSEN" id_entry)
+
+        if copy_id "$ID_ENTRY"; then
+            "$RUN_APP" --disposable userweb "$BROWSER" $BROWSER_FLAGS "$URL" &
+            disown
+            sleep 0.5
+            echo "$CHOSEN" > "$STATE_FILE"
+        fi
+    fi
+done

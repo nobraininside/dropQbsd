@@ -1,0 +1,29 @@
+# ==========================================================
+#  dropQbsd -- schema_for_etc
+#
+#  Lists the valid domains for this product
+#  (dropQbsd-desktop). One domain per line.
+#  Comments (#) are ignored.
+#
+#  Read by gen_fwall to know which domains to process.
+#  This file is PRODUCT IDENTITY, not local configuration:
+#  dropQbsd-desktop has 4 domains; dropQbsd-paired/server
+#  will have their own schema.
+#
+#  Installation:
+#      cp /opt/dropQbsd/templates/schema_for_etc /etc/dropQbsd/schema
+#      chown root:wheel /etc/dropQbsd/schema
+#      chmod 644 /etc/dropQbsd/schema
+#
+#  NOTE: "root" is intentionally absent. Root's network
+#  access (the <updates> table) is hardcoded in
+#  gen_fwall, not generated from this list.
+#
+#  Path: /etc/dropQbsd/schema
+#  Permissions: chmod 644, root:wheel
+# ==========================================================
+
+user
+userweb
+usermail
+userdoc

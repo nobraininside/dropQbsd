@@ -1,0 +1,17 @@
+[OPTIONS]
+textnumberforeground=Orange3
+width=476
+textfont=Sans,100,normal,regular
+tabcols=8
+linesnum=0
+textnumberbackground=Gray100
+hilitematchtime=3000
+hidestatus=0
+wordwrap=0
+height=546
+textforeground=Orange3
+textselbackground=#0a246a
+texthiliteforeground=Orange3
+textcursor=Orange3
+searchpath=
+texthilit

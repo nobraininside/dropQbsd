@@ -1,0 +1,31 @@
+#!/bin/sh
+# ==========================================================
+#  dropQbsd -- nnnqcp
+#
+#  nnn plugin: copy the selected file(s) into the drop zone.
+#  Invoked from nnn with ';c' (see NNN_PLUG in file_bridge).
+#
+#  Install:
+#      cp nnnqcp ~/.config/nnn/plugins/
+#      chmod +x ~/.config/nnn/plugins/nnnqcp
+#
+#  Notes:
+#    - Runs as the domain user (nnn runs inside the domain).
+#    - Loops over all selected files: nnn passes them as argv.
+#    - The whole loop runs in a subshell in the background, so nnn
+#      returns immediately without spawning one process per file.
+#    - Errors are appended to $HOME/.cache/dropQbsd/nnn_plugins.log
+#      instead of being discarded: a refused copy (destination
+#      exists) is visible to the user.
+# ==========================================================
+
+LOGDIR="$HOME/.cache/dropQbsd"
+LOGFILE="$LOGDIR/nnn_plugins.log"
+mkdir -p "$LOGDIR" 2>/dev/null
+
+(
+    for f in "$@"; do
+        /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qcp "$f" \
+            >>"$LOGFILE" 2>&1
+    done
+) &

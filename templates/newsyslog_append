@@ -1,0 +1,36 @@
+# ==========================================================
+#  dropQbsd -- newsyslog_append
+#
+#  APPEND these lines to /etc/newsyslog.conf to enable log rotation
+#  for dropQbsd components. DO NOT REPLACE /etc/newsyslog.conf!
+#
+#  Usage:
+#    1. Backup the original /etc/newsyslog.conf (STRONGLY RECOMMENDED):
+#         cp /etc/newsyslog.conf /etc/newsyslog.conf.bak
+#    2. Append this file to /etc/newsyslog.conf:
+#         cat /opt/dropQbsd/templates/newsyslog_append >> /etc/newsyslog.conf
+#    3. Verify syntax with a dry run:
+#         newsyslog -n
+#    4. Ensure /var/log/dropQbsd/ directory exists with correct permissions:
+#         mkdir -p /var/log/dropQbsd
+#         chown root:wheel /var/log/dropQbsd
+#         chmod 750 /var/log/dropQbsd
+#
+#  Notes:
+#    - This file contains ONLY the dropQbsd-specific log rotation rules.
+#    - The original /etc/newsyslog.conf (from FreeBSD/OpenBSD) must be preserved.
+#    - If you upgrade FreeBSD/OpenBSD, you may need to re-append this file
+#      after updating /etc/newsyslog.conf.
+# ==========================================================
+
+# dropQbsd logs
+/var/log/dropQbsd/enforce_drop.log             root:wheel   640  7     *     @T00  Z
+/var/log/dropQbsd/enforce_sync.log             root:wheel   640  7     *     @T00  Z
+/var/log/dropQbsd/ensure_updates_table.log     root:wheel   640  3     100   *     Z
+/var/log/dropQbsd/patch_tru_fwall.log          root:wheel   640  3     100   *     Z
+/var/log/dropQbsd/pkg_tru_fwall.log            root:wheel   640  3     100   *     Z
+/var/log/dropQbsd/update_mailserver_table.log  root:wheel   640  3     100   *     Z
+/var/log/dropQbsd/update_services_table.log    root:wheel   640  3     100   *     Z
+/var/log/dropQbsd/update_tru_fwall.log         root:wheel   640  3     100   *     Z
+/var/log/dropQbsd/upgrade_tru_fwall.log        root:wheel   640  3     100   *     Z
+/var/log/dropQbsd/verify_integrity.log         root:wheel   640  7     *     @T00  Z

@@ -1,0 +1,29 @@
+# ==========================================================
+#  dropQbsd -- profile_for_home
+#
+#  Per-user login shell stub. Installed as ~/.profile in the
+#  home of every dropQbsd user (user, userdoc, usermail,
+#  userweb) and root.
+#
+#  Installation:
+#      cp /opt/dropQbsd/templates/profile_for_home ~/.profile
+#      chown <user>:<user> ~/.profile
+#      chmod 644 ~/.profile
+#
+#  Coverage:
+#    Login shells only: text login (tty), su -, ssh, startx
+#    from a text console. Graphical sessions started by a
+#    display manager do NOT read ~/.profile -- see
+#    xprofile_for_home and xsession_for_home.
+#
+#  Notes:
+#    - This file is a STUB. All logic lives in
+#      /etc/dropQbsd/kshrc, which is idempotent.
+#    - This file MUST be sourced, not executed.
+# ==========================================================
+
+if [ -f /etc/dropQbsd/kshrc ]; then
+    . /etc/dropQbsd/kshrc
+fi
+
+

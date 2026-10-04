@@ -1,4 +1,3 @@
-#!/bin/ksh
 # ==========================================================
 #  dropQbsd -- enforce_drop
 #
@@ -20,35 +19,68 @@
 #  only -- this keeps the conductor (user) from needing
 #  write access to the drop zone.
 #
+#  v0.3.0 changes:
+#    - Exporters publish atomically (*.tmp + rename inside the
+#      drop zone): never touch a *.tmp file, it is a publish
+#      in progress.
+#    - Archive retention lives HERE only (single source of
+#      truth). Exporters clean their own orphaned .tmp files.
+#    - Quarantine entries age out (30 days).
+#    - stat guards: items vanishing mid-cycle are races, not
+#      errors -- no stderr noise from cron.
+#
 #  Path: /opt/dropQbsd/libexec/enforce_drop
 #  Permissions: chmod 700, root:wheel
 #
-#  Cron: * * * * * /opt/dropQbsd/libexec/enforce_drop
+#  Cron: * * * * * /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/enforce_drop
 #
 #  Note: OpenBSD ksh has no 'dotglob'. We iterate over
 #  both '*' and '.*' to catch dotfiles, skipping '.' and
 #  '..' explicitly.
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/enforce_drop
+#    OR
+#    Endrop
 # ==========================================================
 
 LOCKDIR="/var/run/enforce_drop.lock"
+LOCK_TTL=900   # seconds. A cycle takes seconds; an older lock is orphaned.
 
-# Clean up stale lock file from older script versions
+# Clean up stale lock FILE from v0.2.0 (which used a file, not a dir)
 if [ -f "$LOCKDIR" ]; then
     rm -f "$LOCKDIR"
 fi
 
-# Acquire non-blocking lock using mkdir (atomic on Unix)
+# Acquire non-blocking lock using mkdir (atomic on Unix).
 if ! mkdir "$LOCKDIR" 2>/dev/null; then
-    exit 0
+    # Lock exists: either a cycle is genuinely running (skip -- correct)
+    # or the lock is ORPHANED (SIGKILL / reboot mid-cycle left it behind,
+    # and every subsequent run would exit silently forever -- the
+    # v0.2.0 failure mode). Tell them apart by age: no cycle lasts
+    # minutes, so an old lock is garbage. Remove and RE-ACQUIRE (the
+    # rmdir+mkdir pair stays race-free: two concurrent reclaimers,
+    # one wins the mkdir, the other exits).
+    LOCK_AGE=$(( $(date +%s) - $(stat -f '%m' "$LOCKDIR" 2>/dev/null || echo 0) ))
+    if [ "$LOCK_AGE" -gt "$LOCK_TTL" ]; then
+        rmdir "$LOCKDIR" 2>/dev/null
+        mkdir "$LOCKDIR" 2>/dev/null || exit 0
+    else
+        exit 0
+    fi
 fi
 trap 'rmdir "$LOCKDIR"' EXIT
 
+
 DROP_DIR="/home/drop"
 QUARANTINE_DIR="$DROP_DIR/_quarantine"
-LOG_FILE="/var/log/dropQbsd_drop.log"
+LOG_FILE="/var/log/dropQbsd/enforce_drop.log"
 
 GRACE_MIN=2
 ABANDON_MIN=30
+QUARANTINE_MAX_DAYS=30
 
 #-----------------------------------------------------------------------------
 # READ THE GID OF THE 'drop' GROUP FROM /etc/group
@@ -67,15 +99,26 @@ mkdir -p "$QUARANTINE_DIR"
 chmod 750 "$QUARANTINE_DIR"
 
 #-----------------------------------------------------------------------------
+# QUARANTINE ROTATION
+#-----------------------------------------------------------------------------
+# Quarantine is not an archive: entries age out. Without this, an
+# attacker (or a misconfigured producer) flooding the drop zone with
+# wrong-GID files would grow the quarantine without limit.
+find "$QUARANTINE_DIR" -type f -mtime +$QUARANTINE_MAX_DAYS -delete 2>/dev/null
+
+#-----------------------------------------------------------------------------
 # CHANGE TO DROP DIRECTORY
 #-----------------------------------------------------------------------------
-cd "$DROP_DIR" || exit 1
+if ! cd "$DROP_DIR"; then
+    echo "$(date '+%F %T') FATAL: cannot cd to $DROP_DIR" >> "$LOG_FILE"
+    exit 1
+fi
 
 #-----------------------------------------------------------------------------
 # LOG FUNCTION
 #-----------------------------------------------------------------------------
 log() {
-    echo "$(date '+%F %T')  $1" >> "$LOG_FILE"
+    echo "$(date '+%F %T')  $*" >> "$LOG_FILE"
 }
 
 #-----------------------------------------------------------------------------
@@ -95,8 +138,12 @@ for item in * .*; do
 
     # Skip special directories
     [[ "$item" == "_quarantine" ]] && continue
-    [[ "$item" == "ISTRUZIONI.txt" ]] && continue
     [[ "$item" == *"_export" ]] && continue
+
+    # Skip qcp/qmv staging directories: they are private (700) and
+    # still in use. Changing their permissions would break the
+    # pending mv. Abandoned ones are collected below by age.
+    [[ "$item" == .staging.* ]] && continue
 
     #---------------------------------------------------------------------
     # 1a. GRACE PERIOD -- skip files younger than GRACE_MIN
@@ -105,18 +152,18 @@ for item in * .*; do
     # Use a single stat call instead of two find invocations.
     FILE_MTIME=$(stat -f '%m' "$item" 2>/dev/null)
     if [[ -n "$FILE_MTIME" ]]; then
-	NOW=$(date +%s)
-	AGE=$((NOW - FILE_MTIME))
+        NOW=$(date +%s)
+        AGE=$((NOW - FILE_MTIME))
 
-	if [ "$AGE" -lt $((GRACE_MIN * 60)) ]; then
-    	    continue
-	fi
+        if [ "$AGE" -lt $((GRACE_MIN * 60)) ]; then
+            continue
+        fi
 
-	if [ "$AGE" -gt $((ABANDON_MIN * 60)) ]; then
-    	    rm -rf "$item"
-    	    ABANDONED_DELETED=$((ABANDONED_DELETED + 1))
-    	    continue
-	fi
+        if [ "$AGE" -gt $((ABANDON_MIN * 60)) ]; then
+            rm -rf "$item"
+            ABANDONED_DELETED=$((ABANDONED_DELETED + 1))
+            continue
+        fi
     fi
 
     #---------------------------------------------------------------------
@@ -125,9 +172,17 @@ for item in * .*; do
     FILE_GID=$(stat -f %g "$item" 2>/dev/null)
     FILE_UID=$(stat -f %u "$item" 2>/dev/null)
 
+    # Guard: item vanished between listing and stat (race), or the
+    # glob did not expand (empty drop zone -> literal '*'). Neither
+    # is an error -- skip silently instead of feeding an empty string
+    # to the integer tests below.
+    if [ -z "$FILE_GID" ] || [ -z "$FILE_UID" ]; then
+        continue
+    fi
+
     if [ "$FILE_GID" -ne "$DROP_GID" ] && [ "$FILE_UID" -ne 0 ]; then
         TS=$(date +%s)
-        QUAR_NAME="${item}_${TS}"
+        QUAR_NAME="${item}_$$"
 
         mv "$item" "$QUARANTINE_DIR/$QUAR_NAME"
 
@@ -144,13 +199,15 @@ Reason:   Wrong GID detected.
 
 Action required:
   Investigate why this file has the wrong group ownership.
-  If legitimate, move it back with correct permissions:
-    mv _quarantine/$QUAR_NAME .
+  If legitimate, move it back with the ORIGINAL name (drop
+  the "_<pid>" suffix added by quarantine):
+    mv _quarantine/$QUAR_NAME ./$item
     chgrp drop $item
     chmod 440 $item   # for files
     chmod 570 $item   # for directories
 
   If malicious or unknown, delete it.
+  NOTE: quarantined items expire after $QUARANTINE_MAX_DAYS days.
 -----------------------------------------------------------
 EOF
         QUARANTINED=$((QUARANTINED + 1))
@@ -158,52 +215,84 @@ EOF
     fi
 
     #---------------------------------------------------------------------
-    # 1d. PERMISSION CORRECTION
+    # 1d. GROUP CORRECTION
+    #---------------------------------------------------------------------
+    # The SGID bit on /home/drop forces the drop group on files
+    # created by qcp/qmv. Files copied in by other means (e.g. cp as
+    # root) keep their original group. Fix it here: a wrong group
+    # makes the file unreachable by the domains, which are all in
+    # the drop group. Root-owned files are not quarantined (see 1c),
+    # so this is where their group gets corrected.
+    if [ "$FILE_GID" -ne "$DROP_GID" ]; then
+        chgrp drop "$item"
+        PERMS_FIXED=$((PERMS_FIXED + 1))
+    fi
+
+
+    #---------------------------------------------------------------------
+    # 1e. PERMISSION CORRECTION
     #---------------------------------------------------------------------
     # Extract octal mode from stat -r output (field 3) and mask to 07777
     CURRENT_MODE=$(stat -r "$item" 2>/dev/null | awk '{print $3}')
-    CURRENT_PERM=$(printf '%o' $((CURRENT_MODE & 07777)))
+    if [ -n "$CURRENT_MODE" ]; then
+        CURRENT_PERM=$(printf '%o' $((CURRENT_MODE & 07777)))
 
-    if [ -d "$item" ]; then
-        if [ "$CURRENT_PERM" != "570" ]; then
-            chmod 570 "$item"
-            PERMS_FIXED=$((PERMS_FIXED + 1))
-        fi
-    elif [ -f "$item" ]; then
-        if [ "$CURRENT_PERM" != "440" ]; then
-            chmod 440 "$item"
-            PERMS_FIXED=$((PERMS_FIXED + 1))
+        if [ -d "$item" ]; then
+            if [ "$CURRENT_PERM" != "570" ]; then
+                chmod 570 "$item"
+                PERMS_FIXED=$((PERMS_FIXED + 1))
+            fi
+        elif [ -f "$item" ]; then
+            if [ "$CURRENT_PERM" != "440" ]; then
+                chmod 440 "$item"
+                PERMS_FIXED=$((PERMS_FIXED + 1))
+            fi
         fi
     fi
 
     CYCLE_FILES=$((CYCLE_FILES + 1))
 done
 
+#------------------------------------------------------------------------------
+# CLEAN ABANDONED STAGING DIRECTORIES
+#-----------------------------------------------------------------------------
+# qcp/qmv remove their staging on error, but a SIGKILLed copy leaves
+# one behind. These are skipped by the main loop (see above); collect
+# them here by age. One hour is far longer than any normal copy.
+find "$DROP_DIR" -maxdepth 1 -type d -name '.staging.*' -mmin +60 \
+    -exec rm -rf {} + 2>/dev/null
+
+
 #-----------------------------------------------------------------------------
 # 2. EXPORT DIRECTORY SANITIZATION
 #-----------------------------------------------------------------------------
+# Each export dir contains exactly ONE archive type, produced by its
+# own exporter. Patterns never overlap across directories.
 # Rotation happens FIRST -- before chown/chmod -- so that mtime is not
-# reset by permission fixes, which would prevent files from ever aging out.
-for exdir in "$DROP_DIR/userweb_export" "$DROP_DIR/usermail_export"; do
-    if [[ ! -d "$exdir" ]]; then
-        continue
-    fi
+# reset by permission fixes, which would prevent files from aging out.
+#
+# RETENTION LIVES HERE (single source of truth). The exporters
+# (export_mail_to_drop, export_www_to_drop) only clean their own
+# orphaned .tmp files. Do not re-add rotation rules there.
 
-    # Mail archives: delete after 6 hours (generous margin for large exports)
+# usermail_export: mail archives from export_mail_to_drop (6h retention)
+exdir="$DROP_DIR/usermail_export"
+if [ -d "$exdir" ]; then
     find "$exdir" -type f -name 'mail_*.tar.gz' -mmin +360 -delete 2>/dev/null
-
-    # www archives: delete after 4 hours
-    find "$exdir" -type f -name 'www_*.tar.gz' -mmin +240 -delete 2>/dev/nulll
-
-    # Fix ownership (only files that need it -- preserves mtime on clean files)
     find "$exdir" \( ! -user root -o ! -group drop \) -exec chown root:drop {} + 2>/dev/null
-
-    # Enforce SGID and permissions on directories (2770)
     find "$exdir" -type d ! -perm 2770 -exec chmod 2770 {} + 2>/dev/null
+    # NEVER touch *.tmp: atomic-publish in progress (see INSTALL.md)
+    find "$exdir" -type f ! -name '*.tmp' ! -perm 440 -exec chmod 440 {} + 2>/dev/null
+fi
 
-    # Enforce read-only permissions on files (440)
-    find "$exdir" -type f ! -perm 440 -exec chmod 440 {} + 2>/dev/null
-done
+# userweb_export: www archives from export_www_to_drop (4h retention)
+exdir="$DROP_DIR/userweb_export"
+if [ -d "$exdir" ]; then
+    find "$exdir" -type f -name 'www_*.tar.gz' -mmin +240 -delete 2>/dev/null
+    find "$exdir" \( ! -user root -o ! -group drop \) -exec chown root:drop {} + 2>/dev/null
+    find "$exdir" -type d ! -perm 2770 -exec chmod 2770 {} + 2>/dev/null
+    find "$exdir" -type f ! -name '*.tmp' ! -perm 440 -exec chmod 440 {} + 2>/dev/null
+fi
 
 
 #-----------------------------------------------------------------------------
@@ -222,3 +311,4 @@ if [ "$CYCLE_FILES" -gt 50 ]; then
 fi
 
 exit 0
+

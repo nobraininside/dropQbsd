@@ -1,0 +1,54 @@
+# ==========================================================
+#  dropQbsd -- xterm_user
+#
+#  Opens a user xterm (conductor session), optionally running
+#  a command. Launched by the conductor (user) via the wrapper.
+#
+#  v0.3.0 changes:
+#    - The wrapper sanitizes the environment (unset HOME, ENV,
+#      hardcoded PATH): this script now DECLARES what it needs
+#      instead of inheriting it.
+#    - HOME rebuilt from passwd via real uid — never trusted
+#      from the environment.
+#    - XAUTHORITY falls back to $HOME/.Xauthority when the
+#      session does not export it (xenodm keeps the cookie
+#      only in the canonical file).
+#    - ENV exported so interactive shells (-ls) load the
+#      dropQbsd ksh chain.
+#    - Fail fast if xterm is not available: a missing binary
+#      must produce a message, not a silent vanishing PID.
+#
+#  Path: /opt/dropQbsd/sbin/xterm_user
+#  Permissions: chmod 755, root:wheel
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_user [command [args...]]
+#    OR
+#    Xtuser [command [args...]]
+# ==========================================================
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/X11R6/bin:/usr/local/bin:/usr/local/sbin
+export PATH
+
+command -v xterm >/dev/null 2>&1 || { echo "xterm_user: xterm not in PATH" >&2; exit 1; }
+
+UID_R=$(id -ru)
+HOME=$(awk -F: -v u="$UID_R" '$3 == u {print $6; exit}' /etc/passwd)
+[ -z "$HOME" ] && { echo "xterm_user: cannot resolve home directory" >&2; exit 1; }
+export HOME
+
+[ -z "$XAUTHORITY" ] && export XAUTHORITY="$HOME/.Xauthority"
+
+# Interactive shells inside this xterm load the dropQbsd chain.
+export ENV=/etc/dropQbsd/kshrc
+
+if [ $# -gt 0 ]; then
+    nohup xterm -T "user" -bg black -fg white -fa monospace -fs 12 \
+        -e "$@" </dev/null >/dev/null 2>&1 &
+else
+    nohup xterm -T "user" -bg black -fg white -fa monospace -fs 12 \
+        -ls </dev/null >/dev/null 2>&1 &
+fi
+

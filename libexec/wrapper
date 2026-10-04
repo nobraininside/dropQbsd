@@ -1,0 +1,79 @@
+#!/bin/sh
+# ==========================================================
+#  dropQbsd -- wrapper
+#
+#  Shell selector for dropQbsd scripts.
+#  Detects the OS and executes the target script with the
+#  appropriate Korn Shell variant:
+#    - OpenBSD: /bin/ksh (PD KSH, base system)
+#    - FreeBSD: /usr/local/bin/mksh (install with: pkg install mksh)
+#
+#  The wrapper runs with the privileges of its CALLER:
+#    - invoked from cron (root)      -> runs as root
+#    - invoked from a domain user    -> runs as that user
+#  It does NOT elevate privileges. Environment sanitization
+#  is defensive: it matters when the caller is root.
+#
+#  ENV is NOT set here: the Korn shell reads $ENV only in
+#  INTERACTIVE mode, and these scripts are non-interactive.
+#  Interactive shells (xterm) get ENV from xterm_user /
+#  xterm_userdoc.
+#
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /path/to/script [args...]
+# ==========================================================
+
+# --- Validate arguments ---
+if [ $# -lt 1 ]; then
+    echo "dropQbsd wrapper: missing script argument" >&2
+    echo "Usage: $0 <script> [args...]" >&2
+    exit 1
+fi
+
+SCRIPT="$1"
+shift  # Remove script path from arguments, keep only args
+
+# --- Environment whitelist --------------------------------------------
+# Save what must survive BEFORE wiping everything else.
+W_DISPLAY=""; W_XAUTHORITY=""; W_TERM=""
+[ -n "$DISPLAY" ]     && W_DISPLAY="$DISPLAY"
+[ -n "$XAUTHORITY" ]  && W_XAUTHORITY="$XAUTHORITY"
+[ -n "$TERM" ]        && W_TERM="$TERM"
+
+# --- Sanitize: NOTHING of the caller's environment may cross.
+# PATH is hardcoded: a user-controlled PATH in a root context is
+# privilege escalation (fake 'awk', 'find', 'mount' earlier in PATH).
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/X11R6/bin:/usr/local/bin:/usr/local/sbin
+export PATH
+unset IFS LD_LIBRARY_PATH LD_PRELOAD LDDLFLAGS \
+      PERL5LIB PYTHONPATH CDPATH SHELL HOME LOGNAME USER
+umask 022
+
+# Restore the whitelisted session variables.
+DISPLAY="$W_DISPLAY"; XAUTHORITY="$W_XAUTHORITY"; TERM="$W_TERM"
+export DISPLAY XAUTHORITY TERM
+
+# --- Select the appropriate Korn Shell based on OS ---
+case "$(uname -s)" in
+    OpenBSD)
+        TARGET_SHELL=/bin/ksh
+        ;;
+    FreeBSD)
+        if [ -x /usr/local/bin/mksh ]; then
+            TARGET_SHELL=/usr/local/bin/mksh
+        else
+            echo "dropQbsd wrapper: mksh not found on FreeBSD." >&2
+            echo "  dropQbsd scripts require a Korn shell." >&2
+            echo "  Install it: pkg install mksh" >&2
+            exit 1
+        fi
+        ;;
+    *)
+        echo "dropQbsd wrapper: unsupported OS: $(uname -s)" >&2
+        exit 1
+        ;;
+esac
+
+# --- Execute the script with the selected shell ---
+exec "$TARGET_SHELL" "$SCRIPT" "$@"
+

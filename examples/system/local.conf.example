@@ -4,11 +4,23 @@
 #  YOUR local configuration. One file, one source of truth
 #  for all of dropQbsd.
 #
-#  HOW TO USE THIS FILE:
-#    1. Copy to /etc/dropQbsd/local.conf
-#    2. Uncomment and edit the sections you need
-#    3. Run: gen_firewall openbsd   (or freebsd)
-#    4. Update the tables (see INSTALL.md)
+#  INSTALLATION:
+#    1. Copy this file to /etc/dropQbsd/local.conf
+#         cp /opt/dropQbsd/examples/system/local.conf.example \
+#            /etc/dropQbsd/local.conf
+#    2. Set ownership and permissions:
+#         chown root:wheel /etc/dropQbsd/local.conf
+#         chmod 644 /etc/dropQbsd/local.conf
+#    3. Edit the [network] section (REQUIRED) with your LAN subnet.
+#    4. Edit [mailserver] and [services] if you use them.
+#    5. Regenerate the firewall and reload:
+#         Gen openbsd        (or: Gen freebsd)
+#         pfctl -nf /etc/pf.conf
+#         pfctl -f /etc/pf.conf
+#    6. Populate the PF tables:
+#         Enupdates
+#         Upmailserver
+#         Upservices
 #
 #  IMPORTANT:
 #    - Never commit real values to the repository.
@@ -32,18 +44,26 @@
 #   CORRECT: 192.168.1.0/24
 #   WRONG:   192.168.1.42
 [network]
-lan = 192.168.0.0/16
-
+lan = 192.168.1.0/24
 
 # ----------------------------------------------------------
-# [updates] -- UPDATE MIRRORS (REQUIRED, DO NOT EDIT)
+# [updates] -- UPDATE MIRRORS
 # ----------------------------------------------------------
-# Fastly CDN blocks used by OpenBSD mirrors.
-# Used by ensure_updates_table to populate <updates>.
+# OpenBSD uses Fastly CDN blocks (static CIDRs).
+# FreeBSD uses GeoDNS hostnames (resolved via userweb DNS).
 # Official source: https://api.fastly.com/public-ip-list
+#
+# IMPORTANT: use ONE of the two sections below, not both.
+# The parser reads the FIRST [updates] section it finds.
+#
+# OpenBSD (default):
 [updates]
 mirrors = 151.101.0.0/16 199.232.0.0/16 23.235.32.0/20 104.156.80.0/20
 
+# FreeBSD: comment the OpenBSD section above, then uncomment
+# the two lines below.
+# [updates]
+# hosts = pkg.FreeBSD.org update.FreeBSD.org
 
 # ----------------------------------------------------------
 # [mailserver] -- YOUR MAIL SERVERS (OPTIONAL)

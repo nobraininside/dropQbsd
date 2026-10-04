@@ -1,0 +1,206 @@
+# =========================================================
+#  dropQbsd -- patch_tru_fwall
+#
+#  Applies security patches through the restrictive PF
+#  ruleset. Populates the <updates> table, runs the patch
+#  tool, flushes the table on exit to restore default-deny
+#  for root.
+#
+#  OpenBSD:               syspatch
+#  FreeBSD (traditional): freebsd-update --not-tty fetch install
+#  FreeBSD (PkgBase):     pkg upgrade (base is packaged)
+#
+#  Path: /opt/dropQbsd/admin/patch_tru_fwall
+#  Permissions: chmod 700, root:wheel
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/patch_tru_fwall
+#    OR
+#    Patch
+# ==========================================================
+
+ENSURE_SCRIPT="/opt/dropQbsd/libexec/ensure_updates_table"
+UPD_MAILSERV="/opt/dropQbsd/libexec/update_mailserver_table"
+UPD_SERVICES="/opt/dropQbsd/libexec/update_services_table"
+LOGFILE="/var/log/dropQbsd/patch_tru_fwall.log"
+FLUSH_ON_EXIT=1   # Set to 0 to keep the <updates> table populated after run
+DNS_RULES_ADDED=0
+CLEANED=0
+
+#-----------------------------------------------------------------------------
+# LOG FUNCTION
+#-----------------------------------------------------------------------------
+log() {
+    msg="$1"
+    # Skip empty/whitespace-only messages: tools like pkg_delete -a emit a
+    # bare newline when there is nothing to do, which would log a
+    # timestamp-only line ("2026-10-04 12:42:02") with no content.
+    echo "$msg" | grep -q '^[[:space:]]*$' && return
+    echo "$msg"
+    echo "$(date '+%F %T')  $msg" >> "$LOGFILE"
+}
+
+#-----------------------------------------------------------------------------
+# PRIVILEGE CHECK
+#-----------------------------------------------------------------------------
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Must run as root." >&2
+    exit 2
+fi
+
+#-----------------------------------------------------------------------------
+# DEPENDENCY CHECK
+#-----------------------------------------------------------------------------
+if [ ! -x "$ENSURE_SCRIPT" ]; then
+    echo "FATAL: $ENSURE_SCRIPT not found or not executable." >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# DETECT OS AND PATCH MECHANISM
+#-----------------------------------------------------------------------------
+OS=$(uname -s)
+if [ "$OS" = "FreeBSD" ]; then
+    if pkg info -e FreeBSD-runtime >/dev/null 2>&1; then
+        # PkgBase: base system is packaged, updated via pkg
+        PATCH_CMD="pkg"
+        PATCH_ARGS="upgrade -y"
+        PATCH_NOTE="(PkgBase: base + ports via pkg)"
+        LOCK_PROC="pkg"
+    else
+        # Traditional base. --not-tty: no tty inside $(), prompts would fail.
+        PATCH_CMD="freebsd-update"
+        PATCH_ARGS="--not-tty fetch install"
+        PATCH_NOTE="(traditional base)"
+        LOCK_PROC="freebsd-update"
+    fi
+else
+    PATCH_CMD="syspatch"
+    PATCH_ARGS=""
+    PATCH_NOTE="(OpenBSD)"
+    LOCK_PROC="syspatch"
+fi
+
+#-----------------------------------------------------------------------------
+# CONCURRENCY CHECK — one patch operation at a time.
+# Run BEFORE touching pf: never open the network window for a doomed run.
+#-----------------------------------------------------------------------------
+BUSY=$(pgrep -x "$LOCK_PROC")
+if [ -n "$BUSY" ]; then
+    echo "Another $LOCK_PROC instance is running (pid: $(echo $BUSY | tr '\n' ' '))." >&2
+    echo "Kill it or wait, then retry." >&2
+    exit 3
+fi
+
+#-----------------------------------------------------------------------------
+# POPULATE PF TABLE
+#-----------------------------------------------------------------------------
+log "=== patch_tru_fwall starting ($OS) ==="
+"$ENSURE_SCRIPT" || exit $?
+
+#-----------------------------------------------------------------------------
+# TEMPORARY DNS + HTTP/S ACCESS FOR ROOT
+#
+# The pass rules are PREPENDED, not appended: a block ... quick rule
+# in the main ruleset would shadow rules placed at the bottom.
+# No interface qualifier: the default route's interface may not match
+# every flow (IPv6, aliases).
+#-----------------------------------------------------------------------------
+grant_dns() {
+    TMP_PF="/tmp/pf.dropQbsd.$$"
+    {
+        echo "pass out quick proto { udp tcp } from any to any port 53"
+        echo "pass out quick proto tcp from any to any port { 80 443 } flags S/SA"
+        cat /etc/pf.conf
+    } > "$TMP_PF"
+
+    if ! pfctl -nf "$TMP_PF"; then
+        log "FATAL: temporary ruleset failed syntax check."
+        rm -f "$TMP_PF"
+        exit 1
+    fi
+    if ! pfctl -f "$TMP_PF"; then
+        log "FATAL: pfctl failed to load the temporary ruleset."
+        rm -f "$TMP_PF"
+        exit 1
+    fi
+    rm -f "$TMP_PF"
+    DNS_RULES_ADDED=1
+
+    # pfctl -f empties <updates> (persist keeps the table defined,
+    # not its entries). Repopulate it before the update tools run.
+    "$ENSURE_SCRIPT"
+
+    log "Temporary DNS + HTTP/S access granted (will be removed after the run)."
+}
+
+#-----------------------------------------------------------------------------
+# RESTRICTIVE RULESET + TABLE RESTORATION
+#
+# pfctl -f empties ALL persistent tables, not just <updates>:
+# without repopulating <mailserver> and <services>, usermail and
+# userweb stay offline until their next cron cycle (up to 5 min).
+#-----------------------------------------------------------------------------
+revoke_dns() {
+    if [ "$DNS_RULES_ADDED" -eq 1 ]; then
+        pfctl -f /etc/pf.conf
+        DNS_RULES_ADDED=0
+        "$ENSURE_SCRIPT"
+        [ -x "$UPD_MAILSERV" ] && "$UPD_MAILSERV"
+        [ -x "$UPD_SERVICES" ] && "$UPD_SERVICES"
+        log "Temporary DNS access revoked; strict ruleset and tables restored."
+    fi
+}
+
+#-----------------------------------------------------------------------------
+# CLEANUP — idempotent, runs on signals AND on exit
+#-----------------------------------------------------------------------------
+cleanup() {
+    [ "$CLEANED" -eq 1 ] && return
+    CLEANED=1
+    revoke_dns
+    if [ "$1" = "signal" ]; then
+        log "Interrupted (signal received)."
+    fi
+    if [ "$FLUSH_ON_EXIT" -eq 1 ]; then
+        pfctl -t updates -T flush 2>/dev/null
+        log "<updates> table flushed."
+    else
+        log "<updates> table left populated (FLUSH_ON_EXIT=0)."
+        log "To flush manually: pfctl -t updates -T flush"
+    fi
+}
+trap 'cleanup signal; exit 130' 2 15
+trap 'cleanup' 0
+
+#-----------------------------------------------------------------------------
+# RUN PATCH TOOL
+#-----------------------------------------------------------------------------
+grant_dns
+
+log "Running: $PATCH_CMD $PATCH_ARGS $PATCH_NOTE"
+OUT=$("$PATCH_CMD" $PATCH_ARGS 2>&1)
+RC=$?
+log "$OUT"
+
+revoke_dns
+
+case $RC in
+    0)
+        log "$PATCH_CMD completed successfully."
+        ;;
+    *)
+        if [ "$OS" = "OpenBSD" ] && [ "$RC" -eq 2 ]; then
+            # syspatch exits 2 when there is nothing to apply.
+            log "$PATCH_CMD: no patches to apply."
+            RC=0
+        else
+            log "$PATCH_CMD exited with code $RC -- check output above."
+        fi
+        ;;
+esac
+
+log "=== patch_tru_fwall finished ==="
+exit $RC

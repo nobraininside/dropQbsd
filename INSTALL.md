@@ -1,21 +1,51 @@
 # dropQbsd — Installation
 
+This guide covers **OpenBSD** (reference platform) and **FreeBSD**.
+
+Where the procedure is identical on both systems, it is written once. Where it
+differs, a two-column table is used — **OpenBSD on the left, FreeBSD on the
+right** — with each system's procedure under its own column.
+
+If a section has no such table, the procedure is the same on both platforms.
+
 ---
 
 ## Prerequisites
 
-- OpenBSD 7.5 or newer
-- **Core functionality**: no additional packages — everything is in the base system
-- **Optional components** (install only what you need):
-  - `indicator_xfce4`: `dzen2`, `xdotool`
-  - `file_bridge`: `tmux`, `nnn`
-  - `site_menu`: `zenity`, `pass`, `xclip` (plus a browser)
+**Operating system:**
+
+| OpenBSD | FreeBSD |
+| ------- | ------- |
+| 7.5 or newer | 14.0 or newer |
+
+**Core functionality:** everything is in the base system, except the Korn Shell
+on FreeBSD.
+
+| OpenBSD | FreeBSD |
+| ------- | ------- |
+| `ksh` is in base (`/bin/ksh`) | Install `mksh`: `pkg install mksh` |
+
+**Optional components** — install only what you need:
+
+| Component | Packages |
+| --------- | -------- |
+| `file_bridge` | `tmux`, `nnn` |
+| `indicator_de` | `dzen2`, `xdotool` |
+| `site_menu` | `zenity`, `pass`, `xclip` |
+| `Syncthing` (userdoc) | `syncthing` |
+| Integrity verification | `signify` — base on OpenBSD, `pkg install signify` on FreeBSD |
+
+Install packages:
+
+| OpenBSD | FreeBSD |
+| ------- | ------- |
+| `pkg_add <package>` | `pkg install <package>` |
 
 ---
 
 ## 1. Create Users and Group
 
-Run as root
+Run as root.
 
 ```sh
 groupadd drop
@@ -24,18 +54,21 @@ useradd -m -G drop userweb
 useradd -m -G drop usermail
 useradd -m -G drop userdoc
 ```
-Conductor user — create if missing, add to drop group if existing
+
+Create the conductor if missing, or add it to the `drop` group if it already
+exists:
+
 ```sh
-# useradd -m -G drop user 2>/dev/null || usermod -G drop user
+useradd -m -G drop user 2>/dev/null || usermod -G drop user
 ```
 
-### Resource Limits (`/etc/login.conf`)
+### Resource Limits
 
-Append these classes to `/etc/login.conf` to prevent resource exhaustion
-under heavy load. `userdoc` needs high open files for Syncthing; `usermail`
-needs extra memory and file descriptors for compressing and moving large
-mail archives (40+ GB); `userweb` gets generous limits for multiple
-browser tabs and disposable tmpfs sessions.
+Append these classes to `/etc/login.conf` to prevent resource exhaustion under
+heavy load. `userdoc` needs high open files for Syncthing; `usermail` needs
+extra memory and file descriptors for compressing large mail archives (40+ GB);
+`userweb` gets generous limits for multiple browser tabs and disposable tmpfs
+sessions.
 
 ```sh
 userdoc:\
@@ -80,147 +113,256 @@ user:\
     :tc=default:
 ```
 
-After editing, rebuild the login database:
+Rebuild the login database:
 
 ```sh
-# cap_mkdb /etc/login.conf
+cap_mkdb /etc/login.conf
 ```
 
 ---
 
 ## 2. Create Directory Structure
 
-As root:
+Run as root.
 
 ```sh
-mkdir -p /opt/dropQbsd/{admin,bin,keys,libexec,src}
+mkdir -p /opt/dropQbsd/{admin,bin,keys,libexec,sbin,src,templates,examples}
 mkdir -p /home/drop/userweb_export
 mkdir -p /home/drop/usermail_export
 mkdir -p /home/drop/_quarantine
 
 chown root:drop /home/drop /home/drop/userweb_export /home/drop/usermail_export
-chmod 2770 /home/drop    # SGID (2770) forces the 'drop' group on all files placed here
+chmod 2770 /home/drop
 chmod 2770 /home/drop/userweb_export /home/drop/usermail_export
 chmod 750 /home/drop/_quarantine
 chmod 700 /opt/dropQbsd/keys
 ```
 
+The `2770` mode (SGID) on `/home/drop` forces the `drop` group on all files
+placed there — this is what makes the drop zone policed by construction rather
+than by convention.
+
 ---
 
 ## 3. Install Scripts
 
-Copy the repository directories to `/opt/dropQbsd/`:
+Copy the repository contents to `/opt/dropQbsd/`:
 
 ```sh
-# cp -r admin bin libexec src /opt/dropQbsd/
+cp -r admin bin libexec sbin src templates examples /opt/dropQbsd/
 ```
 
-Set permissions (as root):
+Set ownership and permissions:
 
 ```sh
+chown -R root:wheel /opt/dropQbsd
 chmod 755 /opt/dropQbsd/bin/*
+chmod 755 /opt/dropQbsd/sbin/*
 chmod 755 /opt/dropQbsd/libexec/*
 chmod 700 /opt/dropQbsd/admin/*
-chown -R root:wheel /opt/dropQbsd
 ```
+
+**Note:** scripts in `sbin/` and `libexec/` carry **no shebang**. They are
+executed through `libexec/wrapper`, which selects the correct shell for the
+platform. Do not add shebangs — it would break portability.
 
 ---
 
-## 4. Build the `run_app` Blind Gate
+## 4. Build the `run_app` gate
 
-This is the core of dropQbsd's privilege model. `run_app` is split into three files:
+This is the core of dropQbsd's privilege model. `run_app` is split into
+three files:
 
 | File | Purpose |
-|------|---------|
-| `src/run_app_wrapper.c` | C source — 9 lines, compiled once |
+| ---- | ------- |
+| `src/run_app.c` | C source — compiled once |
 | `bin/run_app` | Compiled setuid binary — the immutable gate `user` invokes |
-| `libexec/run_app_impl` | ksh script — all the logic, editable without recompilation |
+| `libexec/run_app_impl` | Script — all the logic, editable without recompilation |
 
-**Verify the impl script shebang:**
+The `wrapper` (`libexec/wrapper`) is a separate component: it selects
+the Korn shell and sanitizes the environment for every dropQbsd script.
+It is not part of the `run_app` chain.
 
-```sh
-# head -1 /opt/dropQbsd/libexec/run_app_impl   # must be #!/bin/ksh
-```
-
-**Compile statically and set the setuid bit:**
-
-Run as root:
+### Build with the helper script (recommended)
 
 ```sh
-cc -static -o /opt/dropQbsd/bin/run_app /opt/dropQbsd/src/run_app_wrapper.c
-chown root:wheel /opt/dropQbsd/bin/run_app
-chmod 4755 /opt/dropQbsd/bin/run_app          # setuid root
-chown root:wheel /opt/dropQbsd/libexec/run_app_impl
-chmod 755 /opt/dropQbsd/libexec/run_app_impl
+    /opt/dropQbsd/admin/build_run_app
 ```
 
-**Verify:**
+This script:
+
+1. Compiles `src/run_app.c` with `cc -static`;
+2. Sets ownership to `root:wheel`;
+3. Sets mode to `4755` (the setuid bit).
+
+**Why use it instead of compiling by hand:** every compilation creates
+a *new* file, and a new file has the compiler's default mode — the
+setuid bit is lost. Forgetting `chmod 4755` produces a binary that
+looks correct but fails at runtime with:
 
 ```sh
-# From user:
-$ /opt/dropQbsd/bin/xterm_userdoc
+    dropQbsd: setuid(0) failed: Operation not permitted
 ```
+
+`build_run_app` re-applies ownership and mode on every run, so the
+step cannot be forgotten.
+
+### Build by hand (equivalent)
+
+```sh
+    cc -static -o /opt/dropQbsd/bin/run_app /opt/dropQbsd/src/run_app.c
+    chown root:wheel /opt/dropQbsd/bin/run_app
+    chmod 4755 /opt/dropQbsd/bin/run_app
+```
+
+### The `-static` flag is mandatory
+
+A dynamically linked setuid binary is exposed to `LD_PRELOAD`-style
+injection before `main()` runs. The static build removes that class
+of attack entirely — the kernel's setuid protections are a second
+line of defence, not the first.
+
+Verify the result is static:
+
+```sh
+    readelf -d /opt/dropQbsd/bin/run_app | grep NEEDED
+```
+No output means no dynamic dependencies: the binary is static.
+
+### Verify
+
+```sh
+    ls -l /opt/dropQbsd/bin/run_app
+```
+
+The mode must show `-rwsr-xr-x` — the `s` is the setuid bit. Without
+It, the gate does not escalate and domain applications will not launch.
+
 
 ---
 
-## 5. Configure doas.conf
+## 5. Install System Configuration Files
 
-Minimal — `user` gets no `doas` access at all. Run as root:
+dropQbsd relies on a single, coherent environment across all users.
+Everything lives under /etc/dropQbsd/; the files in the home
+directories are two-line stubs that point to the single entry point.
 
-```sh
-# cp templates/doas.conf /etc/doas.conf
-# chmod 440 /etc/doas.conf
-```
+### 5.1 Back up conflicting dotfiles
 
----
-
-## 6. Install System Configuration Files
-
-Before installing, back up (or remove) any local dotfiles that would
-override the system-wide configuration. As root:
+Before installing, back up any local dotfiles that would override
+the system-wide configuration. Run as root:
 
 ```sh
-ts=$(date +%Y%m%d_%H%M%S)
-for h in /root /home/user /home/userweb /home/usermail /home/userdoc; do
-    for f in .profile .shrc .kshrc .xsession .cshrc .login; do
-        [ -f "$h/$f" ] && mv "$h/$f" "$h/$f.bak.$ts"
+    ts=$(date +%Y%m%d_%H%M%S)
+    for h in /root /home/user /home/userweb /home/usermail /home/userdoc; do
+        for f in .profile .shrc .kshrc .xsession .xinitrc .cshrc .login .xprofile; do
+            [ -f "$h/$f" ] && mv "$h/$f" "$h/$f.bak.$ts"
+        done
     done
-done
 ```
 
-dropQbsd relies on a single, coherent environment across all users —
-local dotfiles will break domain isolation. As root:
+### 5.2 Global configuration (all logic lives here)
 
 ```sh
-cp templates/profile /etc/profile
-cp templates/kshrc /etc/kshrc
-cp templates/xsession /etc/xsession
-
-for u in user userweb usermail userdoc; do
-    cp /etc/xsession /home/$u/.xsession
-    chown $u:$u /home/$u/.xsession
-done
-
-cp /etc/xsession /root/.xsession
-chown root:wheel /root/.xsession
+    mkdir -p /etc/dropQbsd
+    cp templates/profile_for_etc  /etc/dropQbsd/profile
+    cp templates/kshrc_for_etc    /etc/dropQbsd/kshrc
+    cp templates/alias_for_etc    /etc/dropQbsd/alias
+    chown root:wheel /etc/dropQbsd/profile /etc/dropQbsd/kshrc /etc/dropQbsd/alias
+    chmod 644        /etc/dropQbsd/profile /etc/dropQbsd/kshrc /etc/dropQbsd/alias
 ```
 
-Review the locale settings in `/etc/profile` — the example uses English
-for system messages and Italian for time, monetary, and numeric formats.
-Adjust to your region or set all to `en_US.UTF-8`. The global shell
-aliases and per-user prompts are configured in `/etc/kshrc`.
+### 5.3 Per-user stubs (pointers only)
 
-The `.xsession` file loads the system-wide environment and launches the desktop. The conductor (`user`) runs XFCE with `indicator_xfce4` (or cwm with `indicator_cwm` if XFCE is not installed); all other domains run cwm without an indicator — their desktop only ever shows windows from their own domain.
+The stubs are one-line pointers to `/etc/dropQbsd/kshrc`. Which ones to
+install depends on the platform:
+
+| File | OpenBSD | FreeBSD |
+| ---- | ------- | ------- |
+| `~/.profile`  | **always** (login shells: tty, su -, ssh) | **always** |
+| `~/.xprofile` | **yes** (SDDM / LightDM, if used) | **yes** (SDDM) |
+| `~/.xsession` | **yes** (xenodm, the default DM) | **NO** — see warning below |
+| `~/.xinitrc`  | only if you use `startx` instead of xenodm | **yes** (startx) |
+
+**WARNING — never install `~/.xsession` on FreeBSD.** SDDM reads
+`~/.xsession` and waits for it to exit; the `exec xfce4-session`
+line never returns, so the graphical session freezes at login.
+On FreeBSD use `~/.xprofile` (for SDDM) or `~/.xinitrc` (for
+`startx`).
+
+**Install (OpenBSD):**
+
+```sh
+for u in user userdoc usermail userweb; do
+    cp templates/profile_for_home  /home/$u/.profile
+    cp templates/xprofile_for_home /home/$u/.xprofile
+    cp templates/xsession_for_home /home/$u/.xsession
+    chown $u:$u /home/$u/.profile /home/$u/.xprofile /home/$u/.xsession
+    chmod 644   /home/$u/.profile /home/$u/.xprofile /home/$u/.xsession
+done
+
+# root
+for f in profile xprofile xsession; do
+    cp templates/${f}_for_home /root/.$f
+    chown root:wheel /root/.$f
+    chmod 644 /root/.$f
+done
+```
+
+**Install (FreeBSD):**
+
+```sh
+for u in user userdoc usermail userweb; do
+    cp templates/profile_for_home  /home/$u/.profile
+    cp templates/xprofile_for_home /home/$u/.xprofile
+    cp templates/xinitrc_for_home  /home/$u/.xinitrc
+    chown $u:$u /home/$u/.profile /home/$u/.xprofile /home/$u/.xinitrc
+    chmod 644   /home/$u/.profile /home/$u/.xprofile /home/$u/.xinitrc
+done
+
+# root
+for f in profile xprofile xinitrc; do
+    cp templates/${f}_for_home /root/.$f
+    chown root:wheel /root/.$f
+    chmod 644 /root/.$f
+done
+```
+
+**Coverage map:**
+
+| Session type | File read | OpenBSD | FreeBSD |
+| ------------ | --------- | ------- | ------- |
+| Text login (tty) | `~/.profile` | ✅ | ✅ |
+| `su -` / `ssh` | `~/.profile` | ✅ | ✅ |
+| xenodm | `~/.xsession` | ✅ | n/a |
+| SDDM / LightDM | `~/.xprofile` | opzionale | ✅ |
+| `startx` | `~/.xinitrc` | opzionale | ✅ |
+| Terminal in session | `$ENV` | ✅ | ✅ |
+
+`$ENV` is set by `/etc/dropQbsd/kshrc` itself, so every interactive
+child shell sources the chain automatically.
+
+**No modification to /etc/profile is required.**
+
+### 5.4 Adjust the desktop launcher
+
+In `~/.xsession` and `~/.xinitrc`, change the last line to your
+window manager or desktop environment:
+
+    exec xfce4-session      # XFCE
+    exec cwm                # OpenBSD native WM
+    exec twm                # FreeBSD base WM
+    exec i3                 # tiling WM
 
 ---
 
-## 7. Create the dropQbsd Configuration Directory
+## 6. Create the dropQbsd Configuration Directory
 
-dropQbsd v0.2.0 uses a **declarative firewall policy** instead of a
-hand-written `pf.conf`. Three files describe your security posture:
+dropQbsd uses a **declarative firewall policy** instead of a hand-written
+`pf.conf`. Three files describe your security posture:
 
 | File | Purpose | Source |
-|------|---------|--------|
+| ---- | ------- | ------ |
 | `domains.conf` | Portable policy (identical on every install) | `templates/domains.conf` |
 | `local.conf` | Your local config (subnet, mail, services) | `examples/system/local.conf.example` |
 | `schema` | Valid domains for this product | `templates/schema` |
@@ -228,10 +370,8 @@ hand-written `pf.conf`. Three files describe your security posture:
 Run as root:
 
 ```sh
-mkdir -p /etc/dropQbsd
-
 cp templates/domains.conf /etc/dropQbsd/domains.conf
-cp templates/schema /etc/dropQbsd/schema
+cp templates/schema_for_etc /etc/dropQbsd/schema
 cp examples/system/local.conf.example /etc/dropQbsd/local.conf
 
 chmod 644 /etc/dropQbsd/domains.conf /etc/dropQbsd/schema /etc/dropQbsd/local.conf
@@ -240,25 +380,23 @@ chown root:wheel /etc/dropQbsd/domains.conf /etc/dropQbsd/schema /etc/dropQbsd/l
 
 ### Edit local.conf
 
-Open `/etc/dropQbsd/local.conf` and fill in your values. The file is
-heavily commented — read it carefully. Summary of the sections:
+Open `/etc/dropQbsd/local.conf` and fill in your values. The file is heavily
+commented — read it carefully. Summary of the sections:
 
-- **`[network] lan`** — your LAN subnet (REQUIRED). Used by `userdoc`
-  and by any rule targeting `@lan`.
-- **`[updates] mirrors`** — Fastly CDN blocks for OpenBSD mirrors.
-  Do NOT edit unless OpenBSD changes CDN provider.
-- **`[mailserver] hosts`** — your mail server hostnames (optional).
-  Resolved via `userweb` DNS by `update_mailserver_table`.
-- **`[services] hosts`** — external services `userweb` must reach beyond
-  ports 80/443 (optional). Static IPs written as-is; hostnames prefixed
-  with `@`.
-- **`[extra.*] allow`** — your personal exceptions (optional). You may
-  only ADD `allow` rules here; the base security posture in
-  `domains.conf` is not modifiable.
+- **`[network] lan`** — your LAN subnet (REQUIRED). Used by `userdoc` and by
+  any rule targeting `@lan`.
+- **`[updates] mirrors`** — Fastly CDN blocks for OpenBSD mirrors. Do not edit
+  unless the mirror provider changes.
+- **`[mailserver] hosts`** — your mail server hostnames (optional). Resolved
+  via `userweb` DNS by `update_mailserver_table`.
+- **`[services] hosts`** — external services `userweb` must reach beyond ports
+  80/443 (optional). Static IPs written as-is; hostnames prefixed with `@`.
+- **`[extra.*] allow`** — your personal exceptions (optional). You may only
+  **add** `allow` rules here; the base security posture in `domains.conf` is
+  not modifiable.
 
-**Do NOT edit `domains.conf`.** It is the portable policy, identical on
-every installation. Personal needs go in `[extra.*]` sections of
-`local.conf`.
+**Do not edit `domains.conf`.** It is the portable policy, identical on every
+installation. Personal needs go in `[extra.*]` sections of `local.conf`.
 
 ### How PF Tables Work
 
@@ -266,462 +404,552 @@ dropQbsd uses three PF tables to manage network access without exposing
 provider IPs in the firewall rules:
 
 | Table | Config source | Update script | Purpose |
-|-------|---------------|---------------|---------|
+| ----- | ------------- | ------------- | ------- |
 | `<mailserver>` | `[mailserver] hosts` | `update_mailserver_table` | Mail server IPs for `usermail` |
 | `<services>` | `[services] hosts` | `update_services_table` | External services for `userweb` |
-| `<updates>` | `[updates] mirrors` | `ensure_updates_table` | OpenBSD mirror IPs for system updates |
+| `<updates>` | `[updates] mirrors` | `ensure_updates_table` | Mirror IPs for system updates |
 
-All three scripts read from `local.conf` — there is no separate table
-configuration file anymore.
+All three scripts read from `local.conf`. There is no separate table
+configuration file.
 
-**Adding a hostname (resolved automatically):**
-
-Add it to the `[services]` section of `local.conf`, prefixed with `@`:
+**Adding a hostname (resolved automatically):** add it to `[services]` in
+`local.conf`, prefixed with `@`:
 
 ```
 [services]
 hosts = 198.51.100.10 @myhost.xyz
 ```
 
-Hostnames prefixed with `@` are resolved via `userweb` DNS each time the
-update script runs (every 5 minutes via cron). This keeps IPs current
-without manual intervention.
+Hostnames prefixed with `@` are resolved via `userweb` DNS each time the update
+script runs (every 5 minutes via cron). This keeps IPs current without manual
+intervention.
 
 ---
 
-## 8. Generate the Firewall
+## 7. Generate the Firewall
 
 Instead of copying a static `pf.conf`, generate it from the policy:
 
-```sh
-# /opt/dropQbsd/libexec/gen_firewall openbsd
-```
+| OpenBSD | FreeBSD |
+| ------- | ------- |
+| `Gen openbsd` | `Gen freebsd` |
 
-This reads `domains.conf` + `local.conf` + `schema` from
-`/etc/dropQbsd/` and writes `/etc/pf.conf`.
+This reads `domains.conf`, `local.conf`, and `schema` from `/etc/dropQbsd/` and
+writes `/etc/pf.conf`.
 
-### Verify Syntax (without applying)
-
-```sh
-# pfctl -nf /etc/pf.conf
-```
-
-`pfctl -nf` checks the syntax WITHOUT loading the rules. If it reports
-errors, fix your policy files and regenerate. Do NOT apply a broken
-ruleset — a firewall that fails to load leaves you without protection.
-
-### Apply
+**Verify syntax (without applying):**
 
 ```sh
-# pfctl -f /etc/pf.conf
+pfctl -nf /etc/pf.conf
 ```
 
-### Populate the PF Tables
+`pfctl -nf` checks the syntax **without** loading the rules. If it reports
+errors, fix your policy files and regenerate. Do not apply a broken ruleset — a
+firewall that fails to load leaves you without protection.
 
-Populate the `<mailserver>`, `<services>`, and `<updates>` tables from
-`local.conf`. As root:
+**Apply:**
 
 ```sh
-/opt/dropQbsd/libexec/update_mailserver_table
-/opt/dropQbsd/libexec/update_services_table
-/opt/dropQbsd/libexec/ensure_updates_table
+pfctl -f /etc/pf.conf
 ```
 
-These scripts read from `local.conf` (see section 7). They resolve
-hostnames via `userweb` DNS and populate the tables. Root never touches
-the network directly.
-
-**Note on ordering:** `gen_firewall` emits the table definitions
-(`table <mailserver> persist`, etc.) into `pf.conf`, so the tables exist
-— empty — at the moment `pfctl -f` loads the ruleset. The
-`update_*_table` scripts then fill them. This order (generate → verify →
-apply → populate) is intentional: the firewall loads with empty tables
-(blocking nothing by table membership), then the tables are populated
-with the resolved IPs.
-
-### Adding an IP to a table
-
-**One-time** (persists until reboot or manual flush):
+**Populate the PF tables:**
 
 ```sh
-# pfctl -t services -T add 198.51.100.10
+Upmailserver
+Upservices
+Enupdates
 ```
 
-**Permanent** (survives reboot — add to config, then reload):
+These scripts read from `local.conf`, resolve hostnames via `userweb` DNS, and
+populate the tables. Root never touches the network directly.
+
+**Ordering:** `gen_fwall` emits the table definitions (`table <mailserver>
+persist`, etc.) into `pf.conf`, so the tables exist — empty — when `pfctl -f`
+loads the ruleset. The `update_*` scripts then fill them. The order (generate →
+verify → apply → populate) is intentional.
+
+**Regenerating after policy changes:** any time you edit `domains.conf` or
+`local.conf`:
 
 ```sh
-# Add the IP/hostname to the [services] section of local.conf
-# then run:
-# /opt/dropQbsd/libexec/update_services_table
+Gen openbsd
+pfctl -nf /etc/pf.conf
+pfctl -f /etc/pf.conf
 ```
 
-### Regenerating after policy changes
-
-Any time you edit `domains.conf` or `local.conf`, regenerate and reload (as root):
-
-```sh
-/opt/dropQbsd/libexec/gen_firewall openbsd
-pfctl -nf /etc/pf.conf   # verify first
-pfctl -f /etc/pf.conf    # then apply
-```
-
-The firewall is always derived from the policy — there is no separate
-hand-written `pf.conf` to keep in sync.
-
+The firewall is always derived from the policy. There is no hand-written
+`pf.conf` to keep in sync.
 
 ---
 
-## 9. Configure Cron (root)
+## 8. Configure Cron
 
-All cron jobs run as root. Jobs that need to act on behalf of a domain user use `su -l <user> -c` to switch to that user's environment. There is no per-user crontab — everything is managed centrally in root's crontab for auditability and simplicity.
+All cron jobs run as root. Jobs that need to act on behalf of a domain user use
+`su -l <user> -c` to switch to that user's environment. There is no per-user
+crontab — everything is managed centrally in root's crontab for auditability.
 
-```sh
-# dropQbsd — root crontab
-PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/opt/dropQbsd/bin
-SHELL=/bin/sh
-HOME=/root
+### Merge the crontab entries
 
-# --- OpenBSD system maintenance ---
-0       *       *       *       *       /usr/bin/newsyslog
-30      1       *       *       *       /bin/sh /etc/daily
-30      3       *       *       6       /bin/sh /etc/weekly
-30      5       1       *       *       /bin/sh /etc/monthly
-
-# --- dropQbsd: drop zone and sync enforcement ---
-*       *       *       *       *       /opt/dropQbsd/libexec/enforce_drop
-*       *       *       *       *       /opt/dropQbsd/libexec/enforce_sync
-
-# --- dropQbsd: PF table updates ---
-*/15    *       *       *       *       /opt/dropQbsd/libexec/update_mailserver_table
-*/5     *       *       *       *       /opt/dropQbsd/libexec/update_services_table
-
-# --- dropQbsd: integrity verification ---
-*/5     *       *       *       *       /opt/dropQbsd/libexec/verify_integrity
-
-
-# --- dropQbsd: mail archival (daily at 20:10) ---
-# Mail export runs at 20:10. On large mailboxes (40+ GB) compression
-# can take 90+ minutes. Pull runs at 23:00 with a 6-hour cleanup
-# timeout — safe even for the largest archives.
-10      20      *       *       *       su -l usermail -c /opt/dropQbsd/libexec/export_mail_to_drop > /dev/null 2>&1
-
-# --- dropQbsd: mail pull (daily at 23:10, after export completes) ---
-10       23      *       *       *       su -l userdoc -c /opt/dropQbsd/libexec/pull_mail_from_drop > /dev/null 2>&1
-
-# --- dropQbsd: www archival (every 2 hours, 8:00–20:00) ---
-0       8,10,12,14,16,18,20 * * *     su -l userweb -c /opt/dropQbsd/libexec/export_www_to_drop > /dev/null 2>&1
-
-# --- dropQbsd: www pull (15 min after each export) ---
-15      8,10,12,14,16,18,20 * * *     su -l userdoc -c /opt/dropQbsd/libexec/pull_www_from_drop > /dev/null 2>&1
-```
-
-All scripts use an atomic `mkdir` lock to prevent overlapping runs. The lock directories live in `/var/run/` and are cleared on reboot. If a script is killed mid-run, remove its lock manually as root:
+`examples/system/crontab.example` contains the dropQbsd entries to **add** to
+root's existing crontab. The merge is idempotent — every dropQbsd line contains
+the string `dropQbsd`:
 
 ```sh
-rmdir /var/run/enforce_drop.lock
-rmdir /var/run/enforce_sync.lock
+crontab -l | grep -v dropQbsd > /tmp/crontab.merge
+cat examples/system/crontab.example >> /tmp/crontab.merge
+crontab /tmp/crontab.merge
+rm /tmp/crontab.merge
 ```
+
+Verify:
+
+```sh
+crontab -l | grep dropQbsd
+```
+
+**NOTE:** `crontab(1)` **replaces** the whole table — it does not append. Never
+paste into `crontab -e` over pre-existing entries unless you edit in place.
+
+### Jobs NOT in the crontab (by design)
+
+- **`ensure_updates_table`** — invoked by the update scripts (`pkg_tru_fwall`,
+  `patch_tru_fwall`) before touching the `<updates>` PF table. Its newsyslog
+  entry only covers manual runs.
+- **`root_snapshot`** — on demand, from `control_panel` (press `a`).
+
+### Export/import race safety (by construction)
+
+All export scripts publish archives atomically: they write a `*.tar.gz.tmp`
+file inside the drop zone and rename it when complete. Import scripts only ever
+match `*.tar.gz`. A partial archive is therefore invisible to imports.
+
+If an export runs long, that slot's import finds nothing and exits 0; the next
+run imports the complete archive. **This is expected behavior, not a failure.**
+
+Orphaned `.tmp` files are removed by the exporters' own rotation (6 hours).
+
+**Do not widen the import globs or remove the `.tmp` step** — this is a
+load-bearing convention across all four export/import scripts.
+
+### Lock files
+
+All scripts use an atomic `mkdir` lock to prevent overlapping runs.
+The lock directories live in `/var/run/` and are cleared on reboot.
+
+The enforcers' locks carry a TTL (5 min): if a run is killed
+mid-cycle, the next run detects the orphaned lock by age, removes
+it, and re-acquires it — a killed cycle costs at most 5 minutes of
+skipped runs, not a permanently blocked enforcer. Manual removal
+(`rmdir /var/run/enforce_*.lock`) is only a fallback if the reclaim
+itself fails (e.g. permissions); `control_panel` surfaces an
+orphaned lock as a red entry.
+
+### Enforcer rules
+
+1. **No silent exits.** An enforcer may exit silently ONLY when there is
+   nothing to do, or when another instance holds the lock. Locks are acquired
+   via atomic `mkdir` with a TTL: an orphaned lock (owner killed mid-cycle)
+   is reclaimed by age instead of blocking every future run forever. The TTL
+   is deliberately generous — a cycle takes seconds, so a lock older than a
+   few minutes is garbage, never a running cycle.
+
+2. **Count what you fix, fix what you count.** Every fix command uses the same
+   filter as its counter, so no action can happen without its log line (and
+   vice versa).
+
+3. **Numeric identity in integer tests.** stat(1) `-f %g` and
+   `-f %u` return the NUMERIC gid/uid on both OpenBSD and FreeBSD.
+   Integer comparisons (`-ne`) therefore work directly on the
+   values. Do NOT use `%G`/`%U`: on OpenBSD `%G` is a strftime
+   date format, and on FreeBSD `%U` is not defined at all.
+
+4. **Skips must own their names.** An enforcer may exempt only items the
+   system itself creates (`_quarantine`, `*_export`). No hardcoded filenames.
 
 ---
 
-## 10. Verification Checklist
+## 9. Verification Checklist
 
 After installation, verify each domain can perform its function:
 
-- [ ] `userweb`: browse the web, cannot reach LAN IPs
-- [ ] `usermail`: send/receive email, cannot browse the web
-- [ ] `userdoc`: access LAN storage, Syncthing syncs, cannot reach internet
-- [ ] `user`: can `qmv`/`qcp`/`qimport` files, can `run_app` into domains
-- [ ] `enforce_drop`: running in cron, check `/var/log/dropQbsd_drop.log`
-- [ ] `enforce_sync`: running in cron, check `/var/log/dropQbsd_sync.log`
-- [ ] `update_mailserver_table`: populates `<mailserver>` table
-- [ ] `update_services_table`: populates `<services>` table
+- `userweb`: browse the web, cannot reach LAN IPs
+- `usermail`: send/receive email, cannot browse the web
+- `userdoc`: access LAN storage, Syncthing syncs, cannot reach internet
+- `user`: can `Qmv`/`Qcp`/`Qimport` files, can `Run` into domains
+- `Endrop` running in cron — verify via the runbook below (lock-watch test), an empty log is normal
+- `Ensync` running in cron — verify via the runbook below (lock-watch test), an empty log is normal
+- `Update_mailserver` populates `<mailserver>` table
+- `Update_services` populates `<services>` table
+- `Control` shows domain status and drop zone contents
+
+### Verifying the enforcers (runbook)
+
+Each test exercises one branch. Expected output is shown after each command.
+All drop-zone test files age out on their own (30 min); remove Sync test files
+manually.
+
+```sh
+# --- enforce_drop: cron is running (watch for ~1 minute) ------
+while true; do
+    ls -d /var/run/enforce_drop.lock 2>/dev/null && break
+    sleep 1
+done && echo "OK: cycle observed"
+```
+
+```sh
+# --- enforce_drop: permission enforcement (wait > 2 min) ------
+touch /home/drop/t_perm.txt
+chmod 600 /home/drop/t_perm.txt
+chgrp drop /home/drop/t_perm.txt
+sleep 150
+stat -f '%Mp%Lp %N' /home/drop/t_perm.txt
+# 0440 /home/drop/t_perm.txt
+tail -1 /var/log/dropQbsd/enforce_drop.log
+# Cycle complete: abandoned=0 quarantined=0 perms_fixed=1
+```
+
+```sh
+# --- enforce_drop: quarantine (non-root, wrong GID) ------------
+touch /home/drop/t_quar.txt
+chown userdoc:wheel /home/drop/t_quar.txt
+sleep 150
+ls /home/drop/_quarantine/
+# t_quar.txt_<pid>   t_quar.txt_<pid>.txt
+# The ticket must show NUMERIC gid/uid (Expected GID: <n>).
+```
+
+```sh
+# --- enforce_drop: atomic publish is untouchable ---------------
+touch /home/drop/userweb_export/www_t.tar.gz.tmp
+chmod 600 /home/drop/userweb_export/www_t.tar.gz.tmp
+sleep 150
+stat -f '%Mp%Lp %N' /home/drop/userweb_export/www_t.tar.gz.tmp
+# 0600 ... -- must NOT be 440. Remove it manually afterwards.
+```
+
+```sh
+# --- enforce_sync: owner + permission enforcement --------------
+touch /home/userdoc/Sync/t_test.txt
+chmod 600 /home/userdoc/Sync/t_test.txt
+chown root:wheel /home/userdoc/Sync/t_test.txt
+sleep 120
+ls -l /home/userdoc/Sync/t_test.txt
+# -rw-rw---- 1 userdoc userdoc ...
+tail -1 /var/log/dropQbsd/enforce_sync.log
+# ... Fixed in /home/userdoc/Sync: 1 file(s), 0 dir(s), 1 owner/group mismatch(es)
+```
+
+```sh
+# --- both: no orphaned locks ------------------------------------
+ls -d /var/run/enforce_*.lock 2>/dev/null || echo "OK: no locks (idle)"
+# A lock persisting over several checks = blocked enforcer:
+# reclaim it (rmdir) and investigate what killed the cycle.
+```
 
 ---
 
-## 11. Optional Components
+## 10. Optional Components
 
 These are not required for dropQbsd to function. Install only what you need.
-
----
 
 ### Control Panel
 
 No extra packages needed (base system only). Run as `user`:
 
 ```sh
-$ /opt/dropQbsd/bin/control_panel
+Control
 ```
 
-Requires `/opt/dropQbsd/libexec/root_snapshot` for privileged data.
-
----
+Requires `/opt/dropQbsd/libexec/root_snapshot`.
 
 ### Desktop Environment
 
-dropQbsd works with any window manager. Two recommendations:
+dropQbsd works with any window manager.
 
-- **XFCE** — full desktop environment, familiar for users migrating from Windows/macOS. Lightweight by modern standards, well-supported on OpenBSD. Install: `/opt/dropQbsd/admin/pkg_add_via_pf xfce xfce-extras`
-- **cwm** — OpenBSD's native stacking window manager. Minimal, keyboard-driven, zero dependencies beyond the base system. For a purer OpenBSD experience. Already installed — no packages needed.
+- **XFCE** — full desktop environment, familiar for users migrating from
+  Windows/macOS. Install with `Pkg xfce xfce-extras`.
+- **cwm** — OpenBSD's native stacking window manager. Minimal, keyboard-driven,
+  zero dependencies beyond the base system.
 
-Both work with `run_app` without additional configuration. Launch apps in any domain from the same desktop — `run_app` handles the X11 cookie forwarding transparently.
+Both work with `Run` without additional configuration.
 
 **Color scheme convention:**
 
 | User | Role | Suggested theme color |
-|------|------|-----------------------|
+| ---- | ---- | --------------------- |
 | `user` | Conductor | Black / Dark grey |
 | `userdoc` | Documents | Dark green |
 | `usermail` | Email | Dark orchid |
 | `userweb` | Web browser | Dark blue |
 | `root` | System | Dark red |
 
-Set the theme per user via XFCE Settings → Appearance. This gives immediate visual feedback about which domain you're working in.
+Set the theme per user via XFCE Settings → Appearance. This gives immediate
+visual feedback about which domain you are working in.
 
----
+### Domain Indicator
 
-### Domain Indicator (XFCE / Desktop Environments)
+For XFCE and other desktop environments, install the indicator dependencies:
 
-```sh
-# /opt/dropQbsd/admin/pkg_add_via_pf dzen2 xdotool
-```
+| OpenBSD | FreeBSD |
+| ------- | ------- |
+| `pkg_add dzen2 xdotool` | `pkg install dzen2 xdotool` |
 
-No further configuration needed — the indicator is launched automatically by `~/.xsession` when user logs in with XFCE.
+The indicator is launched automatically by `~/.xprofile` when `user` logs in.
 
-### Domain Indicator (cwm / Minimal WMs)
-
-No extra packages needed. The indicator is launched automatically by `~/.xsession` when user logs in with cwm. Zero dependencies beyond base X11.
-
----
+For tiling window managers (`i3`, `dwm`, `spectrwm`) and the base window
+managers (`cwm` on OpenBSD, `twm` on FreeBSD), the OSD indicator is not used.
+Domain differentiation is provided by the color schemes of terminals, `mc`, and
+`xfe` launchers.
 
 ### Editor and Application Menu
-
-Example configuration files are provided in `examples/` for a smoother daily workflow.
 
 **vi — editor configuration:**
 
 ```sh
-$ cp examples/system/exrc ~/.exrc
+cp examples/apps/vi/exrc ~/.exrc
 ```
 
-
-Provides quality-of-life key bindings for nvi (OpenBSD's base system vi): toggle visible whitespace, tab width control, paste mode to prevent indentation staircasing, and quick save/quit shortcuts. Works out of the
-box — no additional packages needed.
-
-**cwm — application menu:**
-
-```sh
-$ cp examples/system/cwmrc ~/.cwmrc
-```
-
-Edit `~/.cwmrc` and uncomment the section matching your role (root, domain user, or conductor). Provides a `Ctrl+/` application menu with domain-aware terminal launchers and commonly used applications. Requires no additional packages — `cwm` is in the base system.
-
----
+Provides key bindings for nvi (OpenBSD base system vi): toggle visible
+whitespace, tab width control, paste mode, quick save/quit.
 
 ### File Bridge (tmux + nnn)
 
-`file_bridge` provides a 4-quadrant tmux session with `nnn` per domain plus `control_panel`. Install requirements:
+Install requirements:
+
+| OpenBSD | FreeBSD |
+| ------- | ------- |
+| `pkg_add nnn tmux` | `pkg install nnn tmux` |
+
+Install the nnn plugins for each domain:
 
 ```sh
-# /opt/dropQbsd/admin/pkg_add_via_pf nnn tmux
-```
-#### nnn Plugins
-
-Each domain needs three nnn plugins for qcp/qmv/qimport. Create the plugin directory and scripts for each domain. Run as root:
-
-```sh
+cd /opt/dropQbsd
 for d in userdoc usermail userweb; do
     mkdir -p /home/$d/.config/nnn/plugins
-
-    cat > /home/$d/.config/nnn/plugins/qcp << 'EOF'
-#!/bin/sh
-nohup /opt/dropQbsd/bin/qcp "$@" /home/drop/ >/dev/null 2>&1 &
-EOF
-
-    cat > /home/$d/.config/nnn/plugins/qmv << 'EOF'
-#!/bin/sh
-nohup /opt/dropQbsd/bin/qmv "$@" /home/drop/ >/dev/null 2>&1 &
-EOF
-
-    cat > /home/$d/.config/nnn/plugins/qimport << 'EOF'
-#!/bin/sh
-for f in "$@"; do
-    case "$f" in
-        /*) nohup /opt/dropQbsd/bin/qimport "$f" >/dev/null 2>&1 & ;;
-        *)  nohup /opt/dropQbsd/bin/qimport "/home/drop/$f" >/dev/null 2>&1 & ;;
-    esac
-done
-EOF
-
+    cp examples/apps/nnn/plugins/* /home/$d/.config/nnn/plugins/
     chmod +x /home/$d/.config/nnn/plugins/*
     chown -R $d:drop /home/$d/.config/nnn
 done
 ```
+
 Launch from the conductor:
 
 ```sh
-$ /opt/dropQbsd/bin/file_bridge
+File
 ```
 
----
+**Keys:** `F1`–`F4` jump to a quadrant, `F5` closes the session.
+
+**Plugin keys** (inside a domain quadrant):
+
+| Key | Action |
+| --- | ------ |
+| `Space` | Select file(s) |
+| `;c` | Copy selected files to /home/drop (nnnqcp) |
+| `;m` | Move selected files to /home/drop (nnnqmv) |
+| `;i` | Import selected files from /home/drop (nnnqimport) |
+
+**Note on F1–F5:** the bindings are installed in tmux's root key
+table, so they are global to the tmux server. While file_bridge
+is running, F1–F5 are captured in every tmux session on the
+machine. This is intentional: file_bridge is designed to be the
+only tmux session in use.
+
+Plugin errors are appended to `~/.cache/dropQbsd/nnn_plugins.log`
+in the domain's home (e.g. `/home/userdoc/.cache/dropQbsd/nnn_plugins.log`).
+
+#### Launching the File Bridge from a Desktop Launcher
+
+If you create a desktop launcher (XFCE, MATE, ...) for the file
+bridge, the command must go through the wrapper:
+
+    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_user \
+        /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/file_bridge
+
+The inner wrapper is required: file_bridge has no shebang (dropQbsd
+convention for sbin/ and libexec/ scripts), so it cannot be exec'd
+directly by xterm.
 
 ### File Managers
 
-We recommend two file managers, both lightweight and OpenBSD-native:
+Two recommendations, both lightweight:
 
-- **Xfe** (X File Explorer) — graphical, dual-pane, familiar interface
-- **Midnight Commander (`mc`)** — terminal-based, fast, ideal for remote sessions
+- **Xfe** — graphical, dual-pane
+- **Midnight Commander (`mc`)** — terminal-based
 
-Each domain user should use a distinct color scheme for immediate visual feedback about which domain you're working in. Example templates with coordinated colors are provided in `examples/`:
+Install:
 
-| Domain | Xfe background | mc skin |
-|--------|---------------|---------|
-| `userweb` | Blue | `examples/skins/mc/userweb.ini` |
-| `usermail` | Orchid | `examples/skins/mc/usermail.ini` |
-| `userdoc` | Green | `examples/skins/mc/userdoc.ini` |
+| OpenBSD | FreeBSD |
+| ------- | ------- |
+| `pkg_add xfe mc` | `pkg install xfe mc` |
 
-Install in each domain:
+Copy the example color schemes:
 
 ```sh
-# /opt/dropQbsd/admin/pkg_add_via_pf xfe mc
+for d in userdoc usermail userweb; do
+    mkdir -p /home/$d/.config/mc
+    cp examples/apps/mc/skins/$d.ini /home/$d/.config/mc/ini
+    chown -R $d:drop /home/$d/.config/mc
+done
 ```
 
-Launch via `run_app` (as conductor):
+Launch via `Run`:
 
 ```sh
-/opt/dropQbsd/bin/run_app userdoc xfe /home/userdoc
-/opt/dropQbsd/bin/run_app userdoc mc
+Run userdoc xfe /home/userdoc
+Run userdoc mc
 ```
-
-Xfe configuration files live in `~/.config/xfe/` inside each domain's home. Copy the example color schemes from `examples/skins/xfe/` and adjust to taste.
-
----
 
 ### Integrity Verification
 
-dropQbsd can cryptographically verify that critical scripts have not been tampered with, using OpenBSD's built-in `signify(1)`. Logs are written to `/var/log/dropQbsd_integrity.log`.
+dropQbsd can cryptographically verify that critical scripts have not been
+tampered with, using `signify(1)`.
+
+| OpenBSD | FreeBSD |
+| ------- | ------- |
+| Included in base system | `pkg install signify` |
 
 **Setup:**
 
-Generate a key pair and sign the critical scripts (keep the .sec key offline). Run as root:
+Generate a key pair and sign the critical scripts. The private key must not
+sit on the disk in plaintext — two acceptable options are shown below
+(option 1 is recommended).
+
+**Option 1 — encrypted key on disk (recommended).** The key is protected by a
+passphrase. Cron never needs the private key (verification is public-key
+only), so encryption breaks no automation. The passphrase must live only in
+your head or in a KeePassXC vault **on another device** — a passphrase stored
+next to the key it protects defeats the encryption.
+
+```sh
+cd /opt/dropQbsd
+rm -f keys/dropQbsd.pub keys/dropQbsd_scripts.sha256.sig
+signify -G -e -p keys/dropQbsd.pub -s /root/dropQbsd.sec
+chmod 600 /root/dropQbsd.sec
+```
+
+**Option 2 — offline key.** Keep the key on removable media, restore it only
+for signing, move it away afterwards:
 
 ```sh
 cd /opt/dropQbsd
 rm -f keys/dropQbsd.pub keys/dropQbsd_scripts.sha256.sig
 signify -G -n -p keys/dropQbsd.pub -s /root/dropQbsd.sec
-sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport \
-       libexec/enforce_drop libexec/enforce_sync \
-       libexec/gen_firewall \
-       libexec/update_mailserver_table \
-       libexec/update_services_table \
-       libexec/ensure_updates_table \
-       /etc/dropQbsd/domains.conf \
-       /etc/dropQbsd/local.conf \
-       /etc/dropQbsd/schema \
-  | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
-rm /root/dropQbsd.sec
+chmod 600 /root/dropQbsd.sec
 ```
 
-The `verify_integrity` cron job (installed in step 9) checks these scripts every 5 minutes and logs any modifications to `/var/log/dropQbsd_integrity.log`.
-
-To verify manually (as root):
+Create the file list. Each line is a path relative to `/opt/dropQbsd`, or
+absolute for files under `/etc/dropQbsd/`. **Do not add `verify_integrity` to
+this list:** it is the trust anchor — the file that checks the others cannot
+itself be checked by them. It is protected by the signature over the public
+key and by the fact that the private key is not on the disk in plaintext.
 
 ```sh
-/opt/dropQbsd/libexec/verify_integrity
-cat /var/log/dropQbsd_integrity.log
+cp templates/filelist_for_etc /etc/dropQbsd/filelist
+chown root:wheel /etc/dropQbsd/filelist
+chmod 644 /etc/dropQbsd/filelist
 ```
 
-#### After Updating Scripts
-
-If you modify any of the monitored scripts or policy files, `verify_integrity` will report a signature violation. This is expected. Regenerate the signature (as root):
+Sign the files. With **option 1** you will be asked for the passphrase — this
+is expected: signing is a rare, interactive event, and the cron job never
+needs the private key.
 
 ```sh
 cd /opt/dropQbsd
-sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport \
-       libexec/enforce_drop libexec/enforce_sync \
-       libexec/gen_firewall \
-       libexec/update_mailserver_table \
-       libexec/update_services_table \
-       libexec/ensure_updates_table \
-       /etc/dropQbsd/domains.conf \
-       /etc/dropQbsd/local.conf \
-       /etc/dropQbsd/schema \
-  | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
-rm /root/dropQbsd.sec
+sha256 $(cat /etc/dropQbsd/filelist) \
+ | signify -S -e -s /root/dropQbsd.sec -m - \
+      -x keys/dropQbsd_scripts.sha256.sig
 ```
 
-If you no longer have the private key (`/root/dropQbsd.sec`), regenerate the key pair from scratch (as root):
+With **option 2**, after signing move the private key offline (or delete it):
+
+```sh
+mv /root/dropQbsd.sec /path/to/offline/storage/
+```
+
+The `verify_integrity` cron job checks the files every 5 minutes and logs to
+`/var/log/dropQbsd/verify_integrity.log`. Verification is public-key only
+(`signify -V`): no passphrase, no private key, no manual steps.
+
+**Why the private key must not sit in plaintext on this disk:** an attacker
+who can read it can re-sign their own tampering — the machine would then be
+verifying itself against a signature the attacker made. A plaintext key on
+the same disk that `verify_integrity` polices turns the verification into
+theater.
+
+**After updating scripts:** if you modify any monitored file,
+`verify_integrity` will report a violation. This is expected. Re-generate
+the signature (as root):
+
+With **option 1** (passphrase will be asked):
 
 ```sh
 cd /opt/dropQbsd
-rm -f keys/dropQbsd.pub keys/dropQbsd_scripts.sha256.sig
-signify -G -n -p keys/dropQbsd.pub -s /root/dropQbsd.sec
-sha256 libexec/run_app_impl bin/qmv bin/qcp bin/qimport \
-       libexec/enforce_drop libexec/enforce_sync \
-       libexec/gen_firewall \
-       libexec/update_mailserver_table \
-       libexec/update_services_table \
-       libexec/ensure_updates_table \
-       /etc/dropQbsd/domains.conf \
-       /etc/dropQbsd/local.conf \
-       /etc/dropQbsd/schema \
-  | signify -S -s /root/dropQbsd.sec -m - -x keys/dropQbsd_scripts.sha256.sig
+sha256 $(cat /etc/dropQbsd/filelist) \
+ | signify -S -e -s /root/dropQbsd.sec -m - \
+      -x keys/dropQbsd_scripts.sha256.sig
+```
+
+With **option 2**, restore the private key first, then sign, then move it
+back offline:
+
+```sh
+cp /path/to/offline/storage/dropQbsd.sec /root/dropQbsd.sec
+cd /opt/dropQbsd
+sha256 $(cat /etc/dropQbsd/filelist) \
+ | signify -S -n -s /root/dropQbsd.sec -m - \
+      -x keys/dropQbsd_scripts.sha256.sig
 rm /root/dropQbsd.sec
 ```
 
----
-
-### Log Rotation
-
-All dropQbsd logs should be rotated to prevent unbounded growth. Append the example rules to the existing `/etc/newsyslog.conf` — do **not** replace it, as OpenBSD ships with its own system rotation rules.
-
-```sh
-# dropQbsd logs
-/var/log/dropQbsd_drop.log        root:wheel   640  7     *     @T00  Z
-/var/log/dropQbsd_sync.log        root:wheel   640  7     *     @T00  Z
-/var/log/dropQbsd_integrity.log   root:wheel   640  7     *     @T00  Z
-/var/log/dropQbsd_updates.log     root:wheel   640  3     100   *     Z
-```
-
-`enforce_drop` and `enforce_sync` run every minute — rotate daily, keep 7 archives. `verify_integrity` runs every 5 minutes — same policy. Update logs grow slowly (manual runs only) — rotate at 100 KB, keep 3 archives.
-
----
+If you no longer have the private key (or the passphrase for an encrypted
+key), regenerate the key pair from scratch — with `signify -G -e` for option
+1, `signify -G -n` for option 2 — and re-sign. The old signature becomes
+invalid; this is by design: the trust anchor is the key, and a lost key means
+the chain must be rebuilt.
 
 ### Site Menu + Password Manager
 
-For daily use we recommend **KeePassXC** — it runs in its own domain, keeps the password database isolated, and works with any browser.
+For daily use, **KeePassXC** is recommended — it runs in its own domain, keeps
+the password database isolated, and works with any browser.
 
-For a smoother, more integrated experience, dropQbsd includes `site_menu`: a two-phase dropdown launcher that reads site entries from a config file, copies credentials to the clipboard via `pass(1)`, and opens sites in a disposable browser.
+For an integrated experience, dropQbsd includes `site_menu`: a two-phase
+dropdown launcher that reads site entries from a config file, copies
+credentials to the clipboard via `pass(1)`, and opens sites in a disposable
+browser.
 
 **Two-phase login flow:**
 
-1. Select a site → press **Copy ID** → browser opens, user ID copied to clipboard, window stays open.
-2. The same site is now the only entry shown → press **Copy Password** → password copied (30s timer), window closes.
+1. Select a site → press **Copy ID** → browser opens, user ID copied to
+   clipboard, window stays open.
+2. The same site is now the only entry shown → press **Copy Password** →
+   password copied (30s timer), window closes.
 
-This eliminates the risk of pasting credentials into the wrong site — phase 2 locks the selection so only the waiting site is visible. If the GPG keyring is locked, a warning dialog prompts you to unlock it manually and retry.
+This eliminates the risk of pasting credentials into the wrong site.
 
 **Installation:**
 
-```sh
-# /opt/dropQbsd/admin/pkg_add_via_pf zenity pass xclip
-```
+| OpenBSD | FreeBSD |
+| ------- | ------- |
+| `pkg_add zenity pass xclip` | `pkg install zenity pass xclip` |
 
 **Initialize pass:**
 
 ```sh
-$ pass init your-gpg-key-id
+pass init your-gpg-key-id
 ```
 
-**Configure sites (as conductor):**
+**Configure sites:**
 
 ```sh
 mkdir -p ~/.config/dropQbsd
-cp examples/system/sites.conf ~/.config/dropQbsd/sites.conf
+cp examples/system/sites.conf.example ~/.config/dropQbsd/sites.conf
 ```
 
 Edit `~/.config/dropQbsd/sites.conf` with your own sites. Format:
 
-```sh
+```
 # Label|URL|id_entry|pass_entry
 Bank |https://bank.example.com|finance/bank_id|finance/bank_pw
 ERP |https://erp.example.com|work/erp_id|work/erp_pw
@@ -731,74 +959,58 @@ Forum|https://forum.example.com||web/forum
 
 **Store passwords:**
 
-Run as conductor:
-
 ```sh
 pass insert finance/bank_id
 pass insert finance/bank_pw
-pass insert work/erp_id
-pass insert work/erp_pw
 ```
 
 **Launch:**
 
 ```sh
-$ /opt/dropQbsd/bin/site_menu
+Site
 ```
-
-Phase 1: select site, press **Copy ID** — browser opens, ID copied, window stays open. Phase 2: same site pre-selected, press **Copy Password** — password copied (30s timer), window closes. The site runs in a disposable browser (tmpfs-backed). Nothing survives after the browser closes.
-
----
 
 ### Syncthing — LAN File Synchronization
 
-Set up Syncthing for `userdoc` with the Sync directory at `/home/userdoc/Sync`. The `enforce_sync` script maintains correct permissions automatically.
+Set up Syncthing for `userdoc` with the Sync directory at
+`/home/userdoc/Sync`. The `enforce_sync` script maintains correct permissions
+automatically.
 
 **Installation:**
 
-```sh
-# /opt/dropQbsd/admin/pkg_add_via_pf syncthing
-```
+| OpenBSD | FreeBSD |
+| ------- | ------- |
+| `pkg_add syncthing` | `pkg install syncthing` |
 
 **Service setup:**
 
-Run as root:
+| OpenBSD | FreeBSD |
+| ------- | ------- |
+| `cp templates/rc.d/syncthing_userdoc.openbsd /etc/rc.d/syncthing_userdoc` | `cp templates/rc.d/syncthing_userdoc.freebsd /usr/local/etc/rc.d/syncthing_userdoc` |
+| `chmod 555 /etc/rc.d/syncthing_userdoc` | `chmod 555 /usr/local/etc/rc.d/syncthing_userdoc` |
+| `rcctl enable syncthing_userdoc` | `sysrc syncthing_userdoc_enable=YES` |
+| `rcctl start syncthing_userdoc` | `service syncthing_userdoc start` |
 
-```sh
-cp templates/rc.d/syncthing_userdoc /etc/rc.d/
-chmod 555 /etc/rc.d/syncthing_userdoc
-rcctl enable syncthing_userdoc
-rcctl start syncthing_userdoc
-```
-
-**Firewall:**
-
-Syncthing rules are already in the policy (domains.conf declares tcp:22000@lan udp:21027@lan for both allow and allow_in). No manual pf.conf edits are needed. If your local.conf declares your LAN subnet correctly, the rules are generated automatically.
+**Firewall:** Syncthing rules are already in the policy (`domains.conf`
+declares `tcp:22000@lan` and `udp:21027@lan` for both `allow` and `allow_in`).
+No manual `pf.conf` edits are needed.
 
 **Configuration:**
 
 ```sh
-$ /opt/dropQbsd/bin/run_app userdoc /usr/local/bin/qutebrowser --temp-basedir http://127.0.0.1:8384
+Run userdoc qutebrowser --temp-basedir http://127.0.0.1:8384
 ```
 
-Settings → Default Folder Path: `/home/userdoc/Sync`
-Add remote devices by their device ID. Share folders with read/write permissions as needed.
+Settings → Default Folder Path: `/home/userdoc/Sync`.
 
-**Troubleshooting:**
-
-If remote devices show as disconnected:
-
-- Verify both devices have Sync Protocol Listen Addresses set to default
-- Verify the remote device is listening on TCP 22000: `nc -zv <remote-ip> 22000`
-- Delete and re-add the remote device after any hostname or IP changes
-- Check that `pf.conf` allows incoming TCP 22000 and UDP 21027 from LAN
-
----
+**Troubleshooting:** if remote devices show as disconnected, verify the remote
+device is listening on TCP 22000, and check that `pf.conf` allows incoming TCP
+22000 and UDP 21027 from the LAN.
 
 ### VLC in userdoc
 
-MIT-SHM (X11 shared memory) is not available across user boundaries.
-VLC will decode video but fail to render frames. Force software output (as conductor):
+MIT-SHM (X11 shared memory) is not available across user boundaries. VLC will
+decode video but fail to render frames. Force software output:
 
 ```sh
 mkdir -p /home/userdoc/.config/vlc
@@ -806,136 +1018,316 @@ printf '[core]\nvout=x11\navcodec-hw=none\n' > /home/userdoc/.config/vlc/vlcrc
 chown -R userdoc:drop /home/userdoc/.config
 ```
 
-Works for any media player that relies on MIT-SHM or hardware acceleration.
 For mpv, use `--vo=x11 --hwdec=no`.
+
+---
+
+## 11. Upgrading the OS
+
+System updates are performed through the scripts in
+`/opt/dropQbsd/admin/`, using the restrictive firewall. Root has no
+permanent network access: the `<updates>` PF table is populated on
+demand by each script, and the temporary DNS/HTTP rules are removed
+when the operation finishes.
+
+| Alias     | Script                 | Purpose                                                    |
+| --------- | ---------------------- | ---------------------------------------------------------- |
+| `Patch`   | `patch_tru_fwall`      | Security patches only                                      |
+| `Pkg`     | `pkg_tru_fwall`        | Install or update packages (`Pkg <name>` / `Pkg -u`)       |
+| `Update`  | `update_tru_fwall`     | Full update: patches + firmware + packages + orphan cleanup |
+| `Upgrade` | `upgrade_tru_fwall`    | Major release upgrade (takes a `RELEASE` argument)         |
+
+All four run through the wrapper and can be invoked by alias or by
+full path:
+
+```sh
+Patch
+Pkg firefox
+Pkg -u
+Update
+Upgrade 16.0-RELEASE
+```
+
+### Concurrency
+
+Each script refuses to start if another instance of the same tool is
+already running (checked *before* opening the network window). This
+prevents the failure mode where two `pkg` processes fight for the
+package database lock, or where a doomed run opens the firewall for
+nothing.
+
+### Release upgrades (`Upgrade RELEASE`)
+
+`Upgrade` automates the *sequence* of a release upgrade, not the
+*moment*:
+
+- **OpenBSD**: `sysupgrade` downloads the release set and reboots
+  automatically. Nothing else is required.
+- **FreeBSD (traditional base)**: `freebsd-update upgrade -r RELEASE`
+  is **phase 1 of 3**. After rebooting, the operator must run:
+  ```sh
+  freebsd-update install
+  # repeat until it reports no more work, then:
+  pkg upgrade -y
+  ```
+- **FreeBSD (PkgBase)**: `pkg upgrade -y -r RELEASE` prepares the
+  upgrade. After rebooting, run:
+  ```sh
+  pkg upgrade -y
+  ```
+
+**RELEASE is mandatory on FreeBSD.** `Upgrade` without an argument
+exits with a usage message (e.g. `Upgrade 16.0-RELEASE`).
+
+### Pending-reboot marker
+
+When `Upgrade` prepares a release upgrade but cannot complete it (on
+FreeBSD, the reboot decision is the operator's), it leaves a marker at
+`/var/log/dropQbsd/upgrade_pending`.
+
+The login notice — a snippet in `/etc/dropQbsd/profile`, installed
+with the rest of the global configuration — checks for the marker at
+every login shell and prints a reminder:
+
+```
+>>> dropQbsd: release upgrade PENDING -- the reboot has not
+>>> been completed with the post-reboot install steps.
+dropQbsd release upgrade to 16.0-RELEASE prepared (2026-10-04 15:30:00)
+>>> See /var/log/dropQbsd/upgrade_tru_fwall.log for the exact steps.
+```
+
+**Remove the marker only after the post-reboot steps are done:**
+
+```sh
+rm -f /var/log/dropQbsd/upgrade_pending
+```
+
+The marker is written to `/var/log/dropQbsd/` (not directly under
+`/var/log/`) so that all dropQbsd state lives in one place.
+
+### Notes
+
+- **Run `Update` first.** `Upgrade` assumes patches and packages are
+  current; running it on a stale system may fail or leave the system
+  in a mixed state.
+- **PkgBase**: verify `/etc/pkg/FreeBSD-base.conf` points to the new
+  branch **before** running `Upgrade`.
+- **Do not interrupt `Upgrade`.** On OpenBSD, `sysupgrade` reboots
+  mid-command; the trap-based cleanup cannot run there, so the
+  machine comes back with the strict ruleset already in place (the
+  reboot flushes the temporary rules).
 
 ---
 
 ## 12. Directory Structure Reference
 
-After a full installation, your system will have:
+After a full installation:
 
-```sh
+```
 /etc/
-├── dropQbsd/                    # dropQbsd configuration (NEW in v0.2.0)
+├── dropQbsd/
+│   ├── alias                    # Shell aliases (from templates/)
 │   ├── domains.conf             # Portable policy (from templates/)
-│   ├── local.conf               # Local config (from examples/system/, edited)
+│   ├── filelist                 # Files monitored by verify_integrity
+│   ├── kshrc                    # Single entry point (from templates/)
+│   ├── local.conf               # Local config (edited)
+│   ├── profile                  # Environment variables (from templates/)
 │   └── schema                   # Valid domains (from templates/)
 ├── doas.conf                    # Privilege escalation (from templates/)
-├── kshrc                        # Interactive shell config (from templates/)
-├── newsyslog.conf               # Log rotation rules (dropQbsd entries appended)
-├── pf.conf                      # GENERATED by gen_firewall (do not edit)
-├── profile                      # Shell profile (from templates/)
-└── xsession                     # (from templates/)
+├── newsyslog.conf               # Log rotation (dropQbsd entries appended)
+├── pf.conf                      # GENERATED by gen_fwall (do not edit)
+└── rc.d/ (OpenBSD)              # or /usr/local/etc/rc.d/ (FreeBSD)
+    └── syncthing_userdoc
 
 /opt/dropQbsd/
-├── admin/                       # System administration tools
-│   ├── pkg_add_via_pf           # Package management
-│   ├── syspatch_via_pf          # Security patches
-│   ├── sysupgrade_via_pf        # Major release upgrade
-│   └── update_openbsd_via_pf    # Full system update
-├── bin/                         # User-facing commands
-│   ├── control_panel            # ncurses dashboard
-│   ├── file_bridge              # tmux-based 4-quadrant file manager bridge
-│   ├── indicator_cwm            # Domain indicator for cwm/i3/dwm
-│   ├── indicator_xfce4          # Domain indicator for XFCE/DEs
-│   ├── run_app                  # setuid blind gate (compiled)
-│   ├── qmv                      # Move files into drop zone
-│   ├── qcp                      # Copy files into drop zone
-│   ├── qimport                  # Import files from drop zone
-│   ├── site_menu                # Two-phase site launcher
-│   ├── xterm_root               # xterm with root color scheme
-│   ├── xterm_user               # xterm with user color scheme
-│   ├── xterm_userdoc            # xterm with userdoc color scheme
-│   ├── xterm_usermail           # xterm with usermail color scheme
-│   └── xterm_userweb            # xterm with userweb color scheme
-├── keys/                        # signify keys and signatures
+├── admin/                       # System administration
+│   ├── build_run_app            # Compile run_app.c + restore setuid bit
+│   ├── gen_fwall                # Generate pf.conf from policy
+│   ├── patch_tru_fwall          # Security patches
+│   ├── pkg_tru_fwall            # Package management
+│   ├── update_tru_fwall         # Full system update
+│   └── upgrade_tru_fwall        # Major release upgrade
+├── bin/
+│   └── run_app                  # setuid gate (compiled)
+├── examples/
+│   ├── apps/
+│   │   ├── mc/skins/            # Midnight Commander color schemes
+│   │   ├── nnn/plugins/         # nnn plugins (nnnqcp, nnnqmv, nnnqimport)
+│   │   ├── vi/exrc              # nvi configuration
+│   │   └── xfe/                 # Xfe config and scripts
+│   └── system/
+│       ├── crontab.example      # Cron entries to merge
+│       ├── local.conf.example   # Local config template
+│       └── sites.conf.example   # Site menu config template
+├── keys/
 │   ├── dropQbsd.pub             # signify public key
-│   └── dropQbsd_scripts.sha256.sig       # Signed checksums
-├── libexec/                     # Internal logic (cron, export/pull, enforcement)
+│   └── dropQbsd_scripts.sha256.sig
+├── libexec/
 │   ├── enforce_drop             # Drop zone policing
 │   ├── enforce_sync             # Sync directory sanitization
-│   ├── ensure_updates_table     # Populate <updates> table (from local.conf)
-│   ├── export_www_to_drop       # www archival
+│   ├── ensure_updates_table     # Populate <updates> table
 │   ├── export_mail_to_drop      # Mail archival
-│   ├── gen_firewall             # Generate pf.conf from policy (NEW)
-│   ├── pull_www_from_drop       # www import
-│   ├── pull_mail_from_drop      # Mail import
+│   ├── export_www_to_drop       # www archival
+│   ├── import_mail_from_drop    # Mail import
+│   ├── import_www_from_drop     # www import
 │   ├── root_snapshot            # Privileged data for control_panel
-│   ├── run_app_impl             # Launch logic (ksh)
-│   ├── update_mailserver_table  # Mail server PF table (from local.conf)
-│   ├── update_services_table    # Services PF table (from local.conf)
-│   └── verify_integrity         # Script integrity check
-└── src/
-    └── run_app_wrapper.c        # C source (reference)
+│   ├── run_app_impl             # Launch logic
+│   ├── update_mailserver_table  # Mail server PF table
+│   ├── update_services_table    # Services PF table
+│   ├── verify_integrity         # Script integrity check
+│   └── wrapper                  # Environment sanitizer + shell selector
+├── sbin/
+│   ├── control_panel            # ncurses dashboard
+│   ├── file_bridge              # tmux 4-quadrant file manager
+│   ├── indicator_de             # Domain indicator
+│   ├── qcp                      # Copy into drop zone
+│   ├── qimport                  # Import from drop zone
+│   ├── qmv                      # Move into drop zone
+│   ├── site_menu                # Two-phase site launcher
+│   ├── xterm_root               # xterm, root color scheme
+│   ├── xterm_user               # xterm, conductor color scheme
+│   ├── xterm_userdoc            # xterm, userdoc color scheme
+│   ├── xterm_usermail           # xterm, usermail color scheme
+│   └── xterm_userweb            # xterm, userweb color scheme
+├── src/
+│   └── run_app.c                # C source (reference)
+└── templates/                       # Copy-as-is files
+    ├── alias_for_etc
+    ├── doas.conf
+    ├── domains.conf
+    ├── filelist_for_etc
+    ├── kshrc_for_etc
+    ├── newsyslog_append
+    ├── profile_for_etc
+    ├── profile_for_home
+    ├── rc.d/
+    │   ├── syncthing_userdoc.freebsd
+    │   └── syncthing_userdoc.openbsd
+    ├── schema_for_etc
+    ├── xinitrc_for_home
+    ├── xprofile_for_home
+    └── xsession_for_home
 
 /home/
-├── drop/                        # Exchange zone (root:drop, 2770)
-│   ├── usermail_export/         # Mail archives (SGID 2770)
-│   ├── userweb_export/          # www archives (SGID 2770)
-│   └── _quarantine/             # Policy violations
-├── user/                        # Conductor home
+├── user/                        # Conductor
+│   ├── .config/dropQbsd/sites.conf
+│   ├── .profile                 # Stub -> /etc/dropQbsd/kshrc
+│   ├── .xprofile                # Stub -> /etc/dropQbsd/kshrc
+│   ├── .xsession                # Stub + WM launch (xenodm)
+│   └── .xinitrc                 # Stub + WM launch (startx)
+├── userdoc/                     # Documents (700)
 │   ├── .config/
-│   │   └── dropQbsd/
-│   │       └── sites.conf       # Site menu configuration
-│   └── .xsession                # X session startup
-├── userdoc/                     # Document domain home (700)
-│   ├── .cwmrc                   # cwm application menu
-│   ├── .xsession                # X session startup
-│   └── Sync/                    # Syncthing root folder (optional)
-├── usermail/                    # Email domain home (700)
-│   ├── .cwmrc                   # cwm application menu
-│   └── .xsession                # X session startup
-└── userweb/                     # Browser domain home (700)
-    ├── .cwmrc                   # cwm application menu
-    └── .xsession                # X session startup
+│   ├── Sync/
+│   ├── .profile
+│   ├── .xprofile
+│   ├── .xsession
+│   └── .xinitrc
+├── usermail/                    # Email (700)
+│   ├── .profile
+│   ├── .xprofile
+│   ├── .xsession
+│   └── .xinitrc
+└── userweb/                     # Browser (700)
+    ├── .profile
+    ├── .xprofile
+    ├── .xsession
+    └── .xinitrc
 
 /root/
-├── .cwmrc                       # cwm application menu
-└── .xsession                    # X session startup
+├── .profile
+├── .xprofile
+├── .xsession
+└── .xinitrc
 
-/var/cron/tabs/
-└── root                         # Central crontab -- all jobs run as root
-
-/var/log/
-├── dropQbsd_drop.log            # Drop zone enforcement
-├── dropQbsd_sync.log            # Sync directory enforcement
-├── dropQbsd_integrity.log       # Script integrity verification
-└── dropQbsd_updates.log         # System update operations
+/var/log/dropQbsd/
+├── enforce_drop.log
+├── enforce_sync.log
+├── ensure_updates_table.log
+├── patch_tru_fwall.log
+├── pkg_tru_fwall.log
+├── update_mailserver_table.log
+├── update_tru_fwall.log
+├── upgrade_pending            # Pending-reboot marker (Upgrade)
+├── upgrade_tru_fwall.log
+└── verify_integrity.log
 ```
 
-### Repository layout (templates/ vs examples/)
+**Note on `/var/log/dropQbsd/`:** the directory starts empty after a
+fresh install. Each file appears the first time its script runs (the
+enforcers and `verify_integrity` via cron within minutes;
+`ensure_updates_table` and the update logs on first use of the
+corresponding alias). `upgrade_pending` is the pending-reboot marker
+written by `Upgrade` during a FreeBSD release upgrade (see §11).
 
-In the repository, files are split by their nature:
+---
 
-```sh
-templates/                       # Copy as-is (no editing needed)
-├── domains.conf                 # Portable policy -> /etc/dropQbsd/
-├── schema                       # Valid domains -> /etc/dropQbsd/
-├── doas.conf                    # -> /etc/doas.conf
-├── profile                      # -> /etc/profile
-├── kshrc                        # -> /etc/kshrc
-├── xsession                     # -> /etc/xsession
-├── newsyslog.conf               # append -> /etc/newsyslog.conf
-└── rc.d/
-    └── syncthing_userdoc        # -> /etc/rc.d/
+## 13. Portability
 
-examples/                        # Copy and personalize
-├── system/
-│   ├── local.conf.example       # -> /etc/dropQbsd/local.conf (EDIT)
-│   ├── cwmrc                    # -> ~/.cwmrc (choose role)
-│   ├── exrc                     # -> ~/.exrc
-│   ├── sites.conf               # -> /home/user/.config/dropQbsd/ (fill in)
-│   └── crontab                  # reference for crontab -e
-└── skins/                       # Optional color themes
-    ├── mc/
-    └── xfe/
-```
+dropQbsd runs on OpenBSD and FreeBSD from a **single codebase**. No forks, no
+per-OS patches, no duplicated scripts.
 
-**Key differences from v0.1.0:**
+The mechanism is a runtime shell selector. `libexec/wrapper` detects the
+operating system and executes the target script with the appropriate Korn Shell
+variant:
 
-- `/etc/tables/` is **gone** — table configs now live in `local.conf`
-- `/etc/pf.conf` is **gone** — `pf.conf` is generated by `gen_firewall`
-- `/etc/dropQbsd/` is **new** — holds `domains.conf`, `local.conf`, `schema`
-- `templates/` and `examples/` are **reorganized** by nature (copy-as-is vs copy-and-edit)
+| OS | Shell |
+| -- | ----- |
+| OpenBSD | `/bin/ksh` (base system) |
+| FreeBSD | `/usr/local/bin/mksh` (install with `pkg install mksh`) |
+
+Scripts in `sbin/` and `libexec/` carry **no shebang**. The wrapper decides.
+Adding a new OS means extending one `case` statement in `libexec/wrapper` — not
+editing every script.
+
+**Firewall backends** follow the same principle. `gen_fwall` reads a portable
+policy (`domains.conf`) and a site configuration (`local.conf`), then emits
+`pf.conf` for the target system. The policy describes intent; the backend
+translates intent into syntax.
+
+The only portability gap between the OpenBSD and FreeBSD `pf(4)` backends is
+interface detection:
+
+| OpenBSD | FreeBSD |
+| ------- | ------- |
+| Uses the `egress` interface group (provided automatically) | Resolves the physical interface from `route get default` |
+
+**NetBSD is not supported.** `npf(7)` filters by address and interface, not by
+user. Per-user network isolation — the foundation of dropQbsd's model — cannot
+be expressed in `npf`. `gen_fwall` refuses to generate a partial ruleset rather
+than emit a firewall that silently drops per-user isolation.
+
+---
+
+## 14. Environment sanitization
+
+`libexec/wrapper` is the environment-sanitization and shell-selection layer.
+
+It runs with the privileges of its caller:
+
+- **root**, when invoked through `run_app` (which is setuid root) or from cron;
+- **the domain user**, when invoked from within a domain.
+
+Because `run_app` escalates to root *before* calling the wrapper, everything
+downstream runs with root privileges — so the wrapper sanitizes the
+environment before any script sees it:
+
+- `PATH` is hardcoded to system directories. A user-controlled `PATH` in a root
+  context is privilege escalation: a fake `awk` earlier in `PATH` means
+  arbitrary code as root.
+- `IFS`, `LD_LIBRARY_PATH`, `LD_PRELOAD`, `PERL5LIB`, `PYTHONPATH`,
+  `CDPATH`, `SHELL`, `HOME`, `LOGNAME`, `USER` are all unset.
+- `ENV` is not set here. The Korn shell reads `ENV` only in **interactive**
+  mode, and the scripts executed by the wrapper are non-interactive.
+  Interactive shells (xterm) get `ENV` from `xterm_user` / `xterm_userdoc`.
+- Only `DISPLAY`, `XAUTHORITY`, and `TERM` survive the crossing.
+
+Scripts that need the invoking user's home directory rebuild it from
+`/etc/passwd` using the real uid — never from the environment.
+
+---
+
+## 15. License
+
+ISC. See [LICENSE](./LICENSE).
+
 

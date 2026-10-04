@@ -1,0 +1,77 @@
+# ==========================================================
+#  dropQbsd -- kshrc_for_etc
+#
+#  SINGLE ENTRY POINT for the dropQbsd shell environment.
+#  Loads the global environment and aliases, then sets the
+#  interactive shell options and the prompt.
+#
+#  Installation:
+#      cp /opt/dropQbsd/templates/kshrc_for_etc /etc/dropQbsd/kshrc
+#      chown root:wheel /etc/dropQbsd/kshrc
+#      chmod 644 /etc/dropQbsd/kshrc
+#
+#  Sourced by the per-user stubs:
+#      ~/.profile   -- login shells (tty, su -, ssh)
+#      ~/.xprofile  -- sddm / lightdm
+#      ~/.xsession  -- xenodm (OpenBSD)
+#      ~/.xinitrc   -- startx (FreeBSD)
+#
+#  Once ENV is exported here, every interactive child shell
+#  (terminals opened after login) sources this file again.
+#
+#  Notes:
+#    - Idempotent: sourcing twice changes nothing.
+#    - NOT read by sbin/ and libexec/ scripts (non-interactive):
+#      those use absolute paths, never aliases.
+#    - No /etc/profile modification is required.
+# ==========================================================
+
+# ------------------------------------------------------------------
+# 0. Interactive child shells load this file automatically
+# ------------------------------------------------------------------
+ENV=/etc/dropQbsd/kshrc
+export ENV
+
+# ------------------------------------------------------------------
+# 1. Environment variables
+# ------------------------------------------------------------------
+if [ -f /etc/dropQbsd/profile ]; then
+    . /etc/dropQbsd/profile
+fi
+
+# ------------------------------------------------------------------
+# 2. Aliases
+# ------------------------------------------------------------------
+if [ -f /etc/dropQbsd/alias ]; then
+    . /etc/dropQbsd/alias
+fi
+
+# ------------------------------------------------------------------
+# 3. Interactive shell options and prompt
+# ------------------------------------------------------------------
+# Guarded by $- (interactive flag): meaningless in non-interactive
+# shells, and setting them there would be a no-op at best.
+case "$-" in
+    *i*)
+        set -o emacs
+
+        # Static per-user prompt. pdksh (OpenBSD) does not expand
+        # $(...) inside PS1 and has no bash-style \u/\h/\w escapes.
+        # mksh (FreeBSD) does, but we stay portable. The hostname
+        # is resolved once, at load time -- zero runtime cost.
+        # No colour: pdksh lacks $$ $$ for zero-width sequences, so
+        # ANSI colours would desync line editing.
+        _dq_host=$(hostname -s)
+        case "$(id -un)" in
+            root)     PS1="root@${_dq_host}# " ;;
+            user)     PS1="user@${_dq_host}$ " ;;
+            userdoc)  PS1="userdoc@${_dq_host}$ " ;;
+            usermail) PS1="usermail@${_dq_host}$ " ;;
+            userweb)  PS1="userweb@${_dq_host}$ " ;;
+            *)        PS1="$ " ;;
+        esac
+        export PS1
+        unset _dq_host
+        ;;
+esac
+

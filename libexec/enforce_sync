@@ -1,4 +1,3 @@
-#!/bin/ksh
 # ==========================================================
 #  dropQbsd -- enforce_sync
 #
@@ -7,32 +6,63 @@
 #  are owned by userdoc:userdoc with correct permissions
 #  (2770 for dirs, 660 for files).
 #
+#  v0.3.0 changes:
+#    - Grace period now applies to the FIX commands too, not
+#      just the counters: count and action can no longer diverge
+#      (an action without a log line was possible before).
+#    - "Old enough" is uniformly '-mmin +GRACE' (strictly older
+#      than GRACE_MIN minutes) -- one form, no mixed semantics.
+#
 #  Path: /opt/dropQbsd/libexec/enforce_sync
 #  Permissions: chmod 700, root:wheel
 #
-#  Cron: * * * * * /opt/dropQbsd/libexec/enforce_sync
+#  Cron: * * * * * /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/enforce_sync
 #
 #  Note: Syncthing writes to temp files and renames atomically,
-#  so races with this script are unlikely. For extra safety,
-#  files younger than 1 minute are skipped.
+#  so races with this script are unlikely. The grace period is
+#  a second line of defense for anything not using the rename
+#  pattern.
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/enforce_sync
+#    OR
+#    Ensync
 # ==========================================================
 
 LOCKDIR="/var/run/enforce_sync.lock"
+LOCK_TTL=900   # seconds. A cycle takes seconds; an older lock is orphaned.
 
-# Clean up stale lock file from older script versions (which used a file, not a dir)
-if [ -f "$LOCKDIR" ]; then
-	rm -f "$LOCKDIR"
-fi
-
-# Acquire non-blocking lock using mkdir (atomic on Unix)
+# Acquire non-blocking lock using mkdir (atomic on Unix).
 if ! mkdir "$LOCKDIR" 2>/dev/null; then
-	exit 0
+    # Lock exists: either a cycle is genuinely running (skip -- correct)
+    # or the lock is ORPHANED (SIGKILL / reboot mid-cycle left it behind,
+    # and every subsequent run would exit silently forever -- the
+    # v0.2.0 failure mode). Tell them apart by age: no cycle lasts
+    # minutes, so an old lock is garbage. Remove and RE-ACQUIRE (the
+    # rmdir+mkdir pair stays race-free: two concurrent reclaimers,
+    # one wins the mkdir, the other exits).
+    LOCK_AGE=$(( $(date +%s) - $(stat -f '%m' "$LOCKDIR" 2>/dev/null || echo 0) ))
+    if [ "$LOCK_AGE" -gt "$LOCK_TTL" ]; then
+        rmdir "$LOCKDIR" 2>/dev/null
+        mkdir "$LOCKDIR" 2>/dev/null || exit 0
+    else
+        exit 0
+    fi
 fi
 trap 'rmdir "$LOCKDIR"' EXIT
 
 TARGET="/home/userdoc/Sync"
-LOG_FILE="/var/log/dropQbsd_sync.log"
-GRACE_MIN=1
+LOG_FILE="/var/log/dropQbsd/enforce_sync.log"
+GRACE_MIN=2
+
+#-----------------------------------------------------------------------------
+# LOG FUNCTION
+#-----------------------------------------------------------------------------
+log() {
+    echo "$(date '+%F %T')  $*" >> "$LOG_FILE"
+}
 
 #-----------------------------------------------------------------------------
 # EXISTENCE CHECK
@@ -41,47 +71,52 @@ GRACE_MIN=1
 
 #-----------------------------------------------------------------------------
 # 1. COUNT NON-CONFORMING FILES/DIRS BEFORE FIXING
+#    "Old enough" uniformly means: strictly older than GRACE_MIN minutes.
 #-----------------------------------------------------------------------------
 FILES_WRONG=$(find "$TARGET" -type f \
-	! -perm 660 \
-	-mmin +$GRACE_MIN \
-	| wc -l | tr -d ' ')
+    ! -perm 660 \
+    -mmin +$GRACE_MIN \
+    | wc -l | tr -d ' ')
 DIRS_WRONG=$(find "$TARGET" -type d \
-	! -perm 2770 \
-	! -mmin -$GRACE_MIN \
-	| wc -l | tr -d ' ')
+    ! -perm 2770 \
+    -mmin +$GRACE_MIN \
+    | wc -l | tr -d ' ')
 OWNER_WRONG=$(find "$TARGET" \
-	\( ! -user userdoc -o ! -group userdoc \)  \
-	! -mmin -$GRACE_MIN \
-	| wc -l | tr -d ' ')
+    \( ! -user userdoc -o ! -group userdoc \) \
+    -mmin +$GRACE_MIN \
+    | wc -l | tr -d ' ')
 
 #-----------------------------------------------------------------------------
 # 2. FIX OWNER/GROUP (batch for efficiency)
+#    Same age filter as the counters above: count and fix see
+#    the exact same set, so every fix is reflected in the log.
 #-----------------------------------------------------------------------------
 find "$TARGET" \( ! -user userdoc -o ! -group userdoc \) \
-	-exec chown userdoc:userdoc {} +
+    -mmin +$GRACE_MIN \
+    -exec chown userdoc:userdoc {} +
 
 #-----------------------------------------------------------------------------
 # 3. FIX DIRECTORY PERMISSIONS (2770)
 #-----------------------------------------------------------------------------
 find "$TARGET" -type d ! -perm 2770 \
-	-exec chmod 2770 {} +
+    -mmin +$GRACE_MIN \
+    -exec chmod 2770 {} +
 
 #-----------------------------------------------------------------------------
 # 4. FIX FILE PERMISSIONS (660)
 #-----------------------------------------------------------------------------
 find "$TARGET" -type f ! -perm 660 \
-	-exec chmod 660 {} +
+    -mmin +$GRACE_MIN \
+    -exec chmod 660 {} +
 
 #-----------------------------------------------------------------------------
 # 5. LOG ONLY IF SOMETHING WAS FIXED
 #-----------------------------------------------------------------------------
 TOTAL_WRONG=$((FILES_WRONG + DIRS_WRONG + OWNER_WRONG))
 if [ "$TOTAL_WRONG" -gt 0 ]; then
-	echo "$(date '+%Y-%m-%d %H:%M:%S') - Fixed in $TARGET:" \
-		"$FILES_WRONG file(s), $DIRS_WRONG dir(s)," \
-		"$OWNER_WRONG owner/group mismatch(es)" \
-		>> "$LOG_FILE"
+    log "Fixed in $TARGET: $FILES_WRONG file(s), $DIRS_WRONG dir(s), $OWNER_WRONG owner/group mismatch(es)"
 fi
 
 exit 0
+
+

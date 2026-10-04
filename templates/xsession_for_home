@@ -1,0 +1,42 @@
+# ==========================================================
+#  dropQbsd -- xsession_for_home
+#
+#  Per-user X session script for xenodm (OpenBSD default DM).
+#  Installed as ~/.xsession in the home of every dropQbsd
+#  user (user, userdoc, usermail, userweb) and root.
+#
+#  Installation:
+#      cp /opt/dropQbsd/templates/xsession_for_home ~/.xsession
+#      chown <user>:<user> ~/.xsession
+#      chmod 644 ~/.xsession
+#
+#  Coverage:
+#    xenodm reads ~/.xsession and NOT ~/.profile or ~/.xprofile.
+#    This file therefore does two things: it loads the dropQbsd
+#    environment, and it launches the desktop session.
+#
+#  IMPORTANT: adjust the last line to your window manager or
+#  desktop environment (xfce4-session, cwm, twm, i3, ...).
+#
+#  Notes:
+#    - This file is sourced by the X session, not by a login
+#      shell: /etc/profile is NOT read. The sourcing below is
+#      therefore mandatory, not redundant.
+# ==========================================================
+
+if [ -f /etc/dropQbsd/kshrc ]; then
+    . /etc/dropQbsd/kshrc
+fi
+
+# xenodm does not export XAUTHORITY into the session script.
+# Without it, and with HOME unset by the wrapper, xprop cannot
+# find the X cookie and the indicator silently does nothing.
+export XAUTHORITY="$HOME/.Xauthority"
+
+# Launch the domain indicator in the background.
+# nohup: the exec below replaces the shell, and background jobs
+# would otherwise receive SIGHUP and exit.
+nohup /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/indicator_de >/dev/null 2>&1 &
+
+# --- Launch the desktop session ---
+exec xfce4-session

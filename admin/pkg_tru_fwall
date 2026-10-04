@@ -1,0 +1,209 @@
+# ==========================================================
+#  dropQbsd -- pkg_tru_fwall
+#
+#  Installs or updates packages through the restrictive PF
+#  ruleset. Populates the <updates> table with mirror IPs,
+#  runs the package manager, and leaves the table populated
+#  (harmless on an isolated system).
+#
+#  OpenBSD: pkg_add / pkg_add -u
+#  FreeBSD: pkg install -y / pkg upgrade -y
+#
+#  Path: /opt/dropQbsd/admin/pkg_tru_fwall
+#  Permissions: chmod 700, root:wheel
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    Add new package(s)
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/pkg_tru_fwall pkg1 [pkg2...]
+#    OR
+#    Pkg pkg1 [pkg2 ...]
+#
+#    Update all packages
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/pkg_tru_fwall -u
+#    OR
+#    Pkg -u
+# ==========================================================
+
+ENSURE_SCRIPT="/opt/dropQbsd/libexec/ensure_updates_table"
+UPD_MAILSERV="/opt/dropQbsd/libexec/update_mailserver_table"
+UPD_SERVICES="/opt/dropQbsd/libexec/update_services_table"
+LOGFILE="/var/log/dropQbsd/pkg_tru_fwall.log"
+DNS_RULES_ADDED=0
+CLEANED=0
+
+#-----------------------------------------------------------------------------
+# LOG FUNCTION
+#-----------------------------------------------------------------------------
+log() {
+    msg="$1"
+    # Skip empty/whitespace-only messages: tools like pkg_delete -a emit a
+    # bare newline when there is nothing to do, which would log a
+    # timestamp-only line ("2026-10-04 12:42:02") with no content.
+    echo "$msg" | grep -q '^[[:space:]]*$' && return
+    echo "$msg"
+    echo "$(date '+%F %T')  $msg" >> "$LOGFILE"
+}
+
+#-----------------------------------------------------------------------------
+# PRIVILEGE CHECK
+#-----------------------------------------------------------------------------
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Must run as root." >&2
+    exit 2
+fi
+
+#-----------------------------------------------------------------------------
+# USAGE CHECK
+#-----------------------------------------------------------------------------
+if [ $# -lt 1 ]; then
+    echo "Usage: $0 pkg1 [pkg2 ...]  |  $0 -u" >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# DEPENDENCY CHECK
+#-----------------------------------------------------------------------------
+if [ ! -x "$ENSURE_SCRIPT" ]; then
+    echo "FATAL: $ENSURE_SCRIPT not found or not executable." >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# DETECT OS
+#
+# FreeBSD pkg prompts [y/N] without a tty: -y makes it non-interactive.
+# OpenBSD pkg_add / pkg_add -u are non-interactive already.
+#-----------------------------------------------------------------------------
+OS=$(uname -s)
+if [ "$OS" = "FreeBSD" ]; then
+    PKG_CMD="pkg"
+    PKG_INSTALL="install -y"
+    PKG_UPGRADE="upgrade -y"
+    LOCK_PROC="pkg"
+else
+    PKG_CMD="pkg_add"
+    PKG_INSTALL=""
+    PKG_UPGRADE="-u"
+    LOCK_PROC="pkg_add"
+fi
+
+#-----------------------------------------------------------------------------
+# CONCURRENCY CHECK — one package operation at a time.
+# FreeBSD: pkg refuses to run (DB lock) if another instance is active.
+# OpenBSD: per-package locks fail if two pkg_add collide.
+# Run BEFORE touching pf: never open the network window for a doomed run.
+#-----------------------------------------------------------------------------
+BUSY=$(pgrep -x "$LOCK_PROC")
+if [ -n "$BUSY" ]; then
+    echo "Another package operation is running (pid: $(echo $BUSY | tr '\n' ' '))." >&2
+    echo "Kill it or wait, then retry." >&2
+    exit 3
+fi
+
+#-----------------------------------------------------------------------------
+# POPULATE PF TABLE
+#-----------------------------------------------------------------------------
+log "=== pkg_tru_fwall starting ($OS) ==="
+"$ENSURE_SCRIPT" || exit $?
+
+#-----------------------------------------------------------------------------
+# TEMPORARY DNS + HTTP/S ACCESS FOR ROOT
+#
+# The pass rules are PREPENDED, not appended: a block ... quick rule
+# in the main ruleset would shadow rules placed at the bottom.
+# No interface qualifier: the default route's interface may not match
+# every flow (IPv6, aliases).
+#-----------------------------------------------------------------------------
+grant_dns() {
+    TMP_PF="/tmp/pf.dropQbsd.$$"
+    {
+        echo "pass out quick proto { udp tcp } from any to any port 53"
+        echo "pass out quick proto tcp from any to any port { 80 443 } flags S/SA"
+        cat /etc/pf.conf
+    } > "$TMP_PF"
+
+    if ! pfctl -nf "$TMP_PF"; then
+        log "FATAL: temporary ruleset failed syntax check."
+        rm -f "$TMP_PF"
+        exit 1
+    fi
+    if ! pfctl -f "$TMP_PF"; then
+        log "FATAL: pfctl failed to load the temporary ruleset."
+        rm -f "$TMP_PF"
+        exit 1
+    fi
+    rm -f "$TMP_PF"
+    DNS_RULES_ADDED=1
+
+    # pfctl -f empties <updates> (persist keeps the table defined,
+    # not its entries). Repopulate it before the update tools run.
+    "$ENSURE_SCRIPT"
+
+    log "Temporary DNS + HTTP/S access granted (will be removed after the run)."
+}
+
+#-----------------------------------------------------------------------------
+# RESTRICTIVE RULESET + TABLE RESTORATION
+#
+# pfctl -f empties ALL persistent tables, not just <updates>:
+# without repopulating <mailserver> and <services>, usermail and
+# userweb stay offline until their next cron cycle (up to 5 min).
+#-----------------------------------------------------------------------------
+revoke_dns() {
+    if [ "$DNS_RULES_ADDED" -eq 1 ]; then
+        pfctl -f /etc/pf.conf
+        DNS_RULES_ADDED=0
+        "$ENSURE_SCRIPT"
+        [ -x "$UPD_MAILSERV" ] && "$UPD_MAILSERV"
+        [ -x "$UPD_SERVICES" ] && "$UPD_SERVICES"
+        log "Temporary DNS access revoked; strict ruleset and tables restored."
+    fi
+}
+
+#-----------------------------------------------------------------------------
+# CLEANUP — idempotent, runs on signals AND on exit
+#-----------------------------------------------------------------------------
+cleanup() {
+    [ "$CLEANED" -eq 1 ] && return
+    CLEANED=1
+    revoke_dns
+    if [ "$1" = "signal" ]; then
+        log "Interrupted (signal received); strict ruleset restored."
+        log "The <updates> table is still populated; this is safe."
+        log "To flush it manually: pfctl -t updates -T flush"
+    fi
+}
+trap 'cleanup signal; exit 130' 2 15
+trap 'cleanup' 0
+
+#-----------------------------------------------------------------------------
+# RUN PACKAGE MANAGER
+#-----------------------------------------------------------------------------
+grant_dns
+
+if [ "$1" = "-u" ]; then
+    log "Running: $PKG_CMD $PKG_UPGRADE"
+    OUT=$("$PKG_CMD" $PKG_UPGRADE 2>&1)
+    RC=$?
+else
+    log "Running: $PKG_CMD $PKG_INSTALL $*"
+    OUT=$("$PKG_CMD" $PKG_INSTALL "$@" 2>&1)
+    RC=$?
+fi
+log "$OUT"
+
+revoke_dns
+
+if [ $RC -eq 0 ]; then
+    log "$PKG_CMD completed successfully."
+elif [ "$OS" = "OpenBSD" ] && [ $RC -eq 1 ] && echo "$OUT" | grep -q "Couldn't find updates for"; then
+    log "$PKG_CMD: some packages have no update (not a failure)."
+    RC=0
+else
+    log "$PKG_CMD exited with code $RC; check output above."
+fi
+
+log "=== pkg_tru_fwall finished ==="
+exit $RC

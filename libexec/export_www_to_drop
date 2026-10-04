@@ -1,4 +1,3 @@
-#!/bin/ksh
 # ==========================================================
 #  dropQbsd -- export_www_to_drop
 #
@@ -14,8 +13,15 @@
 #  Path: /opt/dropQbsd/libexec/export_www_to_drop
 #  Permissions: chmod 755, root:wheel
 #
-#  Usage: export_www_to_drop [-v]   (run as userweb)
-#    -v   Verbose output
+#  Orphaned .tmp cleanup time is set in the CLEANUP section.
+#  Archive retention is handled by enforce_drop (cron).
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage (-v verbose output). Run as userweb:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/export_www_to_drop [-v]
+#    OR
+#    Exwww [-v]
 # ==========================================================
 
 set -eu
@@ -29,22 +35,37 @@ DST="/home/drop/userweb_export"
 #-----------------------------------------------------------------------------
 VERBOSE=0
 [ "${1:-}" = "-v" ] && VERBOSE=1
-msg() { [ "$VERBOSE" -eq 1 ] && echo "[INFO] $*"; }
+msg() {
+    if [ "$VERBOSE" -eq 1 ]; then
+        echo "[INFO] $*"
+    fi
+}
+
+#-----------------------------------------------------------------------------
+# GUARD: DOMAIN OWNER CHECK
+#-----------------------------------------------------------------------------
+# Refuse to run as the wrong user. The export targets a domain's
+# private directory, and mktemp would otherwise fail with a cryptic
+# "Permission denied" that hides the real mistake. Fail loudly instead.
+if [ "$(id -un)" != "userweb" ]; then
+    echo "[ERROR] This script must run as 'userweb'." >&2
+    exit 1
+fi
 
 #-----------------------------------------------------------------------------
 # PRE-FLIGHT CHECKS
 #-----------------------------------------------------------------------------
 if [ ! -d "$SRC" ]; then
-	echo "[ERROR] Source directory '$SRC' not found." >&2
-	exit 1
+    echo "[ERROR] Source directory '$SRC' not found." >&2
+    exit 1
 fi
 
 #-----------------------------------------------------------------------------
 # DISK SPACE CHECK
 #-----------------------------------------------------------------------------
 if [ "$(df -P /home | awk 'NR==2 {print $5+0}')" -gt 90 ]; then
-	echo "[ERROR] /home usage > 90%. Aborting." >&2
-	exit 1
+    echo "[ERROR] /home usage > 90%. Aborting." >&2
+    exit 1
 fi
 
 #-----------------------------------------------------------------------------
@@ -59,31 +80,39 @@ TMPDIR=$(mktemp -d /home/userweb/tmp_export.XXXXXX)
 trap 'rm -rf "$TMPDIR"' EXIT INT TERM
 
 ARCHIVE="$TMPDIR/www_$(date +%Y%m%d_%H%M%S).tar.gz"
+FILENAME=$(basename "$ARCHIVE")
 msg "Compressing: $ARCHIVE"
-tar -czf "$ARCHIVE" -C "$SRC" .
+nice -n 10 tar -czf "$ARCHIVE" -C "$SRC" .
 
 #-----------------------------------------------------------------------------
 # VERIFY ARCHIVE INTEGRITY
 #-----------------------------------------------------------------------------
 if ! tar -tzf "$ARCHIVE" >/dev/null 2>&1; then
-	echo "[ERROR] Archive corrupt after compression." >&2
-	exit 1
-fi
-
-#-----------------------------------------------------------------------------
-# TRANSFER TO DROP ZONE
-#-----------------------------------------------------------------------------
-# enforce_drop (cron, every 60s) will set the correct 440 permissions.
-# userweb cannot chmod here -- the export directory is root:drop.
-if ! cp "$ARCHIVE" "$DST/"; then
-    echo "[ERROR] Failed to copy archive to drop zone." >&2
+    echo "[ERROR] Archive corrupt after compression." >&2
     exit 1
 fi
 
 #-----------------------------------------------------------------------------
-# ROTATE OLD ARCHIVES (> 24 hours)
+# TRANSFER TO DROP ZONE (atomic: no partial archive can ever be seen)
 #-----------------------------------------------------------------------------
-find "$DST" -type f -name 'www_*.tar.gz' -mtime +1 -delete 2>/dev/null
+# Copy under a .tmp name INSIDE the drop zone, then rename. Same
+# filesystem => mv is rename(2), atomic. import_www_from_drop only
+# matches 'www_*.tar.gz', so an export in progress is invisible to it.
+# enforce_drop (cron, every 60s) will set the correct 440 permissions.
+# userweb cannot chmod here -- the export directory is root:drop.
+if ! cp "$ARCHIVE" "$DST/$FILENAME.tmp"; then
+    echo "[ERROR] Failed to copy archive to drop zone." >&2
+    exit 1
+fi
+mv "$DST/$FILENAME.tmp" "$DST/$FILENAME"
+msg "Copied to drop zone (atomic rename)"
+
+#-----------------------------------------------------------------------------
+# CLEANUP: orphaned .tmp from a killed run of THIS script.
+# Archive retention lives in enforce_drop (single source of truth).
+# adjust time to your needs: "-mtime +1" for 1 day, "-mmin +60" for 60 minutes
+#-----------------------------------------------------------------------------
+find "$DST" -type f -name 'www_*.tar.gz.tmp' -mmin +360 -delete 2>/dev/null
 
 msg "Export completed successfully."
-
+echo "Export completed: $FILENAME"

@@ -1,0 +1,36 @@
+#!/bin/sh
+# ==========================================================
+#  dropQbsd -- xfqimport
+#
+#  Xfe file-manager action: copy the selected file(s) from
+#  the drop zone into the domain's ~/Downloads.
+#
+#  Install:
+#      cp xfqimport ~/.config/xfe/scripts/
+#      chmod +x ~/.config/xfe/scripts/xfqimport
+#
+#  Notes:
+#    - Runs as the domain user (Xfe runs inside the domain).
+#    - Loops over all selected files: Xfe passes them as argv.
+#    - The whole loop runs in a subshell in the background, so
+#      Xfe returns immediately without spawning one process per
+#      file.
+#    - Errors are appended to $HOME/.cache/dropQbsd/xfe_scripts.log
+#      instead of being discarded.
+# ==========================================================
+
+LOGDIR="$HOME/.cache/dropQbsd"
+LOGFILE="$LOGDIR/xfe_scripts.log"
+mkdir -p "$LOGDIR" 2>/dev/null
+
+(
+    for f in "$@"; do
+        case "$f" in
+            /*) /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qimport "$f" \
+                    >>"$LOGFILE" 2>&1 ;;
+            *)  /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qimport "/home/drop/$f" \
+                    >>"$LOGFILE" 2>&1 ;;
+        esac
+    done
+) &
+

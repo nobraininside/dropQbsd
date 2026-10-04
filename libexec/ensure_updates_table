@@ -1,18 +1,27 @@
-#!/bin/ksh
 # ==========================================================
 #  dropQbsd -- ensure_updates_table
 #
-#  Populates the <updates> table with Fastly CDN blocks
-#  from /etc/dropQbsd/local.conf, section [updates],
-#  key "mirrors".
+#  Populates the <updates> table.
+#
+#  OpenBSD: static Fastly CDN blocks from [updates] mirrors.
+#  FreeBSD: GeoDNS hostnames from [updates] hosts, resolved
+#           via userweb DNS each run (IPs vary by location
+#           and change over time).
 #
 #  Path: /opt/dropQbsd/libexec/ensure_updates_table
 #  Permissions: chmod 700, root:wheel
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/ensure_updates_table
+#    OR
+#    Enupdates
 # ==========================================================
 
 TABLE="updates"
 LOCAL_CONF="/etc/dropQbsd/local.conf"
-LOGFILE="/var/log/dropQbsd_updates.log"
+LOGFILE="/var/log/dropQbsd/ensure_updates_table.log"
 
 log() {
     msg="$1"
@@ -25,20 +34,89 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 2
 fi
 
-MIRRORS=$(grep -A3 'updates' "$LOCAL_CONF" | grep 'mirrors' | head -1 | sed 's/.*= *//')
+#-----------------------------------------------------------------------------
+# DETECT OS: OpenBSD uses static mirror CIDRs, FreeBSD uses DNS hostnames
+#-----------------------------------------------------------------------------
+OS=$(uname -s)
 
-if [ -z "$MIRRORS" ]; then
-    log "FATAL: no mirrors found in $LOCAL_CONF [updates] section."
-    exit 3
+if [ "$OS" = "FreeBSD" ]; then
+    # --- FreeBSD: resolve hostnames via userweb DNS ---
+    HOSTS=$(awk '
+        /^[[]updates]/ { s=1; next }
+        /^[[]/          { s=0 }
+        s && /^hosts[[:space:]]*=/ {
+            sub(/^hosts[[:space:]]*=[[:space:]]*/, "")
+            print
+            exit
+        }
+    ' "$LOCAL_CONF")
+
+    if [ -z "$HOSTS" ]; then
+        log "FATAL: no hosts found in $LOCAL_CONF [updates] section."
+        exit 3
+    fi
+
+    log "Resolving update mirror hostnames via userweb DNS..."
+
+    RESOLVED=""
+    for h in $HOSTS; do
+        ip=$(su -l userweb -c "host $h 2>/dev/null" \
+             | sed -n 's/.* has address //p' \
+             | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+        RESOLVED="$RESOLVED
+    $ip"
+    done
+    RESOLVED=$(printf '%s\n' "$RESOLVED" \
+        | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' \
+        | sort -u)
+
+    if [ -z "$RESOLVED" ]; then
+        log "FATAL: no update mirror IPs resolved."
+        exit 3
+    fi
+
+    OUT=$(printf '%s\n' "$RESOLVED" | pfctl -t "$TABLE" -T replace -f - 2>&1)
+    log "$OUT"
+else
+    # --- OpenBSD: static Fastly CIDR blocks ---
+    MIRRORS=$(awk '
+        /^[[]updates]/ { s=1; next }
+        /^[[]/          { s=0 }
+        s && /^mirrors[[:space:]]*=/ {
+            sub(/^mirrors[[:space:]]*=[[:space:]]*/, "")
+            print
+            exit
+        }
+    ' "$LOCAL_CONF")
+
+    if [ -z "$MIRRORS" ]; then
+        log "FATAL: no mirrors found in $LOCAL_CONF [updates] section."
+        exit 3
+    fi
+
+    FILTERED=$(printf '%s\n' "$MIRRORS" | tr ' ' '\n' \
+        | sed 's/\r//g' \
+        | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$')
+
+    if [ -z "$FILTERED" ]; then
+        log "FATAL: no valid CIDR left after filtering -- table NOT touched."
+        log "       MIRRORS=[$MIRRORS]"
+        exit 3
+    fi
+
+    OUT=$(printf '%s\n' "$FILTERED" | pfctl -t "$TABLE" -T replace -f - 2>&1)
+    log "$OUT"
 fi
 
-log "Populating PF table <$TABLE> from $LOCAL_CONF..."
-echo "$MIRRORS" | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$' | pfctl -t "$TABLE" -T replace -f -
+#-----------------------------------------------------------------------------
+# Final check
+#-----------------------------------------------------------------------------
+COUNT=$(pfctl -t "$TABLE" -T show 2>/dev/null | grep -c .)
 
-if [ -z "$(pfctl -t "$TABLE" -T show)" ]; then
+if [ "$COUNT" -eq 0 ]; then
     log "FATAL: PF table <$TABLE> is empty. Aborting."
     exit 3
 fi
 
-log "PF table <$TABLE> ready ($(pfctl -t "$TABLE" -T show | wc -l | tr -d ' ') entries)."
+log "PF table <$TABLE> ready ($COUNT entries)."
 exit 0

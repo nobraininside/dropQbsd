@@ -1,0 +1,44 @@
+# ==========================================================
+#  dropQbsd -- filelist_for_etc
+#
+#  Files monitored by verify_integrity. One path per line.
+#  Relative paths are resolved from /opt/dropQbsd/.
+#  Absolute paths are used as-is (for /etc/dropQbsd/ files).
+#
+#  Installation:
+#      cp /opt/dropQbsd/templates/filelist_for_etc /etc/dropQbsd/filelist
+#      chown root:wheel /etc/dropQbsd/filelist
+#      chmod 644 /etc/dropQbsd/filelist
+#
+#  IMPORTANT: do NOT add verify_integrity to this list. It is the
+#  trust anchor: the file that checks the others cannot itself be
+#  checked by them.
+# ==========================================================
+
+admin/build_run_app
+admin/gen_fwall
+admin/patch_tru_fwall
+admin/pkg_tru_fwall
+admin/update_tru_fwall
+admin/upgrade_tru_fwall
+libexec/enforce_drop
+libexec/enforce_sync
+libexec/ensure_updates_table
+libexec/export_mail_to_drop
+libexec/export_www_to_drop
+libexec/import_mail_from_drop
+libexec/import_www_from_drop
+libexec/root_snapshot
+libexec/run_app_impl
+libexec/update_mailserver_table
+libexec/update_services_table
+libexec/wrapper
+sbin/control_panel
+sbin/qcp
+sbin/qimport
+sbin/qmv
+sbin/xterm_root
+sbin/xterm_user
+sbin/xterm_userdoc
+sbin/xterm_usermail
+sbin/xterm_userweb

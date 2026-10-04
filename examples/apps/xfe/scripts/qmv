@@ -1,0 +1,2 @@
+#!/bin/sh
+/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qmv "$@"
