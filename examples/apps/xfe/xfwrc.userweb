@@ -1,29 +1,16 @@
+# dropQbsd -- Xfw template (userweb domain)
+#
+# Partial xfwrc: ONLY the keys dropQbsd overrides. Every key not
+# listed here falls back to Xfw built-in defaults and the
+# system-wide xfwrc (/usr/local/share/xfe/xfwrc).
+# Xfw rewrites the full file on exit; keep this template as the
+# installation seed, not as a live file.
+
 [OPTIONS]
-textnumberforeground=Black
-width=770
-textfont=Sans,100,normal,regular
-tabcols=8
-linesnum=0
-textnumberbackground=Gray100
-hilitematchtime=3000
-hidestatus=0
-wordwrap=0
-height=546
+# Domain color scheme (see INSTALL.md, color scheme convention)
+textbackground=DarkBlue
 textforeground=Gray100
-textselbackground=Cyan
-texthiliteforeground=Black
-textcursor=Black
-searchpath=
-texthilitebackground=#ff8080
-wrapcols=80
-hidetoolbar=0
-stripreturn=0
-textbackground=Blue4
-textselforeground=Black
 
 [SETTINGS]
-tippause=500
-basecolor=#ede9e3
-tiptime=10000
-
-
+# Harmonized with the xfe domain scheme
+basecolor=#edeceb

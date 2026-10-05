@@ -162,6 +162,21 @@ chmod 755 /opt/dropQbsd/libexec/*
 chmod 700 /opt/dropQbsd/admin/*
 ```
 
+**Create the log directory.** Every dropQbsd script writes to
+`/var/log/dropQbsd/`; the directory must exist before the first
+cron cycle, with permissions that keep the logs private to root:
+
+```sh
+mkdir -p /var/log/dropQbsd
+chown root:wheel /var/log/dropQbsd
+chmod 750 /var/log/dropQbsd
+```
+
+The directory starts empty. Each log file appears the first time
+its script runs — the enforcers and `verify_integrity` via cron
+within minutes, `ensure_updates_table` and the update logs on
+first use of the corresponding alias.
+
 **Note:** scripts in `sbin/` and `libexec/` carry **no shebang**. They are
 executed through `libexec/wrapper`, which selects the correct shell for the
 platform. Do not add shebangs — it would break portability.
@@ -335,8 +350,8 @@ done
 | Text login (tty) | `~/.profile` | ✅ | ✅ |
 | `su -` / `ssh` | `~/.profile` | ✅ | ✅ |
 | xenodm | `~/.xsession` | ✅ | n/a |
-| SDDM / LightDM | `~/.xprofile` | opzionale | ✅ |
-| `startx` | `~/.xinitrc` | opzionale | ✅ |
+| SDDM / LightDM | `~/.xprofile` | if used | ✅ |
+| `startx` | `~/.xinitrc` | if used | ✅ |
 | Terminal in session | `$ENV` | ✅ | ✅ |
 
 `$ENV` is set by `/etc/dropQbsd/kshrc` itself, so every interactive

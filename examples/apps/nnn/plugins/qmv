@@ -1,2 +1,0 @@
-#!/bin/sh
-nohup /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qmv "$@" /home/drop/ >/dev/null 2>&1 &
