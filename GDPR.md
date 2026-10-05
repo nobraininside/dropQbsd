@@ -115,7 +115,6 @@ If you advise clients on GDPR compliance while their processing runs on systems
 you cannot inspect, the question is worth asking directly:
 
 - Is the gap between what you claim and what you can verify something your architecture closes — or something your documentation is asked to cover?
-  documentation?
 - Can you verify what the operating system does with the personal data your
   client processes?
 - Can you determine what leaves the network, under what legal basis, and to
