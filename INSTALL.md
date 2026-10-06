@@ -1313,7 +1313,27 @@ than emit a firewall that silently drops per-user isolation.
 
 ---
 
-## 14. Environment sanitization
+## 14. Shell portability rules
+
+Scripts in `sbin/` and `libexec/` run under PD KSH (OpenBSD) and
+mksh (FreeBSD). Both are Korn shells, but neither is bash. The
+following are NOT available and must not be used:
+
+- `disown` (bash/zsh only) \xe2\x80\x94 use a subshell `( cmd & )` to detach
+- Bash arrays (`arr=(...)`) \xe2\x80\x94 use positional parameters or a file
+- `[[ "$x" =~ ... ]]` \xe2\x80\x94 not portable; use `case` or external tools
+- `\#*` inside `[[ ]]` \xe2\x80\x94 does not match `#`; use `case` for globs
+- `pipefail` \xe2\x80\x94 not in PD KSH; write to a temp file to capture exit codes
+- `cat -A` (GNU) \xe2\x80\x94 use `cat -v -e -t` (POSIX)
+- Non-ASCII characters in strings passed to GUI tools \xe2\x80\x94 the locale
+  may be `C`; use ASCII only in titles and dialog text
+
+  Use `case` for pattern matching, POSIX constructs only, and verify
+  every external command exists in the sanitized `PATH`.
+
+---
+
+## 15. Environment sanitization
 
 `libexec/wrapper` is the environment-sanitization and shell-selection layer.
 
@@ -1336,12 +1356,17 @@ environment before any script sees it:
   Interactive shells (xterm) get `ENV` from `xterm_user` / `xterm_userdoc`.
 - Only `DISPLAY`, `XAUTHORITY`, and `TERM` survive the crossing.
 
+Scripts that need the X environment (for example `site_menu`)
+apply safe defaults for `DISPLAY`, `XAUTHORITY`, and `TERM` when a
+graphical launcher does not pass them. The wrapper still sanitizes;
+the defaults live in the script, not in the wrapper.
+
 Scripts that need the invoking user's home directory rebuild it from
 `/etc/passwd` using the real uid — never from the environment.
 
 ---
 
-## 15. License
+## 16. License
 
 ISC. See [LICENSE](./LICENSE).
 

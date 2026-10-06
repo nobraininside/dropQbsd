@@ -1,20 +1,3 @@
-# ==========================================================
-#  dropQbsd -- filelist_for_etc
-#
-#  Files monitored by verify_integrity. One path per line.
-#  Relative paths are resolved from /opt/dropQbsd/.
-#  Absolute paths are used as-is (for /etc/dropQbsd/ files).
-#
-#  Installation:
-#      cp /opt/dropQbsd/templates/filelist_for_etc /etc/dropQbsd/filelist
-#      chown root:wheel /etc/dropQbsd/filelist
-#      chmod 644 /etc/dropQbsd/filelist
-#
-#  IMPORTANT: do NOT add verify_integrity to this list. It is the
-#  trust anchor: the file that checks the others cannot itself be
-#  checked by them.
-# ==========================================================
-
 admin/build_run_app
 admin/gen_fwall
 admin/patch_tru_fwall
