@@ -2,10 +2,10 @@
 #  dropQbsd -- site_menu
 #
 #  Two-phase login flow via OK button:
-#    1. Select site → OK = "Copy ID" → browser opens, ID
+#    1. Select site -> OK = "Copy ID" -> browser opens, ID
 #       copied to clipboard, window stays open.
-#    2. Same site pre-selected, others hidden → OK = "Copy
-#       Password" → password copied (30s timer), closes.
+#    2. Same site pre-selected, others hidden -> OK = "Copy
+#       Password" -> password copied (30s timer), closes.
 #
 #  If GPG passphrase is expired, a warning dialog tells the
 #  user to unlock the keyring manually and retry.
@@ -26,6 +26,10 @@
 #    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/site_menu
 #    OR
 #    Site
+#
+#  PORTABILITY: PD KSH (OpenBSD) + mksh (FreeBSD).
+#  Do NOT use: disown, bash arrays, [[ =~ ]], '\#*' in [[ ]].
+#  Use 'case' for glob matching. ASCII only in GUI strings.
 # ==========================================================
 
 UID_R=$(id -ru)
@@ -36,6 +40,12 @@ if [ -z "$HOME" ]; then
 fi
 export HOME
 
+# Reconstruct X environment if the launcher did not pass it
+: "${DISPLAY:=:0.0}"
+: "${XAUTHORITY:=$HOME/.Xauthority}"
+: "${TERM:=xterm}"
+export DISPLAY XAUTHORITY TERM
+
 CONF="$HOME/.config/dropQbsd/sites.conf"
 
 BROWSER="${BROWSER:-/usr/local/bin/ungoogled-chromium}"
@@ -45,6 +55,9 @@ RUN_APP="${RUN_APP:-/opt/dropQbsd/bin/run_app}"
 RUNDIR="$HOME/.cache/dropQbsd"
 mkdir -p "$RUNDIR"
 chmod 700 "$RUNDIR"
+
+# Logging AFTER RUNDIR exists
+exec 2>>"$RUNDIR/site_menu.err"
 
 CLIPBOARD_PID_FILE="$RUNDIR/clipboard_clear.pid"
 STATE_FILE="$RUNDIR/site_menu_state"
@@ -64,12 +77,18 @@ fi
 cache_sites() {
     > "$PASS_CACHE"
     while IFS='|' read -r label url id_entry pass_entry; do
-        [[ "$label" == \#* ]] && continue
-        [[ -z "$label" ]] && continue
+        # Trim whitespace first, then filter
         label=$(echo "$label" | sed 's/^ *//;s/ *$//')
         url=$(echo "$url" | sed 's/^ *//;s/ *$//')
         id_entry=$(echo "$id_entry" | sed 's/^ *//;s/ *$//')
         pass_entry=$(echo "$pass_entry" | sed 's/^ *//;s/ *$//')
+
+        # Skip empty lines and comments (case is the correct
+        # glob matcher in ksh; [[ == \#* ]] does NOT match '#')
+        case "$label" in
+            ""|\#*) continue ;;
+        esac
+
         printf '%s|%s|%s|%s\n' "$label" "$url" "$id_entry" "$pass_entry" >> "$PASS_CACHE"
     done < "$CONF"
 }
@@ -106,15 +125,15 @@ build_menu() {
 unlock_gpg() {
     local entry="$1"
 
-    # Quick check with pinentry disabled — fails instantly if locked
+    # Quick check with pinentry disabled -- fails instantly if locked
     if PASSWORD_STORE_GPG_OPTS="--pinentry-mode cancel --batch" \
         pass show "$entry" >/dev/null 2>&1; then
         return 0
     fi
 
-    # Keyring locked — tell user to unlock manually and retry
+    # Keyring locked -- tell user to unlock manually and retry
     zenity --warning \
-        --title="dropQbsd — GPG Locked" \
+        --title="dropQbsd - GPG Locked" \
         --text="GPG keyring is locked.\n\nOpen an xterm and run:\n\n  pass ${entry}\n\nthen close the xterm and click the\nsame site again to retry." \
         --ok-label="OK" \
         --width=450 2>/dev/null
@@ -149,6 +168,7 @@ copy_pass() {
 
     if [[ -f "$CLIPBOARD_PID_FILE" ]]; then
         kill "$(cat "$CLIPBOARD_PID_FILE")" 2>/dev/null || true
+        sleep 0.1
     fi
 
     local pw_value
@@ -175,23 +195,32 @@ while true; do
     [[ -f "$STATE_FILE" ]] && CURRENT_PHASE=$(cat "$STATE_FILE")
 
     if [[ -n "$CURRENT_PHASE" ]]; then
-        MENU=$(build_menu "$CURRENT_PHASE")
+        # Phase 2: single site, no combo needed
+        ZENITY_TITLE="dropQbsd - Confirm Password"
         BUTTON_LABEL="Copy Password"
-        ZENITY_TITLE="dropQbsd — Confirm Password"
-        ZENITY_TEXT="Click OK to copy password for:"
-    else
-        MENU=$(build_menu "")
-        BUTTON_LABEL="Copy ID"
-        ZENITY_TITLE="dropQbsd Sites"
-        ZENITY_TEXT="Select a site:"
-    fi
 
-    CHOSEN=$(printf '%b' "$MENU" | zenity --list \
-        --title="$ZENITY_TITLE" \
-        --text="$ZENITY_TEXT" \
-        --column="Site" \
-        --ok-label="$BUTTON_LABEL" \
-        --width=300 --height=400 2>/dev/null)
+        if zenity --question \
+            --title="$ZENITY_TITLE" \
+            --text="Copy password for: $CURRENT_PHASE" \
+            --ok-label="$BUTTON_LABEL" \
+            --cancel-label="Cancel" \
+            --width=300 2>>"$RUNDIR/site_menu.err"; then
+            CHOSEN="$CURRENT_PHASE"
+        else
+            CHOSEN=""
+        fi
+    else
+        # Phase 1: full site list
+        ZENITY_TITLE="dropQbsd - Sites"
+
+        CHOSEN=$(zenity --forms \
+            --title="$ZENITY_TITLE" \
+            --text="Select a site:" \
+            --add-combo="Site" \
+            --combo-values="$(build_menu "" | tr '\n' '|' | sed 's/|$//')" \
+            --ok-label="Copy ID" \
+            --width=300 2>>"$RUNDIR/site_menu.err")
+    fi
 
     if [[ -z "$CHOSEN" ]]; then
         rm -f "$STATE_FILE" "$PASS_CACHE"
@@ -199,18 +228,19 @@ while true; do
     fi
 
     if [[ "$CHOSEN" == "$CURRENT_PHASE" ]]; then
+        # Phase 2: copy password
         PASS_ENTRY=$(lookup "$CHOSEN" pass_entry)
         if copy_pass "$PASS_ENTRY"; then
             rm -f "$STATE_FILE" "$PASS_CACHE"
             exit 0
         fi
     else
+        # Phase 1: copy ID and open browser
         URL=$(lookup "$CHOSEN" url)
         ID_ENTRY=$(lookup "$CHOSEN" id_entry)
 
         if copy_id "$ID_ENTRY"; then
-            "$RUN_APP" --disposable userweb "$BROWSER" $BROWSER_FLAGS "$URL" &
-            disown
+            ( "$RUN_APP" --disposable userweb "$BROWSER" $BROWSER_FLAGS "$URL" & )
             sleep 0.5
             echo "$CHOSEN" > "$STATE_FILE"
         fi
