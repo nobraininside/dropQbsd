@@ -7,17 +7,17 @@
        dropQbsd
 ```
 
-**Compartmentalization without virtualization — on the BSD family.**
+**Compartmentalization without virtualization -- on the BSD family.**
 
 Qubes-style domain isolation using native Unix users, `pf`, and `ksh`. Web, mail,
 and documents run as separate users with no shared access except a policed drop
 zone. No hypervisor, no VM images, no daemon.
 
-~2,600 lines of `ksh` (executable scripts in `sbin/`, `libexec/`, `admin/`,
+~2,800 lines of `ksh` (executable scripts in `sbin/`, `libexec/`, `admin/`,
 comments and blank lines excluded) plus ~250 lines of shell templates, plus
-35 lines of C — small enough to audit in an afternoon.
+35 lines of C -- small enough to audit in an afternoon.
 
-Runs on 1 GB of RAM. Installs in ~30 minutes. Rebuilds faster — no databases, no
+Runs on 1 GB of RAM. Installs in ~30 minutes. Rebuilds faster -- no databases, no
 daemon state to restore. Zero lock-in.
 
 [![Status](https://img.shields.io/badge/status-beta-orange)](https://github.com/nobraininside/dropQbsd)
@@ -41,11 +41,11 @@ Three commands. Three habits. About thirty minutes. Done.
 
 ## What is this?
 
-Take the core insight of Qubes OS — security through compartmentalization — and
+Take the core insight of Qubes OS -- security through compartmentalization -- and
 strip away the hypervisor. **dropQbsd** uses native BSD user separation instead
 of heavy virtualization.
 
-Each domain — web, mail, documents — runs as a dedicated user. They share
+Each domain -- web, mail, documents -- runs as a dedicated user. They share
 nothing except a single policed exchange directory. A handful of `ksh` scripts,
 a declarative firewall policy, and standard Unix permissions do the rest.
 
@@ -57,13 +57,13 @@ afternoon.
 ## What dropQbsd does NOT protect against
 
 Read this before the architecture. If your threat model requires any of the
-following, dropQbsd is not the right tool today — **Qubes OS is**.
+following, dropQbsd is not the right tool today -- **Qubes OS is**.
 
 - **X11 input isolation.** X11 shares a single cookie (MIT-MAGIC-COOKIE-1)
   across all clients on a display. A compromised domain can keylog other
   domains, capture screenshots, and read the clipboard. This is a fundamental
-  X11 limitation, not a dropQbsd bug. Mitigations in place — disposable
-  sessions, per-session cookies, XTEST disabled where possible — reduce the
+  X11 limitation, not a dropQbsd bug. Mitigations in place -- disposable
+  sessions, per-session cookies, XTEST disabled where possible -- reduce the
   exposure window. They do not close it. **The paired desktop/server
   configuration (roadmap) resolves this.**
 - **Conductor compromise.** `user` can launch apps in any domain via `run_app`.
@@ -76,7 +76,7 @@ following, dropQbsd is not the right tool today — **Qubes OS is**.
   applications you install may phone home independently. Use `librewolf`,
   `ungoogled-chromium`, or `qutebrowser`.
 
-dropQbsd targets the most common real-world failures — malware, phishing,
+dropQbsd targets the most common real-world failures -- malware, phishing,
 cross-domain data leaks, silent policy violations. It does not target kernel
 exploits or state-level adversaries. Those require virtualization or hardware
 isolation.
@@ -89,7 +89,7 @@ dropQbsd currently requires a manual installation on a fresh OpenBSD or FreeBSD
 system. The process takes roughly 30 minutes and is documented step by step in
 [INSTALL.md](./INSTALL.md).
 
-An install script is on the roadmap — it is the single biggest barrier to
+An install script is on the roadmap -- it is the single biggest barrier to
 adoption today, and the next development priority.
 
 **Prerequisites:**
@@ -107,19 +107,19 @@ adoption today, and the next development priority.
 
 | User       | Role                                                   | Network                         |
 | ---------- | ------------------------------------------------------ | ------------------------------- |
-| `user`     | Conductor — orchestrates, imports/exports, administers | None (no direct network access) |
-| `userweb`  | Web browser — isolated from mail and LAN               | HTTP/HTTPS only                 |
-| `usermail` | Email client — isolated from web                       | Mail servers only               |
-| `userdoc`  | Documents, sync, LAN storage — no direct internet      | LAN + Syncthing                 |
+| `user`     | Conductor -- orchestrates, imports/exports, administers | None (no direct network access) |
+| `userweb`  | Web browser -- isolated from mail and LAN               | HTTP/HTTPS only                 |
+| `usermail` | Email client -- isolated from web                       | Mail servers only               |
+| `userdoc`  | Documents, sync, LAN storage -- no direct internet      | LAN + Syncthing                 |
 
-All belong to the `drop` group. Home directories are `chmod 700` — no
+All belong to the `drop` group. Home directories are `chmod 700` -- no
 cross-domain snooping.
 
 ### The Drop Zone (`/home/drop`)
 
 The **only bridge** between domains. A shared directory with strict rules:
 
-- `/home/drop` is `2770 root:drop` — SGID forces the `drop` group on all files
+- `/home/drop` is `2770 root:drop` -- SGID forces the `drop` group on all files
 - Files in transit: `440` (read-only for owner and group)
 - Directories in transit: `570` (group can traverse)
 - Export directories: SGID `2770`, owned by `root:drop`
@@ -135,7 +135,7 @@ abandoned artifacts.
 3. `qimport` copies the file out into `~/Downloads`.
 4. `enforce_drop` removes abandoned files after 30 minutes.
 
-### The Conductor — `run_app` Architecture
+### The Conductor -- `run_app` Architecture
 
 `user` launches graphical apps inside any domain without switching users. The
 mechanism is a three-file split designed to eliminate the attack surface of
@@ -143,15 +143,15 @@ privilege escalation:
 
 | File                   | Type                          | Role                                                       |
 | ---------------------- | ----------------------------- | ---------------------------------------------------------- |
-| `bin/run_app`          | Compiled binary (setuid root) | Immutable gate — 35 lines of C, no decision logic |
+| `bin/run_app`          | Compiled binary (setuid root) | Immutable gate -- 35 lines of C, no decision logic |
 | `libexec/wrapper`      | `sh` script                   | Sanitizes the environment, selects the shell               |
-| `libexec/run_app_impl` | `ksh`/`mksh` script           | All the logic — domain selection, X11 cookie, tmpfs        |
+| `libexec/run_app_impl` | `ksh`/`mksh` script           | All the logic -- domain selection, X11 cookie, tmpfs        |
 | `src/run_app.c`| C source                      | Reference only; needed only if the ABI breaks              |
 
 **The gate.** `run_app` validates the argument count, escalates to root with
 `setuid(0)`, and `execv`s the wrapper at a hardcoded path. It does not parse
 arguments, does not branch on input, and does not decide which script to run.
-All session logic — domain selection, X11 cookie handling, tmpfs setup —
+All session logic -- domain selection, X11 cookie handling, tmpfs setup -- 
 lives in `run_app_impl`, a plain script. Immutable after compilation: if you
 need to add a domain, change paths, or adjust cleanup behavior, you edit the
 script. No recompilation.
@@ -159,7 +159,7 @@ script. No recompilation.
 **The wrapper is the environment-sanitization and shell-selection layer.** It runs with the privileges of its caller: root when invoked through `run_app` (which is setuid root), the domain user when invoked from a domain, root when invoked from cron. The wrapper sanitizes the environment before any script sees it:
 
 - `PATH` is hardcoded to system directories. A user-controlled `PATH` in a root
-  context is privilege escalation — a fake `awk` earlier in `PATH` means
+  context is privilege escalation -- a fake `awk` earlier in `PATH` means
   arbitrary code as root.
 - `IFS`, `LD_LIBRARY_PATH`, `LD_PRELOAD`, `PERL5LIB`, `PYTHONPATH`,
   `CDPATH`, `SHELL`, `HOME`, `LOGNAME`, `USER` are all unset.
@@ -172,7 +172,7 @@ launch domain applications.
 
 **Two modes.** Normal mode creates an isolated runtime directory under `/tmp`,
 cleaned on exit. Disposable mode mounts a tmpfs in RAM (500 MB default,
-configurable) — when the app exits, the tmpfs is unmounted and everything is
+configurable) -- when the app exits, the tmpfs is unmounted and everything is
 destroyed. Nothing survives. Ideal for browsers and untrusted files.
 
 ```
@@ -181,7 +181,7 @@ $ Run --disposable 1G userweb ungoogled-chromium --temp-profile https://example.
 ```
 
 Downloads made in disposable mode are bridged to the real
-`/home/$TARGET_USER/Downloads` via symlink — files survive browser exit.
+`/home/$TARGET_USER/Downloads` via symlink -- files survive browser exit.
 
 **Cleanup is guaranteed.** Traps on `EXIT`, `HUP`, `INT`, and `TERM` unmount
 the tmpfs and remove the runtime directory. If the script is `SIGKILL`ed
@@ -194,9 +194,9 @@ impossible.
 Network policy is **declarative and portable**. Two files describe your
 security posture:
 
-- `domains.conf` — the portable policy. Identical on every installation.
+- `domains.conf` -- the portable policy. Identical on every installation.
   Describes intent, not syntax.
-- `local.conf` — your site configuration: subnet, mail servers, services.
+- `local.conf` -- your site configuration: subnet, mail servers, services.
 
 `gen_fwall` translates this policy into `pf.conf` for the target OS.
 
@@ -209,17 +209,17 @@ The policy is default-deny with explicit allowlists:
 | `usermail` | mail       | Mail server ports only, DNS. Internet blocked.                        |
 | `userdoc`  | documents  | LAN and Syncthing ports only, both directions. Internet blocked.      |
 
-The policy file is short enough to read in full — and that is the point. A
+The policy file is short enough to read in full -- and that is the point. A
 data protection officer with no networking background can verify what each
 domain is permitted to reach.
 
 **Portability note:** OpenBSD provides the `egress` interface group
-automatically. FreeBSD does not — `gen_fwall` resolves the physical interface
+automatically. FreeBSD does not -- `gen_fwall` resolves the physical interface
 from `route get default`. This is the only portability gap between the two
 `pf(4)` backends.
 
 **NetBSD is not supported.** `npf(7)` filters by address and interface, not by
-user. Per-user network isolation — the foundation of dropQbsd's model — cannot
+user. Per-user network isolation -- the foundation of dropQbsd's model -- cannot
 be expressed in `npf`. `gen_fwall` refuses to generate a partial ruleset rather
 than emit a firewall that silently drops per-user isolation.
 
@@ -228,10 +228,10 @@ than emit a firewall that silently drops per-user isolation.
 `indicator_de` shows an OSD popup when the active domain changes. Detection is a
 cascade:
 
-1. Window title — exact match for `userweb`/`usermail`/`userdoc`/`user`/`root`
-2. Window title containing `[root@` — the shell prompt betrays root
-3. `_NET_WM_PID` — process owner via `ps`
-4. `WM_CLASS` — fallback for `xfe`/`Thunar`
+1. Window title -- exact match for `userweb`/`usermail`/`userdoc`/`user`/`root`
+2. Window title containing `[root@` -- the shell prompt betrays root
+3. `_NET_WM_PID` -- process owner via `ps`
+4. `WM_CLASS` -- fallback for `xfe`/`Thunar`
 
 Color mapping is consistent across the project:
 
@@ -243,7 +243,7 @@ Color mapping is consistent across the project:
 | `user` (conductor) | White         | `#FFFFFF` |
 | `root`             | Bright red    | `#FF3333` |
 
-For tiling window managers (`i3`, `dwm`, `spectrwm`), the OSD indicator is not used. The base window managers of the supported platforms — `cwm` on OpenBSD, `twm` on FreeBSD — are also not suited to it: in these environments, domain differentiation is provided by the color schemes of terminals, `mc`, and `xfe` launchers (`examples/apps/mc/skins`, `xterm_*`).
+For tiling window managers (`i3`, `dwm`, `spectrwm`), the OSD indicator is not used. The base window managers of the supported platforms -- `cwm` on OpenBSD, `twm` on FreeBSD -- are also not suited to it: in these environments, domain differentiation is provided by the color schemes of terminals, `mc`, and `xfe` launchers (`examples/apps/mc/skins`, `xterm_*`).
 
 Requires `dzen2`, `xdotool` and `xprop` (base X11).
 
@@ -258,6 +258,12 @@ loaded by the shell chain. The naming rule: **every alias starts with a capital 
 
 | Alias           | Command                            |
 | --------------- | ---------------------------------- |
+| `Gen`           | `admin/gen_fwall`                  |
+| `Patch`         | `admin/patch_tru_fwall`            |
+| `Pkg`           | `admin/pkg_tru_fwall`              |
+| `Sign`          | `admin/sign_filelist`              |
+| `Update`        | `admin/update_tru_fwall`           |
+| `Upgrade`       | `admin/upgrade_tru_fwall`          |
 | `Run`           | `bin/run_app`                      |
 | `Endrop`        | `libexec/enforce_drop`             |
 | `Ensync`        | `libexec/enforce_sync`             |
@@ -271,9 +277,10 @@ loaded by the shell chain. The naming rule: **every alias starts with a capital 
 | `Verify`        | `libexec/verify_integrity`         |
 | `Control`       | `sbin/control_panel`               |
 | `File`          | `sbin/file_bridge`                 |
+| `Indicator`     | `sbin/indicator_de`                |
 | `Qcp`           | `sbin/qcp`                         |
-| `Qmv`           | `sbin/qmv`                         |
 | `Qimport`       | `sbin/qimport`                     |
+| `Qmv`           | `sbin/qmv`                         |
 | `Site`          | `sbin/site_menu`                   |
 | `Xtroot`        | `sbin/xterm_root`                  |
 | `Xtuser`        | `sbin/xterm_user`                  |
@@ -335,12 +342,12 @@ then `;c` to copy, `;m` to move, or `;i` to import.
 | `;i`  | Import selected files from /home/drop via qimport |
 
 
-**Note on F1–F5:** these bindings are global to the tmux server
+**Note on F1-F5:** these bindings are global to the tmux server
 (root key table), not scoped to the file_bridge session. While
-file_bridge is running, F1–F5 are captured in every tmux session
-on the machine. This is deliberate — file_bridge is meant to be
+file_bridge is running, F1-F5 are captured in every tmux session
+on the machine. This is deliberate -- file_bridge is meant to be
 the only tmux session in use. If you run other tmux sessions,
-their F1–F5 will be overridden until file_bridge exits.
+their F1-F5 will be overridden until file_bridge exits.
 
 The status bar and active pane border follow the active domain. On exit,
 `file_bridge` terminates orphaned `nnn` processes gracefully (SIGTERM, then
@@ -372,9 +379,9 @@ health.
 
 **What you see:**
 
-- **Domains** — which compartments are active and what process is running in each
-- **Drop zone** — files awaiting import (newer than 60 minutes), permissions, quarantine status
-- **System** — PF firewall state, enforcement logs, integrity verification, tmpfs usage (requires root authentication)
+- **Domains** -- which compartments are active and what process is running in each
+- **Drop zone** -- files awaiting import (newer than 60 minutes), permissions, quarantine status
+- **System** -- PF firewall state, enforcement logs, integrity verification, tmpfs usage (requires root authentication)
 
 **Keys:**
 
@@ -400,16 +407,16 @@ a disposable browser session.
 **Two-phase flow** (the point is to never paste a password into the
 wrong site):
 
-1. Select a site → **Copy ID** → the browser opens, the user ID is
+1. Select a site > **Copy ID** > the browser opens, the user ID is
    copied to the clipboard, and the window stays open.
-2. The same site is now the only entry shown → **Copy Password** →
+2. The same site is now the only entry shown > **Copy Password** > 
    the password is copied (with a 30-second clipboard clear timer),
    and the window closes.
 
 Because phase 2 shows only the site that is waiting for the password,
 there is no way to paste it into a different site.
 
-**Configuration** — `~/.config/dropQbsd/sites.conf`, one site per line:
+**Configuration** -- `~/.config/dropQbsd/sites.conf`, one site per line:
 
 ```
 # Label|URL|id_entry|pass_entry
@@ -524,13 +531,13 @@ $ Verify
 | `qcp`               | Any user              | Copy file/directory into `/home/drop` without deleting         |
 | `run_app`           | user (setuid root)    | Blind-gate binary. Escalates to root, execs `wrapper`          |
 | `wrapper`           | root (via run_app)    | Sanitizes environment, selects the shell, execs the script     |
-| `run_app_impl`      | root (via wrapper)    | Launch logic — X11 cookie, runtime dir, tmpfs, `su -l`         |
+| `run_app_impl`      | root (via wrapper)    | Launch logic -- X11 cookie, runtime dir, tmpfs, `su -l`         |
 
 ### Launchers and Utilities
 
 | Script           | Run by                | Purpose                                                              |
 | ---------------- | --------------------- | -------------------------------------------------------------------- |
-| `control_panel`  | user (conductor only) | ncurses dashboard — domain status, drop zone, system health          |
+| `control_panel`  | user (conductor only) | ncurses dashboard -- domain status, drop zone, system health          |
 | `indicator_de`   | user (conductor only) | Domain indicator for XFCE/MATE via OSD popup                         |
 | `site_menu`      | user (conductor only) | Two-phase site launcher with `pass(1)` integration                   |
 | `xterm_root`     | user (conductor only  | Color-coded xterm, then `su -` to root                               |
@@ -583,7 +590,8 @@ next run imports the complete archive.
 
 | Script             | Run by      | Purpose                                                                                                          |
 | ------------------ | ----------- | ---------------------------------------------------------------------------------------------------------------- |
-| `verify_integrity` | root (cron) | Generate SHA256 hashes, verify against signed checksums via `signify(1)`. Logs to `/var/log/dropQbsd/verify_integrity.log`. |
+| `sign_filelist`    | root (manual) | Sign the SHA256 manifest against the private key. Used after any change to a monitored file. |
+| `verify_integrity` | root (cron)   | Verify monitored files against the signed manifest via `signify(1)`. Logs to `/var/log/dropQbsd/verify_integrity.log`. |
 
 The integrity keys are generated locally during setup, not distributed with the
 repository. Each installation verifies its own scripts against its own
@@ -628,10 +636,10 @@ variant:
 | --------- | ----------------------- | -------------------------------- |
 | OpenBSD   | `/bin/ksh`              | Base system (PD KSH)             |
 | FreeBSD   | `/usr/local/bin/mksh`   | `mksh` must be installed         |
-| NetBSD    | —                       | Not supported — see below        |
+| NetBSD    | --                      | Not supported -- see below       |
 
 Scripts in `sbin/` and `libexec/` carry **no shebang**. The wrapper decides.
-Adding a new OS means extending one `case` statement — not editing every script.
+Adding a new OS means extending one `case` statement -- not editing every script.
 
 **Firewall backends** follow the same principle. `gen_fwall` reads a portable
 policy (`domains.conf`) and a site configuration (`local.conf`), then emits
@@ -652,7 +660,7 @@ drops per-user isolation.
 ## Philosophy
 
 **dropQbsd** is not a distribution. It's a configuration. It doesn't fork the
-BSDs — it sits on top, using tools battle-tested for decades.
+BSDs -- it sits on top, using tools battle-tested for decades.
 
 The goal is not to add layers of abstraction but to remove them. If Unix users
 and permissions already provide isolation, why add a hypervisor? If `cron` and
@@ -662,7 +670,7 @@ can manage network access for updates, why build a package manager wrapper? If a
 
 
 **Complexity is the enemy of security.** dropQbsd keeps it simple, auditable,
-and boring — exactly what you want from a security tool.
+and boring -- exactly what you want from a security tool.
 
 ---
 
@@ -670,16 +678,16 @@ and boring — exactly what you want from a security tool.
 
 **Done:**
 
-- ✅ Desktop standalone — four domains, PF isolation, drop zone
+- ✅ Desktop standalone -- four domains, PF isolation, drop zone
 - ✅ Disposable browser sessions (tmpfs-backed)
 - ✅ Site menu with password manager integration
-- ✅ Archival pipeline (email + websites → userdoc)
+- ✅ Archival pipeline (email + websites > userdoc)
 - ✅ Declarative firewall policy (`gen_fwall`, `domains.conf` + `local.conf`)
-- ✅ FreeBSD support (v0.3.0) — same codebase, shebang selected by wrapper
+- ✅ FreeBSD support (v0.3.0) -- same codebase, shebang selected by wrapper
 
 **In progress:**
 
-- 🚧 Install script (`install.sh`) — the current manual install is the main
+- 🚧 Install script (`install.sh`) -- the current manual install is the main
   barrier to adoption
 
 **Planned:**
@@ -699,19 +707,19 @@ requires a redesign of the per-domain network policy, not a port.
 dropQbsd is the engineering expression of a longer argument about software,
 verification, and accountability. Three articles lay out the reasoning:
 
-- **[If you have an antivirus, you're probably in breach of GDPR](https://blog.nicolabaudo.fr/if-you-have-an-antivirus-you-re-probably-in-breach-of-gdpr/)** —
+- **[If you have an antivirus, you're probably in breach of GDPR](https://blog.nicolabaudo.fr/if-you-have-an-antivirus-you-re-probably-in-breach-of-gdpr/)** -- 
   Why endpoint security products are architecturally incompatible with GDPR
   accountability: root access, undocumented exfiltration, unverifiable claims.
 
-- **[You cannot verify what you cannot see](https://blog.nicolabaudo.fr/you-cannot-verify-what-you-cannot-see-closed-source-privacy/)** —
+- **[You cannot verify what you cannot see](https://blog.nicolabaudo.fr/you-cannot-verify-what-you-cannot-see-closed-source-privacy/)** -- 
   Why "privacy-respecting closed-source software" is a logical contradiction,
   and why audit theater cannot substitute for source access.
 
-- **[Who are the real predators in cybersecurity?](https://blog.nicolabaudo.fr/who-are-the-real-predators-in-cybersecurity/)** —
+- **[Who are the real predators in cybersecurity?](https://blog.nicolabaudo.fr/who-are-the-real-predators-in-cybersecurity/)** -- 
   Risk as probability × severity, and why the dominant threat is not the
   hacker in the hoodie.
 
-The full series — *Embrace Philosophy or Let the Sophist Zombify* — is at
+The full series -- *Embrace Philosophy or Let the Sophist Zombify* -- is at
 [blog.nicolabaudo.fr/embrace-philosophy](https://blog.nicolabaudo.fr/embrace-philosophy/).
 
 ---

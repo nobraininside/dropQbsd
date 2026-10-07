@@ -8,10 +8,18 @@
 #  How it works:
 #    1. Reads /etc/dropQbsd/filelist (paths relative to
 #       /opt/dropQbsd, or absolute for /etc/dropQbsd files).
-#    2. sha256 each file in the list.
+#       Comments (#) and blank lines are skipped; trim happens
+#       BEFORE the comment check, so an indented comment is
+#       still skipped.
+#    2. sha256 each file in the list, in filelist order.
 #    3. Verify the resulting manifest against the detached
 #       signature keys/dropQbsd_scripts.sha256.sig using
 #       the PUBLIC key keys/dropQbsd.pub.
+#
+#  The filter and the order MUST match admin/sign_filelist.
+#  Sign and verify are two halves of the same operation: if
+#  one changes, the other must change with it, or the
+#  signature will never match.
 #
 #  Key policy (v0.3.0):
 #    The private key /root/dropQbsd.sec is PASSPHRASE-
@@ -86,26 +94,50 @@ for f in "$FILELIST" "$PUBKEY" "$CHECKSUM_FILE"; do
 done
 
 TMP=$(mktemp /tmp/verify_integrity.XXXXXX) || exit 1
-trap 'rm -f "$TMP"' EXIT INT TERM
+trap 'rm -f "$TMP" "$TMP.files"' EXIT INT TERM
 
 # --- Build the file list ---------------------------------------------
+# Read the filelist one path per line. Skip comments and blank
+# lines: verify_integrity hashes each entry, and a comment would
+# be passed to sha256 as a path. Trim whitespace BEFORE the check
+# so an indented comment ("  # note") is still skipped. 'case' is
+# the correct glob matcher in ksh -- '[[ == \#* ]]' does not match
+# '#' under PD KSH or mksh.
+#
+# Paths are appended one per line; xargs passes each path as a
+# single argument, so paths containing spaces survive the round
+# trip. The order in which the paths are hashed is the order of
+# the filelist, and it MUST match the order used by
+# admin/sign_filelist when the signature was produced.
+FILE_ARGS="$TMP.files"
+while IFS= read -r line; do
+    line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    case "$line" in
+        ""|\#*) continue ;;
+    esac
+
+    # Resolve relative paths from /opt/dropQbsd (we cd'd above).
+    # Absolute paths are used as-is.
+    if [ ! -f "$line" ]; then
+        report err "MISSING FILE $line"
+        exit 1
+    fi
+
+    printf '%s\0' "$line" >> "$FILE_ARGS"
+done < "$FILELIST"
+
 # Empty filelist would verify the wrong thing: fail loudly instead.
-FILES=$(cat "$FILELIST")
-if [ -z "$FILES" ]; then
+if [ ! -s "$FILE_ARGS" ]; then
     report err "FILELIST EMPTY - $FILELIST"
+    rm -f "$FILE_ARGS"
     exit 1
 fi
 
-# --- Verify every listed file exists BEFORE hashing ------------------
-for f in $FILES; do
-    if [ ! -f "$f" ]; then
-        report err "MISSING FILE $f"
-        exit 1
-    fi
-done
-
-sha256 $FILES > "$TMP" 2>&1
-
+# Hash every listed file. xargs -0 passes each path as a single
+# argument, preserving spaces. The order is the filelist order,
+# and it MUST match admin/sign_filelist.
+xargs -0 sha256 < "$FILE_ARGS" > "$TMP" 2>&1
+rm -f "$FILE_ARGS"
 
 OUTPUT=$(signify -V -p "$PUBKEY" -x "$CHECKSUM_FILE" -m "$TMP" 2>&1)
 RET=$?
@@ -116,5 +148,3 @@ else
     report err "INTEGRITY VIOLATION - see $LOG for details"
     printf '%s\n' "$OUTPUT" >> "$LOG"
 fi
-
-

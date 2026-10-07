@@ -1,12 +1,17 @@
-# dropQbsd — Installation
+# dropQbsd -- Installation
 
 This guide covers **OpenBSD** (reference platform) and **FreeBSD**.
 
 Where the procedure is identical on both systems, it is written once. Where it
-differs, a two-column table is used — **OpenBSD on the left, FreeBSD on the
-right** — with each system's procedure under its own column.
+differs, a two-column table is used -- **OpenBSD on the left, FreeBSD on the
+right** -- with each system's procedure under its own column.
 
 If a section has no such table, the procedure is the same on both platforms.
+
+**Text encoding convention.** Prose and code comments use ASCII only: `--`
+for em dash, `>` for arrow. Status tables use Unicode check marks (`✅` /
+`❌`) for visual scanning. The split is deliberate -- prose is copied and
+typed, tables are read.
 
 ---
 
@@ -25,7 +30,7 @@ on FreeBSD.
 | ------- | ------- |
 | `ksh` is in base (`/bin/ksh`) | Install `mksh`: `pkg install mksh` |
 
-**Optional components** — install only what you need:
+**Optional components** -- install only what you need:
 
 | Component | Packages |
 | --------- | -------- |
@@ -33,7 +38,7 @@ on FreeBSD.
 | `indicator_de` | `dzen2`, `xdotool` |
 | `site_menu` | `zenity`, `pass`, `xclip` |
 | `Syncthing` (userdoc) | `syncthing` |
-| Integrity verification | `signify` — base on OpenBSD, `pkg install signify` on FreeBSD |
+| Integrity verification | `signify` -- base on OpenBSD, `pkg install signify` on FreeBSD |
 
 Install packages:
 
@@ -139,7 +144,7 @@ chmod 700 /opt/dropQbsd/keys
 ```
 
 The `2770` mode (SGID) on `/home/drop` forces the `drop` group on all files
-placed there — this is what makes the drop zone policed by construction rather
+placed there -- this is what makes the drop zone policed by construction rather
 than by convention.
 
 ---
@@ -173,13 +178,13 @@ chmod 750 /var/log/dropQbsd
 ```
 
 The directory starts empty. Each log file appears the first time
-its script runs — the enforcers and `verify_integrity` via cron
+its script runs -- the enforcers and `verify_integrity` via cron
 within minutes, `ensure_updates_table` and the update logs on
 first use of the corresponding alias.
 
 **Note:** scripts in `sbin/` and `libexec/` carry **no shebang**. They are
 executed through `libexec/wrapper`, which selects the correct shell for the
-platform. Do not add shebangs — it would break portability.
+platform. Do not add shebangs -- it would break portability.
 
 ---
 
@@ -190,9 +195,9 @@ three files:
 
 | File | Purpose |
 | ---- | ------- |
-| `src/run_app.c` | C source — compiled once |
-| `bin/run_app` | Compiled setuid binary — the immutable gate `user` invokes |
-| `libexec/run_app_impl` | Script — all the logic, editable without recompilation |
+| `src/run_app.c` | C source -- compiled once |
+| `bin/run_app` | Compiled setuid binary -- the immutable gate `user` invokes |
+| `libexec/run_app_impl` | Script -- all the logic, editable without recompilation |
 
 The `wrapper` (`libexec/wrapper`) is a separate component: it selects
 the Korn shell and sanitizes the environment for every dropQbsd script.
@@ -211,7 +216,7 @@ This script:
 3. Sets mode to `4755` (the setuid bit).
 
 **Why use it instead of compiling by hand:** every compilation creates
-a *new* file, and a new file has the compiler's default mode — the
+a *new* file, and a new file has the compiler's default mode -- the
 setuid bit is lost. Forgetting `chmod 4755` produces a binary that
 looks correct but fails at runtime with:
 
@@ -234,7 +239,7 @@ step cannot be forgotten.
 
 A dynamically linked setuid binary is exposed to `LD_PRELOAD`-style
 injection before `main()` runs. The static build removes that class
-of attack entirely — the kernel's setuid protections are a second
+of attack entirely -- the kernel's setuid protections are a second
 line of defence, not the first.
 
 Verify the result is static:
@@ -250,7 +255,7 @@ No output means no dynamic dependencies: the binary is static.
     ls -l /opt/dropQbsd/bin/run_app
 ```
 
-The mode must show `-rwsr-xr-x` — the `s` is the setuid bit. Without
+The mode must show `-rwsr-xr-x` -- the `s` is the setuid bit. Without
 It, the gate does not escalate and domain applications will not launch.
 
 
@@ -296,10 +301,10 @@ install depends on the platform:
 | ---- | ------- | ------- |
 | `~/.profile`  | **always** (login shells: tty, su -, ssh) | **always** |
 | `~/.xprofile` | **yes** (SDDM / LightDM, if used) | **yes** (SDDM) |
-| `~/.xsession` | **yes** (xenodm, the default DM) | **NO** — see warning below |
+| `~/.xsession` | **yes** (xenodm, the default DM) | **NO** -- see warning below |
 | `~/.xinitrc`  | only if you use `startx` instead of xenodm | **yes** (startx) |
 
-**WARNING — never install `~/.xsession` on FreeBSD.** SDDM reads
+**WARNING -- never install `~/.xsession` on FreeBSD.** SDDM reads
 `~/.xsession` and waits for it to exit; the `exec xfce4-session`
 line never returns, so the graphical session freezes at login.
 On FreeBSD use `~/.xprofile` (for SDDM) or `~/.xinitrc` (for
@@ -396,17 +401,17 @@ chown root:wheel /etc/dropQbsd/domains.conf /etc/dropQbsd/schema /etc/dropQbsd/l
 ### Edit local.conf
 
 Open `/etc/dropQbsd/local.conf` and fill in your values. The file is heavily
-commented — read it carefully. Summary of the sections:
+commented -- read it carefully. Summary of the sections:
 
-- **`[network] lan`** — your LAN subnet (REQUIRED). Used by `userdoc` and by
+- **`[network] lan`** -- your LAN subnet (REQUIRED). Used by `userdoc` and by
   any rule targeting `@lan`.
-- **`[updates] mirrors`** — Fastly CDN blocks for OpenBSD mirrors. Do not edit
+- **`[updates] mirrors`** -- Fastly CDN blocks for OpenBSD mirrors. Do not edit
   unless the mirror provider changes.
-- **`[mailserver] hosts`** — your mail server hostnames (optional). Resolved
+- **`[mailserver] hosts`** -- your mail server hostnames (optional). Resolved
   via `userweb` DNS by `update_mailserver_table`.
-- **`[services] hosts`** — external services `userweb` must reach beyond ports
+- **`[services] hosts`** -- external services `userweb` must reach beyond ports
   80/443 (optional). Static IPs written as-is; hostnames prefixed with `@`.
-- **`[extra.*] allow`** — your personal exceptions (optional). You may only
+- **`[extra.*] allow`** -- your personal exceptions (optional). You may only
   **add** `allow` rules here; the base security posture in `domains.conf` is
   not modifiable.
 
@@ -459,7 +464,7 @@ pfctl -nf /etc/pf.conf
 ```
 
 `pfctl -nf` checks the syntax **without** loading the rules. If it reports
-errors, fix your policy files and regenerate. Do not apply a broken ruleset — a
+errors, fix your policy files and regenerate. Do not apply a broken ruleset -- a
 firewall that fails to load leaves you without protection.
 
 **Apply:**
@@ -480,9 +485,9 @@ These scripts read from `local.conf`, resolve hostnames via `userweb` DNS, and
 populate the tables. Root never touches the network directly.
 
 **Ordering:** `gen_fwall` emits the table definitions (`table <mailserver>
-persist`, etc.) into `pf.conf`, so the tables exist — empty — when `pfctl -f`
-loads the ruleset. The `update_*` scripts then fill them. The order (generate →
-verify → apply → populate) is intentional.
+persist`, etc.) into `pf.conf`, so the tables exist -- empty -- when `pfctl -f`
+loads the ruleset. The `update_*` scripts then fill them. The order (generate >
+verify > apply > populate) is intentional.
 
 **Regenerating after policy changes:** any time you edit `domains.conf` or
 `local.conf`:
@@ -502,12 +507,12 @@ The firewall is always derived from the policy. There is no hand-written
 
 All cron jobs run as root. Jobs that need to act on behalf of a domain user use
 `su -l <user> -c` to switch to that user's environment. There is no per-user
-crontab — everything is managed centrally in root's crontab for auditability.
+crontab -- everything is managed centrally in root's crontab for auditability.
 
 ### Merge the crontab entries
 
 `examples/system/crontab.example` contains the dropQbsd entries to **add** to
-root's existing crontab. The merge is idempotent — every dropQbsd line contains
+root's existing crontab. The merge is idempotent -- every dropQbsd line contains
 the string `dropQbsd`:
 
 ```sh
@@ -523,15 +528,15 @@ Verify:
 crontab -l | grep dropQbsd
 ```
 
-**NOTE:** `crontab(1)` **replaces** the whole table — it does not append. Never
+**NOTE:** `crontab(1)` **replaces** the whole table -- it does not append. Never
 paste into `crontab -e` over pre-existing entries unless you edit in place.
 
 ### Jobs NOT in the crontab (by design)
 
-- **`ensure_updates_table`** — invoked by the update scripts (`pkg_tru_fwall`,
+- **`ensure_updates_table`** -- invoked by the update scripts (`pkg_tru_fwall`,
   `patch_tru_fwall`) before touching the `<updates>` PF table. Its newsyslog
   entry only covers manual runs.
-- **`root_snapshot`** — on demand, from `control_panel` (press `a`).
+- **`root_snapshot`** -- on demand, from `control_panel` (press `a`).
 
 ### Export/import race safety (by construction)
 
@@ -544,7 +549,7 @@ run imports the complete archive. **This is expected behavior, not a failure.**
 
 Orphaned `.tmp` files are removed by the exporters' own rotation (6 hours).
 
-**Do not widen the import globs or remove the `.tmp` step** — this is a
+**Do not widen the import globs or remove the `.tmp` step** -- this is a
 load-bearing convention across all four export/import scripts.
 
 ### Lock files
@@ -554,7 +559,7 @@ The lock directories live in `/var/run/` and are cleared on reboot.
 
 The enforcers' locks carry a TTL (5 min): if a run is killed
 mid-cycle, the next run detects the orphaned lock by age, removes
-it, and re-acquires it — a killed cycle costs at most 5 minutes of
+it, and re-acquires it -- a killed cycle costs at most 5 minutes of
 skipped runs, not a permanently blocked enforcer. Manual removal
 (`rmdir /var/run/enforce_*.lock`) is only a fallback if the reclaim
 itself fails (e.g. permissions); `control_panel` surfaces an
@@ -566,7 +571,7 @@ orphaned lock as a red entry.
    nothing to do, or when another instance holds the lock. Locks are acquired
    via atomic `mkdir` with a TTL: an orphaned lock (owner killed mid-cycle)
    is reclaimed by age instead of blocking every future run forever. The TTL
-   is deliberately generous — a cycle takes seconds, so a lock older than a
+   is deliberately generous -- a cycle takes seconds, so a lock older than a
    few minutes is garbage, never a running cycle.
 
 2. **Count what you fix, fix what you count.** Every fix command uses the same
@@ -592,8 +597,8 @@ After installation, verify each domain can perform its function:
 - `usermail`: send/receive email, cannot browse the web
 - `userdoc`: access LAN storage, Syncthing syncs, cannot reach internet
 - `user`: can `Qmv`/`Qcp`/`Qimport` files, can `Run` into domains
-- `Endrop` running in cron — verify via the runbook below (lock-watch test), an empty log is normal
-- `Ensync` running in cron — verify via the runbook below (lock-watch test), an empty log is normal
+- `Endrop` running in cron -- verify via the runbook below (lock-watch test), an empty log is normal
+- `Ensync` running in cron -- verify via the runbook below (lock-watch test), an empty log is normal
 - `Update_mailserver` populates `<mailserver>` table
 - `Update_services` populates `<services>` table
 - `Control` shows domain status and drop zone contents
@@ -680,14 +685,15 @@ Requires `/opt/dropQbsd/libexec/root_snapshot`.
 
 ### Desktop Environment
 
-dropQbsd works with any window manager.
+dropQbsd works with any window manager. Two examples:
 
-- **XFCE** — full desktop environment, familiar for users migrating from
+- **XFCE** -- full desktop environment, familiar for users migrating from
   Windows/macOS. Install with `Pkg xfce xfce-extras`.
-- **cwm** — OpenBSD's native stacking window manager. Minimal, keyboard-driven,
+- **cwm** -- OpenBSD's native stacking window manager. Minimal, keyboard-driven,
   zero dependencies beyond the base system.
 
-Both work with `Run` without additional configuration.
+Any window manager works with `Run` without additional configuration; the
+two above are simply common choices.
 
 **Color scheme convention:**
 
@@ -699,7 +705,7 @@ Both work with `Run` without additional configuration.
 | `userweb` | Web browser | Dark blue |
 | `root` | System | Dark red |
 
-Set the theme per user via XFCE Settings → Appearance. This gives immediate
+Set the theme per user via XFCE Settings > Appearance. This gives immediate
 visual feedback about which domain you are working in.
 
 ### Domain Indicator
@@ -719,7 +725,7 @@ Domain differentiation is provided by the color schemes of terminals, `mc`, and
 
 ### Editor and Application Menu
 
-**vi — editor configuration:**
+**vi -- editor configuration:**
 
 ```sh
 cp examples/apps/vi/exrc ~/.exrc
@@ -735,6 +741,9 @@ Install requirements:
 | OpenBSD | FreeBSD |
 | ------- | ------- |
 | `pkg_add nnn tmux` | `pkg install nnn tmux` |
+
+`nnn` is also usable standalone as a file manager (see File Managers).
+`tmux` is required only for the four-quadrant bridge.
 
 Install the nnn plugins for each domain:
 
@@ -754,7 +763,7 @@ Launch from the conductor:
 File
 ```
 
-**Keys:** `F1`–`F4` jump to a quadrant, `F5` closes the session.
+**Keys:** `F1`-`F4` jump to a quadrant, `F5` closes the session.
 
 **Plugin keys** (inside a domain quadrant):
 
@@ -765,9 +774,9 @@ File
 | `;m` | Move selected files to /home/drop (nnnqmv) |
 | `;i` | Import selected files from /home/drop (nnnqimport) |
 
-**Note on F1–F5:** the bindings are installed in tmux's root key
+**Note on F1-F5:** the bindings are installed in tmux's root key
 table, so they are global to the tmux server. While file_bridge
-is running, F1–F5 are captured in every tmux session on the
+is running, F1-F5 are captured in every tmux session on the
 machine. This is intentional: file_bridge is designed to be the
 only tmux session in use.
 
@@ -788,10 +797,14 @@ directly by xterm.
 
 ### File Managers
 
-Two recommendations, both lightweight:
+Three recommendations, all lightweight:
 
-- **Xfe** — graphical, dual-pane
-- **Midnight Commander (`mc`)** — terminal-based
+- **nnn** -- terminal-based, minimal, keyboard-driven. Already
+  installed for `file_bridge` (see File Bridge). The natural
+  choice for scripted and keyboard-heavy workflows.
+- **Xfe** -- graphical, dual-pane. For when you want a GUI.
+- **Midnight Commander (`mc`)** -- terminal-based, dual-pane. Classic,
+  with a menu-driven interface.
 
 Install:
 
@@ -828,13 +841,13 @@ tampered with, using `signify(1)`.
 **Setup:**
 
 Generate a key pair and sign the critical scripts. The private key must not
-sit on the disk in plaintext — two acceptable options are shown below
+sit on the disk in plaintext -- two acceptable options are shown below
 (option 1 is recommended).
 
-**Option 1 — encrypted key on disk (recommended).** The key is protected by a
+**Option 1 -- encrypted key on disk (recommended).** The key is protected by a
 passphrase. Cron never needs the private key (verification is public-key
 only), so encryption breaks no automation. The passphrase must live only in
-your head or in a KeePassXC vault **on another device** — a passphrase stored
+your head or in a KeePassXC vault **on another device** -- a passphrase stored
 next to the key it protects defeats the encryption.
 
 ```sh
@@ -844,7 +857,7 @@ signify -G -e -p keys/dropQbsd.pub -s /root/dropQbsd.sec
 chmod 600 /root/dropQbsd.sec
 ```
 
-**Option 2 — offline key.** Keep the key on removable media, restore it only
+**Option 2 -- offline key.** Keep the key on removable media, restore it only
 for signing, move it away afterwards:
 
 ```sh
@@ -855,10 +868,11 @@ chmod 600 /root/dropQbsd.sec
 ```
 
 Create the file list. Each line is a path relative to `/opt/dropQbsd`, or
-absolute for files under `/etc/dropQbsd/`. **Do not add `verify_integrity` to
-this list:** it is the trust anchor — the file that checks the others cannot
-itself be checked by them. It is protected by the signature over the public
-key and by the fact that the private key is not on the disk in plaintext.
+absolute for files under `/etc/dropQbsd/`. Comments (`#`) and blank lines
+are allowed and ignored by both `Sign` and `Verify`. **Do not add
+`verify_integrity` to this list:** it is the trust anchor -- the file that
+checks the others cannot itself be checked by them. It is protected by the
+signature over the public key and by the private-key policy above.
 
 ```sh
 cp templates/filelist_for_etc /etc/dropQbsd/filelist
@@ -866,44 +880,18 @@ chown root:wheel /etc/dropQbsd/filelist
 chmod 644 /etc/dropQbsd/filelist
 ```
 
-Sign the files. With **option 1** you will be asked for the passphrase — this
-is expected: signing is a rare, interactive event, and the cron job never
-needs the private key.
+**Sign the manifest.** `Sign` reads `/etc/dropQbsd/filelist`, skips comments
+and blank lines, hashes every listed file in filelist order, and writes the
+detached signature. It is the only supported way to produce the signature:
+the helper and `verify_integrity` share the same filter and the same order,
+so the signature and the verification cannot diverge.
+
+With **option 1** you will be asked for the passphrase -- this is expected:
+signing is a rare, interactive event, and the cron job never needs the
+private key.
 
 ```sh
-cd /opt/dropQbsd
-sha256 $(cat /etc/dropQbsd/filelist) \
- | signify -S -e -s /root/dropQbsd.sec -m - \
-      -x keys/dropQbsd_scripts.sha256.sig
-```
-
-With **option 2**, after signing move the private key offline (or delete it):
-
-```sh
-mv /root/dropQbsd.sec /path/to/offline/storage/
-```
-
-The `verify_integrity` cron job checks the files every 5 minutes and logs to
-`/var/log/dropQbsd/verify_integrity.log`. Verification is public-key only
-(`signify -V`): no passphrase, no private key, no manual steps.
-
-**Why the private key must not sit in plaintext on this disk:** an attacker
-who can read it can re-sign their own tampering — the machine would then be
-verifying itself against a signature the attacker made. A plaintext key on
-the same disk that `verify_integrity` polices turns the verification into
-theater.
-
-**After updating scripts:** if you modify any monitored file,
-`verify_integrity` will report a violation. This is expected. Re-generate
-the signature (as root):
-
-With **option 1** (passphrase will be asked):
-
-```sh
-cd /opt/dropQbsd
-sha256 $(cat /etc/dropQbsd/filelist) \
- | signify -S -e -s /root/dropQbsd.sec -m - \
-      -x keys/dropQbsd_scripts.sha256.sig
+Sign
 ```
 
 With **option 2**, restore the private key first, then sign, then move it
@@ -911,22 +899,84 @@ back offline:
 
 ```sh
 cp /path/to/offline/storage/dropQbsd.sec /root/dropQbsd.sec
-cd /opt/dropQbsd
-sha256 $(cat /etc/dropQbsd/filelist) \
- | signify -S -n -s /root/dropQbsd.sec -m - \
-      -x keys/dropQbsd_scripts.sha256.sig
+Sign
+rm /root/dropQbsd.sec
+```
+
+**Verify it worked:**
+
+```sh
+Verify
+```
+
+Expected output on the terminal and in the log:
+
+```
+2026-10-07 15:54:33: OK - all monitored files verified against the signature
+```
+
+**Order matters.** `Sign` must run before the `verify_integrity` cron job
+is added. On a fresh install the signature file
+(`keys/dropQbsd_scripts.sha256.sig`) does not exist yet, and
+`verify_integrity` exits with `SETUP INCOMPLETE` if it is missing. The
+sequence is:
+
+1. Generate the key pair (`signify -G`)
+2. Install the filelist (`cp templates/filelist_for_etc ...`)
+3. Sign the manifest (`Sign`)
+4. Verify it works (`Verify`)
+5. Add the cron job
+
+The `verify_integrity` cron job checks the files every 5 minutes and logs to
+`/var/log/dropQbsd/verify_integrity.log`. Verification is public-key only
+(`signify -V`): no passphrase, no private key, no manual steps.
+
+**Why the private key must not sit in plaintext on this disk:** an attacker
+who can read it can re-sign their own tampering -- the machine would then be
+verifying itself against a signature the attacker made. A plaintext key on
+the same disk that `verify_integrity` polices turns the verification into
+theater.
+
+**`Sign` and `Verify` must use the same filter and the same order.** Both
+read `/etc/dropQbsd/filelist`, skip comments and blank lines, and hash the
+files in filelist order. The helper exists so the filter lives in one place
+for the signing path; `verify_integrity` mirrors it for the verification
+path. If you modify either script, verify the two filters are identical
+(see Shell portability rules, "Two copies of the same logic will diverge").
+
+**After updating scripts:** if you modify any monitored file,
+`verify_integrity` will report a violation. This is expected. Re-sign the
+manifest:
+
+```sh
+Sign
+```
+
+With **option 2**, restore the private key first, then sign, then move it
+back offline:
+
+```sh
+cp /path/to/offline/storage/dropQbsd.sec /root/dropQbsd.sec
+Sign
 rm /root/dropQbsd.sec
 ```
 
 If you no longer have the private key (or the passphrase for an encrypted
-key), regenerate the key pair from scratch — with `signify -G -e` for option
-1, `signify -G -n` for option 2 — and re-sign. The old signature becomes
+key), regenerate the key pair from scratch -- with `signify -G -e` for option
+1, `signify -G -n` for option 2 -- and re-sign. The old signature becomes
 invalid; this is by design: the trust anchor is the key, and a lost key means
 the chain must be rebuilt.
 
+**Aliases:**
+
+| Alias    | Script                       | Purpose                                              |
+| -------- | ---------------------------- | ---------------------------------------------------- |
+| `Sign`   | `admin/sign_filelist`        | Sign the integrity manifest                          |
+| `Verify` | `libexec/verify_integrity`   | Verify monitored files against the signed manifest   |
+
 ### Site Menu + Password Manager
 
-For daily use, **KeePassXC** is recommended — it runs in its own domain, keeps
+For daily use, **KeePassXC** is recommended -- it runs in its own domain, keeps
 the password database isolated, and works with any browser.
 
 For an integrated experience, dropQbsd includes `site_menu`: a two-phase
@@ -936,9 +986,9 @@ browser.
 
 **Two-phase login flow:**
 
-1. Select a site → press **Copy ID** → browser opens, user ID copied to
+1. Select a site > press **Copy ID** > browser opens, user ID copied to
    clipboard, window stays open.
-2. The same site is now the only entry shown → press **Copy Password** →
+2. The same site is now the only entry shown > press **Copy Password** > 
    password copied (30s timer), window closes.
 
 This eliminates the risk of pasting credentials into the wrong site.
@@ -985,7 +1035,7 @@ pass insert finance/bank_pw
 Site
 ```
 
-### Syncthing — LAN File Synchronization
+### Syncthing -- LAN File Synchronization
 
 Set up Syncthing for `userdoc` with the Sync directory at
 `/home/userdoc/Sync`. The `enforce_sync` script maintains correct permissions
@@ -1016,7 +1066,7 @@ No manual `pf.conf` edits are needed.
 Run userdoc qutebrowser --temp-basedir http://127.0.0.1:8384
 ```
 
-Settings → Default Folder Path: `/home/userdoc/Sync`.
+Settings > Default Folder Path: `/home/userdoc/Sync`.
 
 **Troubleshooting:** if remote devices show as disconnected, verify the remote
 device is listening on TCP 22000, and check that `pf.conf` allows incoming TCP
@@ -1100,8 +1150,8 @@ When `Upgrade` prepares a release upgrade but cannot complete it (on
 FreeBSD, the reboot decision is the operator's), it leaves a marker at
 `/var/log/dropQbsd/upgrade_pending`.
 
-The login notice — a snippet in `/etc/dropQbsd/profile`, installed
-with the rest of the global configuration — checks for the marker at
+The login notice -- a snippet in `/etc/dropQbsd/profile`, installed
+with the rest of the global configuration -- checks for the marker at
 every login shell and prints a reminder:
 
 ```
@@ -1160,6 +1210,7 @@ After a full installation:
 │   ├── gen_fwall                # Generate pf.conf from policy
 │   ├── patch_tru_fwall          # Security patches
 │   ├── pkg_tru_fwall            # Package management
+│   ├── sign_filelist            # Sign the integrity manifest 
 │   ├── update_tru_fwall         # Full system update
 │   └── upgrade_tru_fwall        # Major release upgrade
 ├── bin/
@@ -1291,7 +1342,7 @@ variant:
 | FreeBSD | `/usr/local/bin/mksh` (install with `pkg install mksh`) |
 
 Scripts in `sbin/` and `libexec/` carry **no shebang**. The wrapper decides.
-Adding a new OS means extending one `case` statement in `libexec/wrapper` — not
+Adding a new OS means extending one `case` statement in `libexec/wrapper` -- not
 editing every script.
 
 **Firewall backends** follow the same principle. `gen_fwall` reads a portable
@@ -1307,7 +1358,7 @@ interface detection:
 | Uses the `egress` interface group (provided automatically) | Resolves the physical interface from `route get default` |
 
 **NetBSD is not supported.** `npf(7)` filters by address and interface, not by
-user. Per-user network isolation — the foundation of dropQbsd's model — cannot
+user. Per-user network isolation -- the foundation of dropQbsd's model -- cannot
 be expressed in `npf`. `gen_fwall` refuses to generate a partial ruleset rather
 than emit a firewall that silently drops per-user isolation.
 
@@ -1319,17 +1370,68 @@ Scripts in `sbin/` and `libexec/` run under PD KSH (OpenBSD) and
 mksh (FreeBSD). Both are Korn shells, but neither is bash. The
 following are NOT available and must not be used:
 
-- `disown` (bash/zsh only) \xe2\x80\x94 use a subshell `( cmd & )` to detach
-- Bash arrays (`arr=(...)`) \xe2\x80\x94 use positional parameters or a file
-- `[[ "$x" =~ ... ]]` \xe2\x80\x94 not portable; use `case` or external tools
-- `\#*` inside `[[ ]]` \xe2\x80\x94 does not match `#`; use `case` for globs
-- `pipefail` \xe2\x80\x94 not in PD KSH; write to a temp file to capture exit codes
-- `cat -A` (GNU) \xe2\x80\x94 use `cat -v -e -t` (POSIX)
-- Non-ASCII characters in strings passed to GUI tools \xe2\x80\x94 the locale
+- `disown` (bash/zsh only) -- use a subshell `( cmd & )` to detach
+- Bash arrays (`arr=(...)`) -- use positional parameters or a file
+- `[[ "$x" =~ ... ]]` -- not portable; use `case` or external tools
+- `\#*` inside `[[ ]]` -- does not match `#`; use `case` for globs
+- Process substitution `<(...)` -- not in ksh; use temp files
+- `pipefail` -- not in PD KSH; write to a temp file to capture exit codes
+- `cat -A` (GNU) -- use `cat -v -e -t` (POSIX)
+- `grep 'a\|b'` -- `\|` is not alternation in BRE; use `grep -E 'a|b'`
+- Non-ASCII characters in strings passed to GUI tools -- the locale
   may be `C`; use ASCII only in titles and dialog text
 
-  Use `case` for pattern matching, POSIX constructs only, and verify
-  every external command exists in the sanitized `PATH`.
+Use `case` for pattern matching, POSIX constructs only, and verify
+every external command exists in the sanitized `PATH`.
+
+### Whitespace and path handling
+
+Two rules recur across the codebase. Both come from bugs that were
+invisible until a path or a comment hit the edge case.
+
+**Trim before the check.** When skipping comments or blank lines,
+strip leading and trailing whitespace FIRST, then test for the
+comment marker. An indented comment (`  # note`) must still be
+skipped:
+
+    line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    case "$line" in
+        ""|\#*) continue ;;
+    esac
+
+The reverse order lets an indented comment through, and a comment
+passed to `sha256` or a file operation becomes a missing-file error.
+
+**Use `xargs -0` for path lists.** When a list of paths is
+materialised and later consumed by a command, write it NUL-separated
+and read it with `xargs -0`:
+
+    printf '%s\0' "$path" >> "$FILE_ARGS"
+    ...
+    xargs -0 sha256 < "$FILE_ARGS"
+
+Plain `xargs` splits on newlines AND spaces, so a path containing a
+space becomes two arguments. `xargs -0` splits only on NUL and
+passes each path as a single argument.
+
+### Two copies of the same logic will diverge
+
+When two scripts must apply the same filter or the same order,
+the logic is duplicated. Duplicated logic drifts: one is fixed,
+the other is not, and the mismatch is silent until something
+fails to verify.
+
+`admin/sign_filelist` and `libexec/verify_integrity` are the
+canonical example. Both read `/etc/dropQbsd/filelist`, skip
+comments and blank lines, and hash the files in filelist order.
+The helper exists so the filter lives in one place for the
+signing path; `verify_integrity` mirrors it for the verification
+path. If you change one, you must change the other.
+
+The preferred fix for any such pair is to extract the shared
+logic into a single helper that both scripts call. Until that
+is done, document the coupling explicitly in both files and add
+a comment that changing one requires changing the other.
 
 ---
 
@@ -1343,7 +1445,7 @@ It runs with the privileges of its caller:
 - **the domain user**, when invoked from within a domain.
 
 Because `run_app` escalates to root *before* calling the wrapper, everything
-downstream runs with root privileges — so the wrapper sanitizes the
+downstream runs with root privileges -- so the wrapper sanitizes the
 environment before any script sees it:
 
 - `PATH` is hardcoded to system directories. A user-controlled `PATH` in a root
@@ -1362,7 +1464,7 @@ graphical launcher does not pass them. The wrapper still sanitizes;
 the defaults live in the script, not in the wrapper.
 
 Scripts that need the invoking user's home directory rebuild it from
-`/etc/passwd` using the real uid — never from the environment.
+`/etc/passwd` using the real uid -- never from the environment.
 
 ---
 

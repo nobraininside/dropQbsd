@@ -20,6 +20,25 @@ export DROPQBSD_ETC="/etc/dropQbsd"
 export DROPQBSD_LOG="/var/log/dropQbsd"
 export DROPQBSD_RUN="/var/run/dropQbsd"
 
+# --- Locale (portable: OpenBSD + FreeBSD) ---
+# LC_ALL must be unset: it would override every LC_* below.
+# ${VAR:-default} honours values set earlier (e.g. FreeBSD login.conf).
+#
+# Portability note: OpenBSD honours LC_CTYPE only; the other
+# categories are ignored there but work on FreeBSD. Keeping them
+# all in one block is deliberate -- single file, both platforms.
+unset LC_ALL
+
+export LANG="${LANG:-en_US.UTF-8}"
+export LC_CTYPE="${LC_CTYPE:-en_US.UTF-8}"
+export LC_COLLATE="${LC_COLLATE:-en_US.UTF-8}"
+export LC_TIME="${LC_TIME:-en_US.UTF-8}"
+export LC_MONETARY="${LC_MONETARY:-en_US.UTF-8}"
+export LC_NUMERIC="${LC_NUMERIC:-en_US.UTF-8}"
+
+# less does not infer the charset from LC_CTYPE on OpenBSD.
+export LESSCHARSET="${LESSCHARSET:-utf-8}"
+
 # --- Path Configuration ---
 # bin/ for every user: run_app is setuid and safe to invoke directly.
 # sbin/ and libexec/ are NOT added: their scripts carry no shebang
@@ -37,6 +56,20 @@ if [ "$(id -u)" -eq 0 ]; then
         *) PATH="$PATH:$DROPQBSD_DIR/admin" ;;
     esac
     export PATH
+fi
+
+# --- Conductor reminder (login only, user only) ---
+if [ "$(id -un)" = "user" ] && [ -z "${_DQ_REMINDER_SHOWN:-}" ]; then
+    case "$-" in
+        *i*)
+            echo "=== dropQbsd conductor ==="
+            echo "Domains: userweb (browser) | usermail (email) | userdoc (files)"
+            echo "Use qmv/qcp/qimport to move files between domains."
+            echo "Keep this account clean - do your work inside a domain."
+            _DQ_REMINDER_SHOWN=1
+            export _DQ_REMINDER_SHOWN
+            ;;
+    esac
 fi
 
 # --- System-Specific Variables ---

@@ -34,6 +34,7 @@
 alias Gen="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/gen_fwall"
 alias Patch="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/patch_tru_fwall"
 alias Pkg="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/pkg_tru_fwall"
+alias Sign="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/sign_filelist"
 alias Update="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/update_tru_fwall"
 alias Upgrade="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/upgrade_tru_fwall"
 
@@ -51,7 +52,7 @@ alias Imwww="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/import_www_from
 alias Upmailserver="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/update_mailserver_table"
 alias Upservices="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/update_services_table"
 alias Verify="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/verify_integrity"
-alias Wrapper="/opt/dropQbsd/libexec/wrapper"
+alias Wrapper="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/wrapper"
 
 # --- Sbin ---
 alias Control="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/control_panel"
@@ -60,12 +61,13 @@ alias Indicator="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/indicator_de"
 alias Qcp="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qcp"
 alias Qimport="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qimport"
 alias Qmv="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qmv"
-alias Site="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/site_menu"
-alias Xtroot="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_root"
-alias Xtuser="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_user"
-alias Xtuserdoc="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_userdoc"
-alias Xtusermail="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_usermail"
-alias Xtuserweb="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_userweb"
+alias Site="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/site_menu &"
+alias Xtroot="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_root &"
+alias Xtuser="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_user &"
+alias Xtuserdoc="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_userdoc &"
+alias Xtusermail="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_usermail &"
+alias Xtuserweb="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_userweb &"
+
 
 
 
