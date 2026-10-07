@@ -1,0 +1,121 @@
+# ==========================================================
+#  dropQbsd -- sign_filelist
+#
+#  Sign the current manifest of monitored files.
+#
+#  Reads /etc/dropQbsd/filelist, hashes every listed file in
+#  the same order verify_integrity uses, and writes the
+#  detached signature keys/dropQbsd_scripts.sha256.sig.
+#
+#  Why this exists: sign and verify MUST use the same filter
+#  and the same order, or the signature will never match.
+#  Duplicating the logic in INSTALL.md invites drift. This
+#  helper is the single source of truth for both.
+#
+#  The filelist may contain comments (#) and blank lines --
+#  they are skipped, exactly as verify_integrity skips them.
+#  Trim happens BEFORE the comment check, so an indented
+#  comment ("  # note") is still skipped. 'case' is the
+#  correct glob matcher in ksh -- '[[ == \#* ]]' does not
+#  match '#' under PD KSH or mksh.
+#
+#  IMPORTANT: use this after ANY change to a monitored file,
+#  or verify_integrity will report an INTEGRITY VIOLATION.
+#  This is expected behaviour, not a bug: the trust anchor
+#  is the key, and the signature must be regenerated.
+#
+#  Path: /opt/dropQbsd/admin/sign_filelist
+#  Permissions: chmod 700, root:wheel
+#
+#  Requirements: signify(1), sha256(1).
+#    - OpenBSD: both in base system.
+#    - FreeBSD: pkg install signify.
+#
+#  The private key must be available for this operation:
+#    - Option 1 (encrypted on disk): /root/dropQbsd.sec,
+#      passphrase asked at signing time. The cron job never
+#      needs it -- verification is public-key only.
+#    - Option 2 (offline key): restore the key first, sign,
+#      then move it back offline. See INSTALL.md.
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/sign_filelist
+#    OR
+#    Sign
+#
+#  Exit codes:
+#    0  signature written
+#    1  setup or signing error
+# ==========================================================
+
+
+FILELIST="/etc/dropQbsd/filelist"
+PRIVKEY="/root/dropQbsd.sec"
+SIG="/opt/dropQbsd/keys/dropQbsd_scripts.sha256.sig"
+
+stamp() { date '+%Y-%m-%d %H:%M:%S'; }
+
+# report: write a message to the terminal AND stderr when it
+# is an error, so the failure stays visible under redirection.
+report() {
+    if [ "$1" = "err" ]; then
+        shift
+        printf '%s: %s\n' "$(stamp)" "$*" >&2
+    else
+        printf '%s: %s\n' "$(stamp)" "$*"
+    fi
+}
+
+cd /opt/dropQbsd || { report err "CANNOT cd /opt/dropQbsd"; exit 1; }
+
+# --- Setup sanity ----------------------------------------------------
+for f in "$FILELIST" "$PRIVKEY"; do
+    if [ ! -r "$f" ]; then
+        report err "SETUP INCOMPLETE - missing $f"
+        exit 1
+    fi
+done
+
+TMP=$(mktemp /tmp/sign_filelist.XXXXXX) || exit 1
+trap 'rm -f "$TMP" "$TMP.files"' EXIT INT TERM
+FILE_ARGS="$TMP.files"
+
+# --- Build the file list ---------------------------------------------
+# Same filter and same order as verify_integrity. Do not change
+# one without changing the other.
+while IFS= read -r line; do
+    line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    case "$line" in
+        ""|\#*) continue ;;
+    esac
+
+    if [ ! -f "$line" ]; then
+        report err "MISSING FILE $line"
+        exit 1
+    fi
+
+    printf '%s\0' "$line" >> "$FILE_ARGS"
+done < "$FILELIST"
+
+if [ ! -s "$FILE_ARGS" ]; then
+    report err "FILELIST EMPTY - $FILELIST"
+    exit 1
+fi
+
+# --- Hash and sign ---------------------------------------------------
+# xargs -0 passes each path as a single argument, preserving spaces.
+# The manifest is piped into signify via stdin (-m -).
+xargs -0 sha256 < "$FILE_ARGS" \
+    | signify -S -e -s "$PRIVKEY" -m - -x "$SIG"
+
+RET=$?
+if [ $RET -eq 0 ]; then
+    report "OK - signature written to $SIG"
+else
+    report err "SIGNING FAILED (rc=$RET)"
+fi
+
+exit $RET
