@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Librewolf disposable
+Exec=/opt/dropQbsd/bin/run_app --disposable userweb librewolf --temp-profile --private-window
+Icon=dropq-userweb.svg
+Categories=System;

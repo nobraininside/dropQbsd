@@ -146,12 +146,12 @@ privilege escalation:
 | `bin/run_app`          | Compiled binary (setuid root) | Immutable gate -- 35 lines of C, no decision logic |
 | `libexec/wrapper`      | `sh` script                   | Sanitizes the environment, selects the shell               |
 | `libexec/run_app_impl` | `ksh`/`mksh` script           | All the logic -- domain selection, X11 cookie, tmpfs        |
-| `src/run_app.c`| C source                      | Reference only; needed only if the ABI breaks              |
+| `src/run_app.c`        | C source                      | Reference only; needed only if the ABI breaks              |
 
 **The gate.** `run_app` validates the argument count, escalates to root with
 `setuid(0)`, and `execv`s the wrapper at a hardcoded path. It does not parse
 arguments, does not branch on input, and does not decide which script to run.
-All session logic -- domain selection, X11 cookie handling, tmpfs setup -- 
+All session logic -- domain selection, X11 cookie handling, tmpfs setup --
 lives in `run_app_impl`, a plain script. Immutable after compilation: if you
 need to add a domain, change paths, or adjust cleanup behavior, you edit the
 script. No recompilation.
@@ -317,6 +317,8 @@ $ Qimport folder1
 $ Qimport document.pdf ~/Documents
 ```
 
+`Qimport` handles directories directly.
+
 **Interactive transfer via file_bridge:**
 
 ```
@@ -324,8 +326,8 @@ $ File
 ```
 
 Four quadrants: `control_panel` top-left, and `nnn` instances for `userdoc`
-(green), `usermail` (orchid), `userweb` (blue). Press `Space` to select files,
-then `;c` to copy, `;m` to move, or `;i` to import.
+(green), `usermail` (orchid), `userweb` (blue). Press `;c` to copy, `;m` to
+move, or `;i` to import the current item.
 
 **Keys:**
 
@@ -336,11 +338,15 @@ then `;c` to copy, `;m` to move, or `;i` to import.
 | `F3`  | Jump to usermail                                  |
 | `F4`  | Jump to userweb                                   |
 | `F5`  | Kill the session                                  |
-| Space | Select file(s) in nnn                             |
-| `;c`  | Copy selected files to /home/drop via qcp         |
-| `;m`  | Move selected files to /home/drop via qmv         |
-| `;i`  | Import selected files from /home/drop via qimport |
+| `;c`  | Copy the current item to /home/drop via qcp       |
+| `;m`  | Move the current item to /home/drop via qmv       |
+| `;i`  | Import the current item from /home/drop via qimport |
 
+**Note on multi-selection:** nnn passes plugins the current item and the
+containing directory. Copy, move, and import operate on **one item at a time**
+-- the containing directory is never transferred. To process several files,
+repeat the action for each, or use `qcp`/`qmv`/`qimport` directly from a
+terminal with explicit paths.
 
 **Note on F1-F5:** these bindings are global to the tmux server
 (root key table), not scoped to the file_bridge session. While
@@ -380,8 +386,8 @@ health.
 **What you see:**
 
 - **Domains** -- which compartments are active and what process is running in each
-- **Drop zone** -- files awaiting import (newer than 60 minutes), permissions, quarantine status
-- **System** -- PF firewall state, enforcement logs, integrity verification, tmpfs usage (requires root authentication)
+- **Drop zone** -- files awaiting import (newer than 60 minutes), with the file/quarantine totals in the section header, plus permissions and quarantine status
+- **System** -- PF state, load average, free space on /home, tmpfs usage, enforcement logs, integrity verification (requires root authentication)
 
 **Keys:**
 
@@ -489,13 +495,22 @@ rm -f /var/log/dropQbsd/upgrade_pending
 
 ### Monitoring
 
-**Logs** (one per script, named after the script):
+**Logs** (one per script, named after the script). Every line is
+`YYYY-MM-DD HH:MM:SS <message>` -- one space separator, no redundant
+paths, no self-references. The format is shared by all scripts, so a
+panel reading `tail -1` always sees the same shape:
 
 ```
 $ tail /var/log/dropQbsd/enforce_drop.log
 $ tail /var/log/dropQbsd/enforce_sync.log
 $ tail /var/log/dropQbsd/verify_integrity.log
 $ tail /var/log/dropQbsd/update_tru_fwall.log
+```
+
+Example:
+
+```
+2026-10-09 12:25:16 fixed: 1 file, 0 dir, 1 owner/group
 ```
 
 **Check quarantine:**
@@ -540,7 +555,7 @@ $ Verify
 | `control_panel`  | user (conductor only) | ncurses dashboard -- domain status, drop zone, system health          |
 | `indicator_de`   | user (conductor only) | Domain indicator for XFCE/MATE via OSD popup                         |
 | `site_menu`      | user (conductor only) | Two-phase site launcher with `pass(1)` integration                   |
-| `xterm_root`     | user (conductor only  | Color-coded xterm, then `su -` to root                               |
+| `xterm_root`     | user (conductor only) | Color-coded xterm, then `su -` to root                               |
 | `xterm_user`     | user (conductor only) | Color-coded xterm for the conductor domain (black)                   |
 | `xterm_userdoc`  | user (conductor only) | Color-coded xterm for userdoc domain (dark green)                    |
 | `xterm_usermail` | user (conductor only) | Color-coded xterm for usermail domain (dark orchid)                  |
@@ -591,7 +606,7 @@ next run imports the complete archive.
 | Script             | Run by      | Purpose                                                                                                          |
 | ------------------ | ----------- | ---------------------------------------------------------------------------------------------------------------- |
 | `sign_filelist`    | root (manual) | Sign the SHA256 manifest against the private key. Used after any change to a monitored file. |
-| `verify_integrity` | root (cron)   | Verify monitored files against the signed manifest via `signify(1)`. Logs to `/var/log/dropQbsd/verify_integrity.log`. |
+| `verify_integrity` | root (cron)   | Verify monitored files against the signed manifest via `signify(1)`. Writes a single canonical line to `verify_integrity.log`; the raw `signify` output goes to `verify_integrity.log.detail`. |
 
 The integrity keys are generated locally during setup, not distributed with the
 repository. Each installation verifies its own scripts against its own
@@ -668,7 +683,6 @@ and permissions already provide isolation, why add a hypervisor? If `cron` and
 can manage network access for updates, why build a package manager wrapper? If a 35-line setuid C binary can gate privilege escalation, why give `user` a
 `doas` ticket to the whole system?
 
-
 **Complexity is the enemy of security.** dropQbsd keeps it simple, auditable,
 and boring -- exactly what you want from a security tool.
 
@@ -694,11 +708,23 @@ and boring -- exactly what you want from a security tool.
 
 - 📋 Ports tree submission (OpenBSD first, then FreeBSD)
 - 📋 dropQbsd-paired + server (WireGuard client-server, input isolation)
-- 📋 NetBSD support (requires redesigning isolation for `npf`; lower priority)
+- 📋 **dropQlnx** -- a separate Linux variant. Linux has no
+  per-user packet filter (no `pf`, no `nftables` uid match), so
+  the network isolation model must be rebuilt on cgroup v2 +
+  nftables. A rewrite of the policy layer, not a port. Higher
+  strategic value, but a large effort.
 
-**Note on NetBSD:** `npf` does not filter by user, so the network isolation
-model used on OpenBSD and FreeBSD does not translate directly. NetBSD support
-requires a redesign of the per-domain network policy, not a port.
+**Note on `dropQlnx`:** the name is deliberate. Linux is not a
+port target like FreeBSD -- it is a different system with a
+different isolation primitive. Calling it `dropQbsd on Linux`
+would promise a portability that does not exist. `dropQlnx` is
+its own thing: same philosophy, same user-separation model, a
+rebuilt network layer.
+
+**Note on NetBSD:** not supported, and not planned. `npf` has no
+per-user filter, so the network isolation model cannot be
+expressed on it. See "Network Isolation" above. This is a
+limitation of `npf`, not a missing feature of dropQbsd.
 
 ---
 
@@ -707,15 +733,15 @@ requires a redesign of the per-domain network policy, not a port.
 dropQbsd is the engineering expression of a longer argument about software,
 verification, and accountability. Three articles lay out the reasoning:
 
-- **[If you have an antivirus, you're probably in breach of GDPR](https://blog.nicolabaudo.fr/if-you-have-an-antivirus-you-re-probably-in-breach-of-gdpr/)** -- 
+- **[If you have an antivirus, you're probably in breach of GDPR](https://blog.nicolabaudo.fr/if-you-have-an-antivirus-you-re-probably-in-breach-of-gdpr/)** --
   Why endpoint security products are architecturally incompatible with GDPR
   accountability: root access, undocumented exfiltration, unverifiable claims.
 
-- **[You cannot verify what you cannot see](https://blog.nicolabaudo.fr/you-cannot-verify-what-you-cannot-see-closed-source-privacy/)** -- 
+ **[You cannot verify what you cannot see](https://blog.nicolabaudo.fr/you-cannot-verify-what-you-cannot-see-closed-source-privacy/)** --
   Why "privacy-respecting closed-source software" is a logical contradiction,
   and why audit theater cannot substitute for source access.
 
-- **[Who are the real predators in cybersecurity?](https://blog.nicolabaudo.fr/who-are-the-real-predators-in-cybersecurity/)** -- 
+- **[Who are the real predators in cybersecurity?](https://blog.nicolabaudo.fr/who-are-the-real-predators-in-cybersecurity/)** --
   Risk as probability × severity, and why the dominant threat is not the
   hacker in the hoodie.
 
@@ -736,4 +762,5 @@ the system, not of the policy document.
 ## License
 
 ISC. See [LICENSE](./LICENSE).
+
 

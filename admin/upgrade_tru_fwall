@@ -125,7 +125,7 @@ fi
 # inside the command -- the window must work on the first try.
 #-----------------------------------------------------------------------------
 grant_dns() {
-    TMP_PF="/tmp/pf.dropQbsd.$$"
+    TMP_PF=$(mktemp /tmp/pf.dropQbsd.XXXXXX) || exit 1
     {
         echo "pass out quick proto { udp tcp } from any to any port 53"
         echo "pass out quick proto tcp from any to any port { 80 443 } flags S/SA"

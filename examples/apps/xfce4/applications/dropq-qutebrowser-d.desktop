@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Qutebrowser disposable
+Exec=/opt/dropQbsd/bin/run_app --disposable userweb qutebrowser --temp-basedir https://www.qwant.com
+Icon=dropq-userweb.svg
+Categories=System;

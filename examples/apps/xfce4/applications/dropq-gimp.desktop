@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Gimp
+Exec=/opt/dropQbsd/bin/run_app userdoc gimp-3.0
+Icon=dropq-userdoc.svg
+Categories=System;

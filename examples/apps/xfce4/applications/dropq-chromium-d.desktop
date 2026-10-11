@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Ungoogled-chromium disposable
+Exec=/opt/dropQbsd/bin/run_app --disposable userweb ungoogled-chromium --temp-profile
+Icon=dropq-userweb.svg
+Categories=System;

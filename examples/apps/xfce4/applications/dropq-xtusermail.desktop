@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Xterm
+Exec=/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_usermail
+Icon=dropq-usermail.svg
+Categories=System;

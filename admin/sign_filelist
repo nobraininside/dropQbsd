@@ -1,42 +1,36 @@
 # ==========================================================
 #  dropQbsd -- sign_filelist
 #
-#  Sign the current manifest of monitored files.
+#  Signs the current manifest of monitored files.
 #
 #  Reads /etc/dropQbsd/filelist, hashes every listed file in
-#  the same order verify_integrity uses, and writes the
-#  detached signature keys/dropQbsd_scripts.sha256.sig.
+#  the same order verify_integrity uses, and writes the detached
+#  signature keys/dropQbsd_scripts.sha256.sig.
 #
-#  Why this exists: sign and verify MUST use the same filter
-#  and the same order, or the signature will never match.
-#  Duplicating the logic in INSTALL.md invites drift. This
-#  helper is the single source of truth for both.
+#  Why this exists: sign and verify MUST use the same filter and
+#  the same order, or the signature will never match. Duplicating
+#  the logic in INSTALL.md invites drift; this helper is the
+#  single source of truth for both. Comments (#) and blank lines
+#  are skipped, exactly as verify_integrity skips them -- trim
+#  happens BEFORE the comment check, so an indented comment is
+#  still skipped.
 #
-#  The filelist may contain comments (#) and blank lines --
-#  they are skipped, exactly as verify_integrity skips them.
-#  Trim happens BEFORE the comment check, so an indented
-#  comment ("  # note") is still skipped. 'case' is the
-#  correct glob matcher in ksh -- '[[ == \#* ]]' does not
-#  match '#' under PD KSH or mksh.
+#  Use this after ANY change to a monitored file, or
+#  verify_integrity will report an INTEGRITY VIOLATION. This is
+#  expected behaviour, not a bug: the trust anchor is the key,
+#  and the signature must be regenerated.
 #
-#  IMPORTANT: use this after ANY change to a monitored file,
-#  or verify_integrity will report an INTEGRITY VIOLATION.
-#  This is expected behaviour, not a bug: the trust anchor
-#  is the key, and the signature must be regenerated.
+#  The private key must be available for this operation:
+#    - encrypted on disk (/root/dropQbsd.sec): passphrase asked
+#      at signing time; the cron job never needs it
+#    - offline key: restore it, sign, then move it back offline
+#      (see INSTALL.md)
 #
 #  Path: /opt/dropQbsd/admin/sign_filelist
 #  Permissions: chmod 700, root:wheel
-#
-#  Requirements: signify(1), sha256(1).
-#    - OpenBSD: both in base system.
-#    - FreeBSD: pkg install signify.
-#
-#  The private key must be available for this operation:
-#    - Option 1 (encrypted on disk): /root/dropQbsd.sec,
-#      passphrase asked at signing time. The cron job never
-#      needs it -- verification is public-key only.
-#    - Option 2 (offline key): restore the key first, sign,
-#      then move it back offline. See INSTALL.md.
+#  Requirements: signify(1), sha256(1):
+#    - OpenBSD: both in base system
+#    - FreeBSD: pkg install signify
 #
 #  IMPORTANT: This script MUST be executed via the dropQbsd
 #  wrapper or its alias. Do NOT run it directly.
@@ -58,23 +52,19 @@ SIG="/opt/dropQbsd/keys/dropQbsd_scripts.sha256.sig"
 
 stamp() { date '+%Y-%m-%d %H:%M:%S'; }
 
-# report: write a message to the terminal AND stderr when it
-# is an error, so the failure stays visible under redirection.
+# report: write one canonical line to the terminal.
+# Format: "YYYY-MM-DD HH:MM:SS <message>" -- one space separator,
+# identical to verify_integrity, enforce_drop and enforce_sync.
 report() {
-    if [ "$1" = "err" ]; then
-        shift
-        printf '%s: %s\n' "$(stamp)" "$*" >&2
-    else
-        printf '%s: %s\n' "$(stamp)" "$*"
-    fi
+    printf '%s %s\n' "$(stamp)" "$1"
 }
 
-cd /opt/dropQbsd || { report err "CANNOT cd /opt/dropQbsd"; exit 1; }
+cd /opt/dropQbsd || { report "CANNOT cd /opt/dropQbsd"; exit 1; }
 
 # --- Setup sanity ----------------------------------------------------
 for f in "$FILELIST" "$PRIVKEY"; do
     if [ ! -r "$f" ]; then
-        report err "SETUP INCOMPLETE - missing $f"
+        report "SETUP INCOMPLETE - missing $f"
         exit 1
     fi
 done
@@ -93,7 +83,7 @@ while IFS= read -r line; do
     esac
 
     if [ ! -f "$line" ]; then
-        report err "MISSING FILE $line"
+        report "MISSING FILE $line"
         exit 1
     fi
 
@@ -101,7 +91,7 @@ while IFS= read -r line; do
 done < "$FILELIST"
 
 if [ ! -s "$FILE_ARGS" ]; then
-    report err "FILELIST EMPTY - $FILELIST"
+    report "FILELIST EMPTY - $FILELIST"
     exit 1
 fi
 
@@ -113,9 +103,9 @@ xargs -0 sha256 < "$FILE_ARGS" \
 
 RET=$?
 if [ $RET -eq 0 ]; then
-    report "OK - signature written to $SIG"
+    report "OK - signature written"
 else
-    report err "SIGNING FAILED (rc=$RET)"
+    report "SIGNING FAILED (rc=$RET)"
 fi
 
 exit $RET

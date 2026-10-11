@@ -1,0 +1,70 @@
+<!DOCTYPE Menu PUBLIC "-//freedesktop//DTD Menu 1.0//EN"
+ "http://www.freedesktop.org/standards/menu-spec/menu-1.0.dtd">
+<Menu>
+  <Name>Xfce</Name>
+  <DefaultAppDirs/>
+  <DefaultDirectoryDirs/>
+
+  <Menu>
+    <Name>_System</Name>
+    <Include>
+      <Filename>xfce4-run.desktop</Filename>
+      <Filename>xfce-settings-manager.desktop</Filename>
+      <Filename>xfce4-session-logout.desktop</Filename>
+    </Include>
+  </Menu>
+
+  <Menu>
+    <Name>User</Name>
+    <Directory>dropq-user.directory</Directory>
+    <Include>
+      <Filename>dropq-file.desktop</Filename>
+      <Filename>dropq-control.desktop</Filename>
+      <Filename>dropq-xfe-user.desktop</Filename>
+      <Filename>dropq-xtuser.desktop</Filename>
+    </Include>
+  </Menu>
+
+  <Menu>
+    <Name>Root</Name>
+    <Directory>dropq-root.directory</Directory>
+    <Include>
+      <Filename>dropq-xtroot.desktop</Filename>
+    </Include>
+  </Menu>
+
+  <Menu>
+    <Name>Userdoc</Name>
+	<Directory>dropq-userdoc.directory</Directory>
+    <Include>
+      <Filename>dropq-xtuserdoc.desktop</Filename>
+      <Filename>dropq-xfe-userdoc.desktop</Filename>
+      <Filename>dropq-soffice.desktop</Filename>
+      <Filename>dropq-gimp.desktop</Filename>
+      <Filename>dropq-keepassxc.desktop</Filename>
+      <Filename>dropq-syncthing-gui.desktop</Filename>
+    </Include>
+  </Menu>
+
+  <Menu>
+    <Name>Usermail</Name>
+	i<Directory>dropq-usermail.directory</Directory>
+    <Include>
+      <Filename>dropq-xtusermail.desktop</Filename>
+      <Filename>dropq-xfe-usermail.desktop</Filename>
+      <Filename>dropq-claws.desktop</Filename>
+    </Include>
+  </Menu>
+
+  <Menu>
+    <Name>Userweb</Name>
+    <Directory>dropq-userweb.directory</Directory>
+    <Include>
+      <Filename>dropq-qutebrowser-d.desktop</Filename>
+      <Filename>dropq-xtuserweb.desktop</Filename>
+      <Filename>dropq-xfe-userweb.desktop</Filename>
+      <Filename>dropq-librewolf-d.desktop</Filename>
+      <Filename>dropq-chromium-d.desktop</Filename>
+    </Include>
+  </Menu>
+</Menu>

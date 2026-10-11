@@ -2,26 +2,23 @@
 #  dropQbsd -- enforce_sync
 #
 #  Monitors and sanitizes the Sync directory permissions.
-#  Ensures all files and directories under /home/userdoc/Sync
-#  are owned by userdoc:userdoc with correct permissions
-#  (2770 for dirs, 660 for files).
+#  Ensures every file and directory under /home/userdoc/Sync
+#  is owned by userdoc:userdoc with correct permissions
+#  (2770 for dirs, 660 for files). Runs every minute via cron
+#  as root.
 #
-#  v0.3.0 changes:
-#    - Grace period now applies to the FIX commands too, not
-#      just the counters: count and action can no longer diverge
-#      (an action without a log line was possible before).
-#    - "Old enough" is uniformly '-mmin +GRACE' (strictly older
-#      than GRACE_MIN minutes) -- one form, no mixed semantics.
+#  A grace period (GRACE_MIN) applies to both the counters and
+#  the fix commands: count and action see the same set, so an
+#  action can never happen without its log line. "Old enough"
+#  is uniformly '-mmin +GRACE' -- one form, no mixed semantics.
+#
+#  Syncthing writes to temp files and renames atomically, so
+#  races with this script are unlikely; the grace period is a
+#  second line of defense for anything not using that pattern.
 #
 #  Path: /opt/dropQbsd/libexec/enforce_sync
 #  Permissions: chmod 700, root:wheel
-#
 #  Cron: * * * * * /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/enforce_sync
-#
-#  Note: Syncthing writes to temp files and renames atomically,
-#  so races with this script are unlikely. The grace period is
-#  a second line of defense for anything not using the rename
-#  pattern.
 #
 #  IMPORTANT: This script MUST be executed via the dropQbsd
 #  wrapper or its alias. Do NOT run it directly.
@@ -60,8 +57,12 @@ GRACE_MIN=2
 #-----------------------------------------------------------------------------
 # LOG FUNCTION
 #-----------------------------------------------------------------------------
-log() {
-    echo "$(date '+%F %T')  $*" >> "$LOG_FILE"
+# Canonical line: "YYYY-MM-DD HH:MM:SS <message>".
+# One space separator, no redundant paths, no self-references.
+# Shared format with enforce_drop and verify_integrity, so a
+# panel reading tail -1 always sees the same shape.
+log_write() {
+    printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$LOG_FILE"
 }
 
 #-----------------------------------------------------------------------------
@@ -82,7 +83,7 @@ DIRS_WRONG=$(find "$TARGET" -type d \
     -mmin +$GRACE_MIN \
     | wc -l | tr -d ' ')
 OWNER_WRONG=$(find "$TARGET" \
-    \( ! -user userdoc -o ! -group userdoc \) \
+    $ ! -user userdoc -o ! -group userdoc $ \
     -mmin +$GRACE_MIN \
     | wc -l | tr -d ' ')
 
@@ -91,7 +92,7 @@ OWNER_WRONG=$(find "$TARGET" \
 #    Same age filter as the counters above: count and fix see
 #    the exact same set, so every fix is reflected in the log.
 #-----------------------------------------------------------------------------
-find "$TARGET" \( ! -user userdoc -o ! -group userdoc \) \
+find "$TARGET" $ ! -user userdoc -o ! -group userdoc $ \
     -mmin +$GRACE_MIN \
     -exec chown userdoc:userdoc {} +
 
@@ -114,7 +115,7 @@ find "$TARGET" -type f ! -perm 660 \
 #-----------------------------------------------------------------------------
 TOTAL_WRONG=$((FILES_WRONG + DIRS_WRONG + OWNER_WRONG))
 if [ "$TOTAL_WRONG" -gt 0 ]; then
-    log "Fixed in $TARGET: $FILES_WRONG file(s), $DIRS_WRONG dir(s), $OWNER_WRONG owner/group mismatch(es)"
+    log_write "fixed: $FILES_WRONG file, $DIRS_WRONG dir, $OWNER_WRONG owner/group"
 fi
 
 exit 0

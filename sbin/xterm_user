@@ -8,7 +8,7 @@
 #    - The wrapper sanitizes the environment (unset HOME, ENV,
 #      hardcoded PATH): this script now DECLARES what it needs
 #      instead of inheriting it.
-#    - HOME rebuilt from passwd via real uid — never trusted
+#    - HOME rebuilt from passwd via real uid -- never trusted
 #      from the environment.
 #    - XAUTHORITY falls back to $HOME/.Xauthority when the
 #      session does not export it (xenodm keeps the cookie

@@ -29,7 +29,7 @@ find_owner() {
         ps_flag="-U"
     fi
 
-    # 1. Window title — exact domain matches
+    # 1. Window title -- exact domain matches
     wm_name=$(xprop -id "$wid" WM_NAME 2>/dev/null | cut -d'"' -f2)
     case "$wm_name" in
         "userweb"|"userweb "*|*" userweb")  echo "userweb"; return ;;
@@ -39,7 +39,7 @@ find_owner() {
         "root"|"root "*|*" root")  echo "root"; return ;;
     esac
 
-    # 2. Window title contains [root@] — shell prompt betrays root
+    # 2. Window title contains [root@] -- shell prompt betrays root
     case "$wm_name" in
         *"[root@"*) echo "root"; return ;;
     esac

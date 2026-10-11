@@ -1,6 +1,6 @@
 #!/bin/sh
 # ================================================================
-# syncthing_userdoc.freebsd — Syncthing service for userdoc (FreeBSD)
+# syncthing_userdoc.freebsd -- Syncthing service for userdoc (FreeBSD)
 #
 # FreeBSD rc.d script. Install as:
 #     cp syncthing_userdoc_freebsd /usr/local/etc/rc.d/syncthing_userdoc

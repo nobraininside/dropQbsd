@@ -1,6 +1,6 @@
 #!/bin/ksh
 # ===============================================================
-# syncthing_userdoc.openbsd — Syncthing service for userdoc (OpenBSD)
+# syncthing_userdoc.openbsd -- Syncthing service for userdoc (OpenBSD)
 #
 # OpenBSD rc.d script. Install as:
 #     cp syncthing_userdoc.openbsd /etc/rc.d/syncthing_userdoc

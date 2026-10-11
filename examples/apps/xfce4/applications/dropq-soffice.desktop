@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=LibreOffice
+Exec=/opt/dropQbsd/bin/run_app userdoc libreoffice 
+Icon=dropq-userdoc.svg
+Categories=System;

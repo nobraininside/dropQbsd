@@ -1,42 +1,26 @@
 # ==========================================================
 #  dropQbsd -- enforce_drop
 #
-#  Polices the /home/drop exchange directory.
-#  Runs every minute via cron as root.
+#  Polices the /home/drop exchange directory. Runs every minute
+#  via cron as root. Enforces correct permissions (440 files,
+#  570 dirs), quarantines files with the wrong GID (with an
+#  explanation ticket), deletes abandoned items older than
+#  ABANDON_MIN, and sanitizes the export directories (SGID
+#  enforcement plus old-archive rotation).
 #
-#  Responsibilities:
-#    1. Enforce correct permissions (440 files, 570 dirs).
-#    2. Quarantine files with wrong GID (not 'drop' group)
-#       with an explanation ticket.
-#    3. Clean up abandoned files/dirs older than 30 minutes.
-#    4. Grace period: skip files younger than 2 minutes to
-#       avoid races with qmv still writing.
-#    5. Sanitize export directories (userweb_export,
-#       usermail_export) with SGID enforcement and old
-#       archive rotation.
+#  A grace period (GRACE_MIN) skips items younger than 2 minutes
+#  to avoid races with qcp/qmv still writing. Files are cleaned
+#  by timeout only -- no sentinel processing -- so the conductor
+#  never needs write access to the drop zone. Exporters publish
+#  archives atomically (*.tmp + rename); a *.tmp in progress is
+#  never touched. Retention lives here, in one place.
 #
-#  No sentinel processing. Files are cleaned up by timeout
-#  only -- this keeps the conductor (user) from needing
-#  write access to the drop zone.
-#
-#  v0.3.0 changes:
-#    - Exporters publish atomically (*.tmp + rename inside the
-#      drop zone): never touch a *.tmp file, it is a publish
-#      in progress.
-#    - Archive retention lives HERE only (single source of
-#      truth). Exporters clean their own orphaned .tmp files.
-#    - Quarantine entries age out (30 days).
-#    - stat guards: items vanishing mid-cycle are races, not
-#      errors -- no stderr noise from cron.
+#  Portability: OpenBSD ksh has no 'dotglob'; the main loop
+#  iterates over both '*' and '.*', skipping '.' and '..'.
 #
 #  Path: /opt/dropQbsd/libexec/enforce_drop
 #  Permissions: chmod 700, root:wheel
-#
 #  Cron: * * * * * /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/enforce_drop
-#
-#  Note: OpenBSD ksh has no 'dotglob'. We iterate over
-#  both '*' and '.*' to catch dotfiles, skipping '.' and
-#  '..' explicitly.
 #
 #  IMPORTANT: This script MUST be executed via the dropQbsd
 #  wrapper or its alias. Do NOT run it directly.
@@ -83,12 +67,23 @@ ABANDON_MIN=30
 QUARANTINE_MAX_DAYS=30
 
 #-----------------------------------------------------------------------------
+# LOG FUNCTION
+#-----------------------------------------------------------------------------
+# Canonical line: "YYYY-MM-DD HH:MM:SS <message>".
+# One space separator, no redundant paths, no self-references.
+# Shared format with enforce_sync and verify_integrity, so a
+# panel reading tail -1 always sees the same shape.
+# Defined here, before any use (including the FATAL paths below).
+log_write() {
+    printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$LOG_FILE"
+}
+
+#-----------------------------------------------------------------------------
 # READ THE GID OF THE 'drop' GROUP FROM /etc/group
 #-----------------------------------------------------------------------------
 DROP_GID=$(grep ^drop: /etc/group | cut -d: -f3)
 if [ -z "$DROP_GID" ]; then
-    echo "$(date '+%F %T') FATAL: group 'drop' not found in /etc/group" \
-        >> "$LOG_FILE"
+    log_write "FATAL: group 'drop' not found in /etc/group"
     exit 1
 fi
 
@@ -110,16 +105,9 @@ find "$QUARANTINE_DIR" -type f -mtime +$QUARANTINE_MAX_DAYS -delete 2>/dev/null
 # CHANGE TO DROP DIRECTORY
 #-----------------------------------------------------------------------------
 if ! cd "$DROP_DIR"; then
-    echo "$(date '+%F %T') FATAL: cannot cd to $DROP_DIR" >> "$LOG_FILE"
+    log_write "FATAL: cannot cd to $DROP_DIR"
     exit 1
 fi
-
-#-----------------------------------------------------------------------------
-# LOG FUNCTION
-#-----------------------------------------------------------------------------
-log() {
-    echo "$(date '+%F %T')  $*" >> "$LOG_FILE"
-}
 
 #-----------------------------------------------------------------------------
 # COUNTERS FOR SUMMARY LOG
@@ -279,7 +267,7 @@ find "$DROP_DIR" -maxdepth 1 -type d -name '.staging.*' -mmin +60 \
 exdir="$DROP_DIR/usermail_export"
 if [ -d "$exdir" ]; then
     find "$exdir" -type f -name 'mail_*.tar.gz' -mmin +360 -delete 2>/dev/null
-    find "$exdir" \( ! -user root -o ! -group drop \) -exec chown root:drop {} + 2>/dev/null
+    find "$exdir" $ ! -user root -o ! -group drop $ -exec chown root:drop {} + 2>/dev/null
     find "$exdir" -type d ! -perm 2770 -exec chmod 2770 {} + 2>/dev/null
     # NEVER touch *.tmp: atomic-publish in progress (see INSTALL.md)
     find "$exdir" -type f ! -name '*.tmp' ! -perm 440 -exec chmod 440 {} + 2>/dev/null
@@ -289,7 +277,7 @@ fi
 exdir="$DROP_DIR/userweb_export"
 if [ -d "$exdir" ]; then
     find "$exdir" -type f -name 'www_*.tar.gz' -mmin +240 -delete 2>/dev/null
-    find "$exdir" \( ! -user root -o ! -group drop \) -exec chown root:drop {} + 2>/dev/null
+    find "$exdir" $ ! -user root -o ! -group drop $ -exec chown root:drop {} + 2>/dev/null
     find "$exdir" -type d ! -perm 2770 -exec chmod 2770 {} + 2>/dev/null
     find "$exdir" -type f ! -name '*.tmp' ! -perm 440 -exec chmod 440 {} + 2>/dev/null
 fi
@@ -300,15 +288,11 @@ fi
 #-----------------------------------------------------------------------------
 TOTAL_ACTIONS=$((ABANDONED_DELETED + QUARANTINED + PERMS_FIXED))
 if [ "$TOTAL_ACTIONS" -gt 0 ]; then
-    log "Cycle complete:" \
-        "abandoned=$ABANDONED_DELETED" \
-        "quarantined=$QUARANTINED" \
-        "perms_fixed=$PERMS_FIXED"
+    log_write "abandoned=$ABANDONED_DELETED quarantined=$QUARANTINED perms_fixed=$PERMS_FIXED"
 fi
 
 if [ "$CYCLE_FILES" -gt 50 ]; then
-    log "WARNING: $CYCLE_FILES files in drop zone -- possible abuse or stuck pipeline"
+    log_write "WARNING: $CYCLE_FILES files in drop zone -- possible abuse or stuck pipeline"
 fi
 
 exit 0
-

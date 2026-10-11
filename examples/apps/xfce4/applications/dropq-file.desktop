@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=File bridge
+Exec=/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_user  /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/file_bridge
+Icon=dropq-user.svg
+Categories=System;

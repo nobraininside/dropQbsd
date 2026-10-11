@@ -1,4 +1,4 @@
-" ==========================================================
+"====================================================
 " dropQbsd -- example .exrc for nvi (OpenBSD base system)
 "
 " vi/ex configuration with quality-of-life mappings.
@@ -8,7 +8,7 @@
 " It is lighter than vim, ships in base, and supports
 " most of what you need for daily editing -- including
 " visible whitespace, which mg(1) does not.
-" ==========================================================
+"====================================================
 
 " display current mode (insert/command)
 set showmode
@@ -16,8 +16,8 @@ set showmode
 " flash matching parenthesis/brace
 set showmatch
 
-" preserve indentation on new lines
-set autoindent
+" disable indentation on new lines
+set noautoindent
 
 " tab width: 4 spaces
 set tabstop=4
@@ -29,6 +29,14 @@ set tabstop=4
 " ----------------------------------------------------------
 map ,+ :set list
 map ,- :set nolist
+
+" ----------------------------------------------------------
+" Toggle line numbers  
+"   ,1 show line numbers
+"   ,0 hide line numbers
+" ----------------------------------------------------------
+map ,1 :set nu
+map ,0 :set nonu
 
 " ----------------------------------------------------------
 " Toggle tab width

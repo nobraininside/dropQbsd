@@ -9,7 +9,7 @@
 #  v0.3.0 changes:
 #    - The wrapper sanitizes the environment: this script now
 #      DECLARES what it needs instead of inheriting it.
-#    - HOME rebuilt from passwd via real uid — the xterm (and
+#    - HOME rebuilt from passwd via real uid -- the xterm (and
 #      its X11 cookie) belongs to the INVOKING user, not root:
 #      the su - happens INSIDE the terminal.
 #    - XAUTHORITY falls back to $HOME/.Xauthority when the

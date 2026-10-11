@@ -18,18 +18,17 @@
 # ==========================================================
 
 if [ $# -gt 0 ]; then
-    CMD="$*"
     nohup /opt/dropQbsd/bin/run_app userdoc xterm \
         -T "userdoc" \
         -bg darkgreen -fg white \
         -fa monospace -fs 12 \
-        -e "ksh -c '. /etc/dropQbsd/kshrc; exec $CMD'" \
+        -e ksh -c '. /etc/dropQbsd/kshrc; exec "$@"' ksh "$@" \
         </dev/null >/dev/null 2>&1 &
 else
     nohup /opt/dropQbsd/bin/run_app userdoc xterm \
         -T "userdoc" \
         -bg darkgreen -fg white \
         -fa monospace -fs 12 \
-        -e "ksh -c '. /etc/dropQbsd/kshrc; exec ksh -l'" \
+        -e ksh -c '. /etc/dropQbsd/kshrc; exec ksh -l' \
         </dev/null >/dev/null 2>&1 &
 fi

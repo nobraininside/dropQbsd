@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Claws Mail
+Exec=/opt/dropQbsd/bin/run_app usermail claws-mail
+Icon=dropq-usermail.svg
+Categories=System;

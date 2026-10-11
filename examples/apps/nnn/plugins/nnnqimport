@@ -2,8 +2,8 @@
 # ==========================================================
 #  dropQbsd -- nnnqimport
 #
-#  nnn plugin: import the selected file(s) from the drop zone
-#  into the domain's ~/Downloads.
+#  nnn plugin: import the selected file or directory from the
+#  drop zone into the domain's ~/Downloads.
 #  Invoked from nnn with ';i' (see NNN_PLUG in file_bridge).
 #
 #  Install:
@@ -12,11 +12,16 @@
 #
 #  Notes:
 #    - Runs as the domain user (nnn runs inside the domain).
-#    - Loops over all selected files: nnn passes them as argv.
+#    - nnn passes $1 = current item, $2 = current directory.
+#      Only $1 is transferred; $2 is skipped so the containing
+#      directory is never imported.
+#    - One item per invocation. To transfer several files,
+#      repeat the action, or use qimport directly with explicit
+#      paths.
 #    - Relative paths are resolved inside /home/drop; absolute
 #      paths are passed through (qimport validates them).
-#    - The whole loop runs in a subshell in the background, so nnn
-#      returns immediately without spawning one process per file.
+#    - The whole action runs in a subshell in the background,
+#      so nnn returns immediately.
 #    - Errors are appended to $HOME/.cache/dropQbsd/nnn_plugins.log
 #      instead of being discarded.
 # ==========================================================
@@ -26,12 +31,20 @@ LOGFILE="$LOGDIR/nnn_plugins.log"
 mkdir -p "$LOGDIR" 2>/dev/null
 
 (
-    for f in "$@"; do
-        case "$f" in
-            /*) /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qimport "$f" \
-                    >>"$LOGFILE" 2>&1 ;;
-            *)  /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qimport "/home/drop/$f" \
-                    >>"$LOGFILE" 2>&1 ;;
-        esac
-    done
+    # $1 is the selected item; $2 is the containing directory.
+    # Skip $2 so only the selected item is imported.
+    f="$1"
+    if [ -n "$f" ]; then
+        cwd_real=$(realpath "$2" 2>/dev/null || echo "$2")
+        f_real=$(realpath "$f" 2>/dev/null || echo "$f")
+        if [ "$f_real" != "$cwd_real" ]; then
+            case "$f" in
+                /*) /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qimport "$f" \
+                        >>"$LOGFILE" 2>&1 ;;
+                *)  /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qimport "/home/drop/$f" \
+                        >>"$LOGFILE" 2>&1 ;;
+            esac
+        fi
+    fi
 ) &
+

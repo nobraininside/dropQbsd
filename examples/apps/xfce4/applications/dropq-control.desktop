@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Control panel
+Exec=/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_user  /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/control_panel
+Icon=dropq-user.svg
+Categories=System;

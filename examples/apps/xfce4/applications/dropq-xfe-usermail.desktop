@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Xfe
+Exec=/opt/dropQbsd/bin/run_app usermail xfe
+Icon=dropq-usermail.svg
+Categories=System;

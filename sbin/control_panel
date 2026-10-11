@@ -1,30 +1,27 @@
 # ==========================================================
 #  dropQbsd -- control_panel
 #
-#  ncurses dashboard for monitoring compartment status,
-#  drop zone contents, and system health. Launched by the
-#  conductor (user). Root-level data (PF state, enforcement
-#  logs, integrity verification) is gated behind on-demand
-#  su - authentication triggered by pressing 'a'.
+#  ncurses dashboard for monitoring compartment status, drop
+#  zone contents, and system health. Launched by the conductor
+#  (user). Root-level data (PF state, enforcement logs,
+#  integrity verification) is gated behind on-demand su -
+#  authentication triggered by pressing 'a'.
 #
-#  No doas rules, no persistent root processes, no changes
-#  to the privilege model.
+#  No doas rules, no persistent root processes, no changes to
+#  the privilege model. Root data is time-boxed: the snapshot
+#  expires after 5 minutes, and every refresh re-authenticates.
 #
-#  v0.3.0 changes:
-#    - snapshot moved out of /tmp: now written by root_snapshot
-#      (as root) into /var/run/dropQbsd/ (root:wheel 0755),
-#      root:drop 0640. Owner is verified before trusting it.
-#      Expired snapshots are removed, not merely ignored.
-#    - snapshot lines are sanitized (ESC stripped, width-clamped)
-#      before printing: a poisoned file cannot inject ANSI.
-#    - SIGHUP (1) trapped: tmux kill-session (F5 in file_bridge)
-#      no longer leaves the terminal in raw mode.
-#    - Ctrl-C during su no longer resumes the panel.
-#    - truncate_name emits a single line.
-#    - stat failures during drop-zone scan no longer abort render.
-#    - printf formats are constant strings; variables are arguments.
-#    - REFRESH semantics documented: every root refresh
-#      re-authenticates (time-boxed privilege model).
+#  Layout: DOMAINS shows which compartments are active and the
+#  process running in each; DROP ZONE shows files awaiting
+#  import (with the totals in its header); SYSTEM shows the root
+#  snapshot once authenticated. Long process lists wrap to a
+#  second indented line rather than being truncated away.
+#
+#  Trust: the snapshot is written by root_snapshot (as root)
+#  into /var/run/dropQbsd/ (root:drop 0640). Its owner is
+#  verified before the panel trusts it, and every line is
+#  sanitized (ESC stripped) before printing, so a poisoned file
+#  cannot inject ANSI or desync the layout.
 #
 #  Path: /opt/dropQbsd/sbin/control_panel
 #  Permissions: chmod 755, root:wheel
@@ -64,6 +61,7 @@ SNAPSHOT_AGE=0
 STTY_ORIG=""
 LAST_RENDER=0
 ABORT=0
+IN_SU=0
 
 # -- cleanup: restore terminal, expire root snapshot ------------
 cleanup() {
@@ -76,25 +74,47 @@ cleanup() {
     # The snapshot is NOT removed here: control_panel runs as 'user',
     # which cannot unlink files in root-owned /var/run/dropQbsd (0750).
     # Removal is the responsibility of root_snapshot (as root) and of
-    # the expiry check in root_snapshot_available() (line 123).
+    # the expiry check in root_snapshot_available().
 }
 
 # SIGHUP (1): sent by tmux kill-session (F5 in file_bridge).
 # SIGINT (2) and SIGTERM (15): exit the panel cleanly.
-# Ctrl-C intentionally exits; it does not cancel an in-progress
-# su authentication (that is handled by the ABORT flag in
-# do_root_auth).
-trap 'ABORT=1; cleanup; exit 0' 1 2 15
+#
+# During su (IN_SU=1) the trap only sets ABORT and returns: the
+# post-su check in do_root_auth decides what to do. Outside su,
+# the trap exits the panel.
+trap '[ "$IN_SU" -eq 1 ] && { ABORT=1; return; }; ABORT=1; cleanup; exit 0' 1 2 15
 
 sigwinch_handler() {
-    COLS=$(tput cols 2>/dev/null || echo 80)
-    LINES=$(tput lines 2>/dev/null || echo 24)
+    COLS=$(get_cols)
+    LINES=$(get_lines)
     clear
     render
 }
 trap sigwinch_handler 28
 
 now_epoch() { date +%s; }
+
+# -- get_cols / get_lines: robust terminal dimensions -----------
+# tput can return empty (no tty, odd TERM); guard against that
+# and against values < 1, so COLS - N never goes negative.
+get_cols() {
+    typeset c
+    c=$(tput cols 2>/dev/null)
+    if [ -z "$c" ] || [ "$c" -lt 1 ] 2>/dev/null; then
+        c=80
+    fi
+    print -r -- "$c"
+}
+
+get_lines() {
+    typeset l
+    l=$(tput lines 2>/dev/null)
+    if [ -z "$l" ] || [ "$l" -lt 1 ] 2>/dev/null; then
+        l=24
+    fi
+    print -r -- "$l"
+}
 
 hr() {
     typeset w="$1" ch="${2:--}" i=0
@@ -155,22 +175,39 @@ get_procs() {
         | tr '\n' '|' | sed 's/|$//;s/|/ | /g'
 }
 
+# -- render_domain_line: fixed-width label + status, process list
+# -- wraps to a second indented line when it exceeds the budget.
+# -- Returns the next free row via a global (NEXT_ROW) because ksh
+# -- functions cannot return values except via stdout/exit code.
 render_domain_line() {
     typeset r="$1" color="$2" label="$3" pid_count="$4" proc_name="$5"
-    typeset max_proc_len=$(( COLS - 30 ))
+    typeset label_w=10 status_w=10
+    # label + 2 spaces + status(ACTIVE) + 2 spaces + proc list
+    typeset max_proc_len=$(( COLS - label_w - status_w - 6 ))
+    [ "$max_proc_len" -lt 1 ] && max_proc_len=1
 
     tput cup "$r" 4
     printf '%b%-10s%b  ' "$color" "$label" "$C_RESET"
 
     if [ "$pid_count" -gt 0 ]; then
-        # Truncate process list if it exceeds available width
-        if [ "${#proc_name}" -gt "$max_proc_len" ]; then
-            proc_name="$(print -r -- "$proc_name" | cut -c1-$(( max_proc_len - 3 )))..."
+        printf '%bACTIVE%b' "$C_OK" "$C_RESET"
+        if [ -n "$proc_name" ]; then
+            if [ "${#proc_name}" -gt "$max_proc_len" ]; then
+                # Wrap: proc list on the next line, indented
+                r=$(( r + 1 ))
+                tput cup "$r" 6
+                proc_name="$(print -r -- "$proc_name" | cut -c1-$(( max_proc_len - 3 )))..."
+                printf '%b%s%b' "$C_DIM" "$proc_name" "$C_RESET"
+            else
+                tput cup "$r" $(( 4 + label_w + 2 + status_w ))
+                printf '%b%s%b' "$C_DIM" "$proc_name" "$C_RESET"
+            fi
         fi
-        printf '%bACTIVE%b  %b%s%b' "$C_OK" "$C_RESET" "$C_DIM" "$proc_name" "$C_RESET"
     else
         printf '%bidle%b' "$C_DIM" "$C_RESET"
     fi
+
+    NEXT_ROW=$(( r + 1 ))
 }
 
 do_root_auth() {
@@ -180,8 +217,8 @@ do_root_auth() {
     tput cnorm 2>/dev/null
     printf '%b\033[2J\033[H' "$C_RESET"
 
-    COLS=$(tput cols 2>/dev/null || echo 80)
-    LINES=$(tput lines 2>/dev/null || echo 24)
+    COLS=$(get_cols)
+    LINES=$(get_lines)
 
     box_w=60
     box_h=6
@@ -220,11 +257,14 @@ do_root_auth() {
 
     tput cup $(( inner_y + box_h + 1 )) 0
 
-    # su runs in foreground. If the user hits Ctrl-C here, the trap
-    # sets ABORT and we exit instead of resuming the panel with a
-    # half-finished authentication.
+    # su runs in foreground. While it runs, IN_SU=1 makes the signal
+    # trap set ABORT and return instead of exiting, so the check
+    # below can decide. Once su returns, IN_SU=0 restores normal
+    # trap behavior.
     ABORT=0
+    IN_SU=1
     su - root -c "/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/root_snapshot"
+    IN_SU=0
     if [ "$ABORT" -eq 1 ]; then
         cleanup
         exit 0
@@ -254,11 +294,11 @@ sanitize_line() {
 
 render() {
     typeset row n_files n_quar uw_pid um_pid ud_pid uw_proc um_proc ud_proc
-    typeset tmpfs_data dz_count dz_name dz_perms dz_age dz_age_min dz_type snap_line
+    typeset dz_total dz_shown dz_name dz_perms dz_age_min dz_type snap_line
     typeset f dz_mtime
 
-    COLS=$(tput cols)
-    LINES=$(tput lines)
+    COLS=$(get_cols)
+    LINES=$(get_lines)
     load_snapshot
     clear
 
@@ -299,25 +339,29 @@ render() {
     row=3
 
     render_domain_line $row "$C_USERDOC" "userdoc" "$ud_pid" "$ud_proc"
-    row=$(( row + 1 ))
+    row=$NEXT_ROW
     render_domain_line $row "$C_USERMAIL" "usermail" "$um_pid" "$um_proc"
-    row=$(( row + 1 ))
+    row=$NEXT_ROW
     render_domain_line $row "$C_USERWEB" "userweb" "$uw_pid" "$uw_proc"
-    row=$(( row + 1 ))
-
-    tput cup $row 4
-    printf '%b%-10s%b  %b%s files%b  %b%s quarantined%b' \
-        "$C_DIM" "dropzone" "$C_RESET" "$C_OK" "$n_files" "$C_RESET" "$C_DIM" "$n_quar" "$C_RESET"
-    row=$(( row + 1 ))
+    row=$NEXT_ROW
 
     tput cup $row 0; printf '%b' "$C_DIM"; hr "$COLS"; printf '%b' "$C_RESET"
     row=$(( row + 1 ))
 
+    # DROP ZONE header carries the counts (files / quarantined).
+    # This is the single source of truth for the totals: the list
+    # below is capped at 8 rows per category.
     tput cup $row 2
-    printf '%bDROP ZONE%b  %b%s%b' "$C_HEADER" "$C_RESET" "$C_DIM" "$DROP_ZONE" "$C_RESET"
+    printf '%bDROP ZONE%b  %b%s%b  %b(%s files, %s quarantined)%b' \
+        "$C_HEADER" "$C_RESET" "$C_DIM" "$DROP_ZONE" "$C_RESET" \
+        "$C_OK" "$n_files" "$n_quar" "$C_RESET"
     row=$(( row + 1 ))
 
-    dz_count=0
+    # Two counters: dz_total counts everything, dz_shown caps the
+    # list at 8 rows per category so a full drop zone cannot hide
+    # quarantined items.
+    dz_total=0
+    dz_shown=0
     for f in "$DROP_ZONE"/*; do
         [ -e "$f" ] || continue
 
@@ -338,8 +382,9 @@ render() {
         # and would be picked up by enforce_drop anyway)
         [ "$dz_age_min" -gt 60 ] && continue
 
-        dz_count=$(( dz_count + 1 ))
-        [ "$dz_count" -gt 8 ] && break
+        dz_total=$(( dz_total + 1 ))
+        [ "$dz_shown" -ge 8 ] && continue
+        dz_shown=$(( dz_shown + 1 ))
 
         dz_name=$(truncate_name "$(basename "$f")" 30)
 
@@ -349,10 +394,8 @@ render() {
             dz_type="file"
         fi
 
-        dz_age=$dz_age_min
-
         tput cup $row 4
-        printf '%b%-30s%b  %-5s  %4dm  ' "$C_FILE" "$dz_name" "$C_RESET" "$dz_perms" "$dz_age"
+        printf '%b%-30s%b  %-5s  %4dm  ' "$C_FILE" "$dz_name" "$C_RESET" "$dz_perms" "$dz_age_min"
 
         # Directories are always shown as ready (permissions enforced by SGID)
         if [ "$dz_type" = "dir" ]; then
@@ -366,10 +409,13 @@ render() {
         row=$(( row + 1 ))
     done
 
+    # Quarantine gets its own 8-row budget: a full drop zone must not
+    # swallow the quarantined items.
+    dz_shown=0
     for f in "$QUARANTINE_DIR"/*; do
         [ -f "$f" ] || continue
-        dz_count=$(( dz_count + 1 ))
-        [ "$dz_count" -gt 8 ] && break
+        [ "$dz_shown" -ge 8 ] && continue
+        dz_shown=$(( dz_shown + 1 ))
 
         dz_name=$(truncate_name "$(basename "$f")" 30)
 
@@ -379,7 +425,7 @@ render() {
         row=$(( row + 1 ))
     done
 
-    if [ "$dz_count" -eq 0 ]; then
+    if [ "$dz_total" -eq 0 ] && [ "$n_quar" -eq 0 ]; then
         tput cup $row 4
         printf '%b(empty)%b' "$C_DIM" "$C_RESET"
         row=$(( row + 1 ))
@@ -417,7 +463,7 @@ render() {
         row=$(( row + 1 ))
 
         tput cup $row 4
-        printf '%b[ A = authenticate as root ]%b' "$C_DIM" "$C_RESET"
+        printf '%b[ a = authenticate as root ]%b' "$C_DIM" "$C_RESET"
         row=$(( row + 1 ))
     fi
 
@@ -473,12 +519,11 @@ main() {
     stty raw -echo min 0 time $(( REFRESH_INTERVAL * 10 ))
 
     tput civis 2>/dev/null
-    COLS=$(tput cols 2>/dev/null || echo 80)
-    LINES=$(tput lines 2>/dev/null || echo 24)
+    COLS=$(get_cols)
+    LINES=$(get_lines)
     LAST_RENDER=$(now_epoch)
     render
     input_loop
 }
 
 main "$@"
-

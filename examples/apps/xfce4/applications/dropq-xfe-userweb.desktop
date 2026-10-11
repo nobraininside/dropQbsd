@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Xfe
+Exec=/opt/dropQbsd/bin/run_app userweb xfe
+Icon=dropq-userweb.svg
+Categories=System;

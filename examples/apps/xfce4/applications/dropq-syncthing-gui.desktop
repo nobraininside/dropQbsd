@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Syncthing GUI
+Exec=/opt/dropQbsd/bin/run_app userdoc qutebrowser https://127.0.0.1:8384
+Icon=dropq-userdoc.svg
+Categories=System;

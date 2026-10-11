@@ -1,25 +1,21 @@
 # ==========================================================
 #  dropQbsd -- root_snapshot
 #
-#  Generates a snapshot of system status for the control panel.
-#  Must be run as root. Displays PF status, enforcement logs,
-#  and system time.
+#  Generates a system-status snapshot for the control panel.
+#  Must be run as root; read by control_panel via su auth.
+#  Reports PF status/states/rules, load average, free space on
+#  /home, tmpfs usage, snapshot time, and the last line of each
+#  enforcer/integrity log.
 #
-#  v0.3.0 changes:
-#    - snapshot written atomically to /var/run/dropQbsd/
-#      (root:drop 0640), no longer world-readable in /tmp
-#    - lock/symlink attack surface removed: no files in /tmp
-#    - concurrent-run guard via atomic mkdir
-#    - stale snapshots (> SNAPSHOT_MAX_AGE) removed by the
-#      owner (root), not left readable on disk
+#  Output is three paired lines (fixed left/right columns) plus
+#  one line per log; all fields are width-padded and truncated
+#  so the columns cannot drift. The snapshot is published
+#  atomically into /var/run/dropQbsd/ (root:drop 0640, never
+#  /tmp), guarded by an atomic mkdir lock with an age TTL, and
+#  expires after SNAPSHOT_MAX_AGE.
 #
-#  v0.3.1 changes:
-#    - States/Rules merged onto one line (space saving)
-#    - Snapshot renamed to Snap and merged with tmpfs onto
-#      one line; tmpfs now computed here (as root), so
-#      control_panel no longer prints it separately
-#    - devfs/fdescfs filtered out of tmpfs accounting (root
-#      sees more pseudo-filesystems than 'user')
+#  Portable: df -k (not -m), memory filesystems matched as
+#  mfs:* (OpenBSD) or tmpfs (FreeBSD), devfs/fdescfs filtered.
 #
 #  Path: /opt/dropQbsd/libexec/root_snapshot
 #  Permissions: chmod 700, root:wheel
@@ -39,6 +35,18 @@ SNAPSHOT_FILE="$SNAPSHOT_DIR/control_panel_snapshot"
 SNAPSHOT_TMP="$SNAPSHOT_DIR/.snapshot.$$"
 SNAPSHOT_MAX_AGE=300
 LOG_DIR="/var/log/dropQbsd"
+
+# --- Layout constants (single source of truth) ---
+# Left/right paired lines: "label value ... label value".
+#   LABEL_W : width of every leading label (PF:, States:, ...)
+#   LEFT_W  : width of the left field (label + value), so the
+#             right column always starts at the same position
+#   VALUE_W : clamp for the free-form log lines (Endrop:, ...)
+# Keep LABEL_W + 1 + LEFT_W + 1 + right_field within the panel's
+# sanitize_line clamp (COLS - 8).
+LABEL_W=8
+LEFT_W=30
+VALUE_W=65
 
 # --- Snapshot dir: created by root, never writable by others ---
 mkdir -p "$SNAPSHOT_DIR" || exit 1
@@ -63,49 +71,55 @@ file_mtime() {
     stat -f '%m' "$1" 2>/dev/null || echo 0
 }
 
-# --- Remove stale snapshot (root is the only one who can) ---
-now=$(date +%s)
-lock_time=$(file_mtime "$SNAPSHOT_DIR/.lock")
-if [ $(( now - lock_time )) -gt 60 ]; then
-    rmdir "$SNAPSHOT_DIR/.lock" 2>/dev/null || rm -rf "$SNAPSHOT_DIR/.lock"
-    mkdir "$SNAPSHOT_DIR/.lock" || exit 1
-fi
-
 # --- Ensure log directory exists ---
 mkdir -p "$LOG_DIR" 2>/dev/null
 chmod 750 "$LOG_DIR" 2>/dev/null
 
 # --- tmpfs accounting (as root; filter pseudo-filesystems that
 # --- only root sees, so the figure matches what user saw) ---
-tmpfs_data=$(df -m 2>/dev/null \
-    | awk '$1 !~ /devfs|fdescfs/ && /tmpfs/ {used+=$3; total+=$2} END {printf "%d/%d", used, total}')
+# Portability: df -m is GNU-only; OpenBSD has no -m. Use df -k
+# (kilobytes) on both, then divide by 1024 for MB.
+# Device names differ: OpenBSD memory filesystems appear as
+# "mfs:NNNNN", FreeBSD as "tmpfs". Match both, anchored at the
+# start of the device field, to avoid matching a mount point.
+tmpfs_data=$(df -k 2>/dev/null \
+    | awk '$1 !~ /devfs|fdescfs/ && $1 ~ /^(mfs|tmpfs)/ {used+=$3; total+=$2} END {
+        printf "%d/%d", used/1024, total/1024
+    }')
 
 # --- Generate snapshot (write to temp, then rename atomically) ---
-# Three paired lines, right-hand field always at column 38:
-#   line 1: PF ............ Debug
-#   line 2: States ......... Rules
-#   line 3: Snap ........... tmpfs
-# %-38.38s pads AND truncates: layout cannot desync even if a
-# value is unusually long (sanitize_line still clamps in panel).
+# Three paired lines with a fixed right-hand column, then one
+# line per log. Every field is width-padded AND truncated, so a
+# value that is unusually long cannot push the right column out
+# of alignment.
 umask 027
 {
     pf_status=$(pfctl -s info 2>/dev/null | grep 'Status' | sed 's/Status: //')
     n_states=$(pfctl -s states 2>/dev/null | wc -l | tr -d ' ')
     n_rules=$(pfctl -s rules 2>/dev/null | grep -c 'pass\|block')
+    load_avg=$(uptime 2>/dev/null | sed 's/.*load average[s]*: //')
+    home_avail=$(df -k /home 2>/dev/null | awk 'NR==2 {printf "%dG", $4/1024/1024}')
 
-    printf '%-38.38s Debug: err\n' "PF: $pf_status"
-    printf '%-38.38s Rules: %s\n' "States: ${n_states} active" "$n_rules"
-    printf '%-38.38s tmpfs: %sM used\n' "Snap: $(date '+%Y-%m-%d %H:%M:%S')" "$tmpfs_data"
+    printf "%-${LABEL_W}.${LABEL_W}s %-${LEFT_W}.${LEFT_W}s %s\n" \
+        "PF:" "$pf_status" "Load: $load_avg"
+    printf "%-${LABEL_W}.${LABEL_W}s %-${LEFT_W}.${LEFT_W}s %s\n" \
+        "States:" "${n_states} active" "Rules: $n_rules"
+    printf "%-${LABEL_W}.${LABEL_W}s %-${LEFT_W}.${LEFT_W}s %s\n" \
+        "Snap:" "$(date '+%Y-%m-%d %H:%M:%S')" "Home: ${home_avail} free"
+    printf "%-${LABEL_W}.${LABEL_W}s %s\n" "tmpfs:" "${tmpfs_data}M used"
     echo ""
 
     if [ -f "$LOG_DIR/enforce_drop.log" ]; then
-        echo "enforce_drop: $(tail -1 "$LOG_DIR/enforce_drop.log" 2>/dev/null | cut -c1-60)"
+        printf "%-${LABEL_W}.${LABEL_W}s %s\n" "Endrop:" \
+            "$(tail -1 "$LOG_DIR/enforce_drop.log" 2>/dev/null | cut -c1-$VALUE_W)"
     fi
     if [ -f "$LOG_DIR/enforce_sync.log" ]; then
-        echo "enforce_sync: $(tail -1 "$LOG_DIR/enforce_sync.log" 2>/dev/null | cut -c1-60)"
+        printf "%-${LABEL_W}.${LABEL_W}s %s\n" "Ensync:" \
+            "$(tail -1 "$LOG_DIR/enforce_sync.log" 2>/dev/null | cut -c1-$VALUE_W)"
     fi
-    if [ -f "$LOG_DIR/integrity.log" ]; then
-        echo "verify: $(tail -1 "$LOG_DIR/integrity.log" 2>/dev/null | cut -c1-60)"
+    if [ -f "$LOG_DIR/verify_integrity.log" ]; then
+        printf "%-${LABEL_W}.${LABEL_W}s %s\n" "Verify:" \
+            "$(tail -1 "$LOG_DIR/verify_integrity.log" 2>/dev/null | cut -c1-$VALUE_W)"
     fi
 } > "$SNAPSHOT_TMP"
 

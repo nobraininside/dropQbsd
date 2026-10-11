@@ -5,49 +5,33 @@
 #  been tampered with, using signify(1). Runs every 5 minutes
 #  via cron as root.
 #
-#  How it works:
-#    1. Reads /etc/dropQbsd/filelist (paths relative to
-#       /opt/dropQbsd, or absolute for /etc/dropQbsd files).
-#       Comments (#) and blank lines are skipped; trim happens
-#       BEFORE the comment check, so an indented comment is
-#       still skipped.
-#    2. sha256 each file in the list, in filelist order.
-#    3. Verify the resulting manifest against the detached
-#       signature keys/dropQbsd_scripts.sha256.sig using
-#       the PUBLIC key keys/dropQbsd.pub.
+#  Reads /etc/dropQbsd/filelist (paths relative to
+#  /opt/dropQbsd, or absolute for /etc/dropQbsd files),
+#  skipping comments and blank lines -- trim happens BEFORE the
+#  comment check, so an indented comment is still skipped. It
+#  sha256s each file in filelist order, then verifies the
+#  manifest against the detached signature using the PUBLIC key.
 #
 #  The filter and the order MUST match admin/sign_filelist.
-#  Sign and verify are two halves of the same operation: if
-#  one changes, the other must change with it, or the
-#  signature will never match.
+#  Sign and verify are two halves of the same operation: if one
+#  changes, the other must change with it, or the signature will
+#  never match.
 #
-#  Key policy (v0.3.0):
-#    The private key /root/dropQbsd.sec is PASSPHRASE-
-#    ENCRYPTED on disk (signify -G -e). It is NOT plaintext
-#    and NOT offline: it stays in /root/ because this script
-#    never needs it -- verification is public-key only
-#    (signify -V). The private key is used ONLY during the
-#    rare interactive re-sign after a monitored file changes
-#    (see INSTALL.md, "Integrity Verification").
+#  Key policy: the private key (/root/dropQbsd.sec) is
+#  passphrase-encrypted and stays on disk only because this
+#  script never needs it -- verification is public-key only.
+#  The key is used solely during the rare interactive re-sign
+#  after a monitored file changes. A plaintext key on this disk
+#  is not acceptable: an attacker who can read it can re-sign
+#  their own tampering, and the verification becomes theater.
 #
-#    The passphrase lives ONLY in the operator's head or in
-#    a vault on ANOTHER device -- never on this disk.
-#
-#    Plaintext private keys on this disk are NOT acceptable:
-#    an attacker who can read one can re-sign their own
-#    tampering, and the verification becomes theater.
-#
-#    An offline key is an acceptable alternative: see
-#    INSTALL.md, "Integrity Verification", option 2.
-#
-#  This script is NOT in the filelist. It is the trust
-#  anchor: the file that checks the others cannot itself be
-#  checked by them. It is protected by the signature over
-#  the public key and by the private-key policy above.
+#  This script is NOT in the filelist. It is the trust anchor:
+#  the file that checks the others cannot itself be checked by
+#  them. It is protected by the signature over the public key
+#  and by the private-key policy above.
 #
 #  Path: /opt/dropQbsd/libexec/verify_integrity
 #  Permissions: chmod 700, root:wheel
-#
 #  Cron: */5 * * * * /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/verify_integrity
 #
 #  IMPORTANT: This script MUST be executed via the dropQbsd
@@ -64,31 +48,29 @@ PUBKEY="/opt/dropQbsd/keys/dropQbsd.pub"
 CHECKSUM_FILE="/opt/dropQbsd/keys/dropQbsd_scripts.sha256.sig"
 FILELIST="/etc/dropQbsd/filelist"
 LOG="/var/log/dropQbsd/verify_integrity.log"
+DETAIL_LOG="$LOG.detail"
 
 stamp() { date '+%Y-%m-%d %H:%M:%S'; }
 
-# report: write a message to the terminal AND the log.
+# report: write one canonical line to the terminal AND the log.
 # Interactive invocations (alias "Verify") get immediate feedback;
-# cron runs get the same line in the log (stdout from cron is discarded).
-# "report err MSG" writes the failure to stderr as well, so it stays
-# visible even when stdout is redirected.
+# cron runs get the same line in the log (stdout from cron is
+# discarded). Format: "YYYY-MM-DD HH:MM:SS <message>" -- one
+# space separator, identical to enforce_drop and enforce_sync,
+# so a panel reading tail -1 always sees the same shape.
 report() {
-    if [ "$1" = "err" ]; then
-        shift
-        printf '%s: %s\n' "$(stamp)" "$*" >&2
-        printf '%s: %s\n' "$(stamp)" "$*" >> "$LOG"
-    else
-        printf '%s: %s\n' "$(stamp)" "$*"
-        printf '%s: %s\n' "$(stamp)" "$*" >> "$LOG"
-    fi
+    local line
+    line="$(stamp) $1"
+    printf '%s\n' "$line" >&2
+    printf '%s\n' "$line" >> "$LOG"
 }
 
-cd /opt/dropQbsd || { report err "CANNOT cd /opt/dropQbsd"; exit 1; }
+cd /opt/dropQbsd || { report "CANNOT cd /opt/dropQbsd"; exit 1; }
 
 # --- Setup sanity: distinguish "not configured" from "tampered" -----
 for f in "$FILELIST" "$PUBKEY" "$CHECKSUM_FILE"; do
     if [ ! -r "$f" ]; then
-        report err "SETUP INCOMPLETE - missing $f"
+        report "SETUP INCOMPLETE - missing $f"
         exit 1
     fi
 done
@@ -119,7 +101,7 @@ while IFS= read -r line; do
     # Resolve relative paths from /opt/dropQbsd (we cd'd above).
     # Absolute paths are used as-is.
     if [ ! -f "$line" ]; then
-        report err "MISSING FILE $line"
+        report "MISSING FILE $line"
         exit 1
     fi
 
@@ -128,7 +110,7 @@ done < "$FILELIST"
 
 # Empty filelist would verify the wrong thing: fail loudly instead.
 if [ ! -s "$FILE_ARGS" ]; then
-    report err "FILELIST EMPTY - $FILELIST"
+    report "FILELIST EMPTY - $FILELIST"
     rm -f "$FILE_ARGS"
     exit 1
 fi
@@ -143,8 +125,11 @@ OUTPUT=$(signify -V -p "$PUBKEY" -x "$CHECKSUM_FILE" -m "$TMP" 2>&1)
 RET=$?
 
 if [ $RET -eq 0 ]; then
-    report "OK - all monitored files verified against the signature"
+    report "OK - all files verified"
 else
-    report err "INTEGRITY VIOLATION - see $LOG for details"
-    printf '%s\n' "$OUTPUT" >> "$LOG"
+    report "INTEGRITY VIOLATION - re-sign with 'Sign'"
+    # The raw signify output goes to a SEPARATE file: the main log
+    # must contain only canonical lines, so a panel reading tail -1
+    # is always reliable. The detail line carries its own timestamp.
+    printf '%s %s\n' "$(stamp)" "$OUTPUT" >> "$DETAIL_LOG"
 fi

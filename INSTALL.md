@@ -1313,9 +1313,10 @@ After a full installation:
 ├── pkg_tru_fwall.log
 ├── update_mailserver_table.log
 ├── update_tru_fwall.log
-├── upgrade_pending            # Pending-reboot marker (Upgrade)
+├── upgrade_pending               # Pending-reboot marker (Upgrade)
 ├── upgrade_tru_fwall.log
-└── verify_integrity.log
+├── verify_integrity.log
+└── verify_integrity.log.detail   # raw signify output (on violation)
 ```
 
 **Note on `/var/log/dropQbsd/`:** the directory starts empty after a
@@ -1378,11 +1379,20 @@ following are NOT available and must not be used:
 - `pipefail` -- not in PD KSH; write to a temp file to capture exit codes
 - `cat -A` (GNU) -- use `cat -v -e -t` (POSIX)
 - `grep 'a\|b'` -- `\|` is not alternation in BRE; use `grep -E 'a|b'`
+- `df -m` (GNU) -- OpenBSD has no -m; use `df -k` on both
+  systems, then divide by 1024 for MB
+- Memory filesystems have different device names: OpenBSD
+  shows `mfs:NNNNN`, FreeBSD shows `tmpfs`. Match both,
+  anchored at the start of the device field:
+  `$1 ~ /^(mfs|tmpfs)/`
 - Non-ASCII characters in strings passed to GUI tools -- the locale
   may be `C`; use ASCII only in titles and dialog text
 
 Use `case` for pattern matching, POSIX constructs only, and verify
-every external command exists in the sanitized `PATH`.
+every external command exists in the sanitized `PATH`. Note that a
+command existing is not enough: it must accept the flags you pass.
+`df -m` is the canonical example -- `df` exists everywhere, but `-m`
+is GNU-only.
 
 ### Whitespace and path handling
 
@@ -1413,6 +1423,26 @@ and read it with `xargs -0`:
 Plain `xargs` splits on newlines AND spaces, so a path containing a
 space becomes two arguments. `xargs -0` splits only on NUL and
 passes each path as a single argument.
+
+### Temporary files
+
+Never create a temp file with a predictable name in a
+world-writable directory:
+
+    TMP="/tmp/foo.$$"                         # WRONG
+    TMP=$(mktemp /tmp/foo.XXXXXX) || exit 1   # RIGHT
+
+`$$` is the PID, visible via `ps`. A local user can predict the
+name, pre-create a symlink to an attacker-chosen path, and the `>`
+redirect follows it -- the script (often running as root) then
+writes to that path. `mktemp` creates the file atomically
+(`O_EXCL`) with an unpredictable name and mode `0600`, so a
+pre-existing symlink cannot be followed.
+
+This is why `root_snapshot` writes to `/var/run/dropQbsd/` instead
+of `/tmp`, and why `verify_integrity` and `sign_filelist` already
+use `mktemp`. Apply the same pattern everywhere a temp file is
+needed.
 
 ### Two copies of the same logic will diverge
 

@@ -109,7 +109,7 @@ log "=== patch_tru_fwall starting ($OS) ==="
 # every flow (IPv6, aliases).
 #-----------------------------------------------------------------------------
 grant_dns() {
-    TMP_PF="/tmp/pf.dropQbsd.$$"
+    TMP_PF=$(mktemp /tmp/pf.dropQbsd.XXXXXX) || exit 1 
     {
         echo "pass out quick proto { udp tcp } from any to any port 53"
         echo "pass out quick proto tcp from any to any port { 80 443 } flags S/SA"

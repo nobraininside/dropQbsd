@@ -59,7 +59,7 @@ DOMAINS_CONF="$POLICY_DIR/domains.conf"
 LOCAL_CONF="$POLICY_DIR/local.conf"
 SCHEMA_FILE="$POLICY_DIR/schema"
 OUTPUT_PF="/etc/pf.conf"
-TMP_OUTPUT="/tmp/pf.conf.gen.$$"
+TMP_OUTPUT=$(mktemp /tmp/pf.dropQbsd.XXXXXX) || exit 1
 
 VALID_DOMAINS=""
 network_lan=""

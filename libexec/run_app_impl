@@ -196,9 +196,9 @@ orphan_gc
 # LOCATE X11 AUTHENTICATION COOKIE (portable across display managers)
 #-----------------------------------------------------------------------------
 # Precedence:
-#   1. $XAUTHORITY — preserved by the setuid wrapper's whitelist
+#   1. $XAUTHORITY -- preserved by the setuid wrapper's whitelist
 #      (set by sddm, gdm, lightdm)
-#   2. xenodm auth dir — OpenBSD-specific (A:0-<random>), NEWEST
+#   2. xenodm auth dir -- OpenBSD-specific (A:0-<random>), NEWEST
 #      non-empty file; run_app_impl reads it as root
 #   3. ~/.Xauthority of the INVOKING user (non-empty)
 #   4. /tmp/xauth_* owned by the INVOKING user (FreeBSD sddm/gdm
@@ -211,13 +211,13 @@ orphan_gc
 find_xauth() {
     typeset xa="" invoker_home
 
-    # 1. $XAUTHORITY — only if the wrapper preserves it (whitelist).
+    # 1. $XAUTHORITY -- only if the wrapper preserves it (whitelist).
     #    Must be non-empty: an empty file means "no cookie here".
     if [[ -n "$XAUTHORITY" && -s "$XAUTHORITY" ]]; then
         xa="$XAUTHORITY"
     fi
 
-    # 2. xenodm auth dir — root-readable (run_app_impl is root),
+    # 2. xenodm auth dir -- root-readable (run_app_impl is root),
     #    user-inaccessible. Newest A:0-* file; non-empty required.
     #    Preferred over the invoker's home file: xenodm keeps the
     #    LIVE session cookie here, while ~/.Xauthority may be

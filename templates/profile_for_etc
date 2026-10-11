@@ -80,6 +80,19 @@ fi
 # --- Editor ---
 export EDITOR="${EDITOR:-vi}"
 
+# --- nnn standalone ---
+# NNN_COLORS=7777 (light gray) for all users: the Xt* terminals
+# already carry the domain color. Plugins/bookmarks as file_bridge.
+export NNN_COLORS=7777
+export NNN_PLUG='c:nnnqcp;m:nnnqmv;i:nnnqimport'
+
+case "$(id -un)" in
+    root)  export NNN_BMS='h:/root;d:/home/drop;D:/root/Downloads' ;;
+    userdoc)  export NNN_BMS='h:/home/userdoc;d:/home/drop;D:/home/userdoc/Downloads' ;;
+    usermail) export NNN_BMS='h:/home/usermail;d:/home/drop;D:/home/usermail/Downloads' ;;
+    userweb)  export NNN_BMS='h:/home/userweb;d:/home/drop;D:/home/userweb/Downloads' ;;
+esac
+
 # --- Unfinished release upgrade notice ---
 # Written by upgrade_tru_fwall before the operator reboots; removed
 # manually once the post-reboot stages are complete.
