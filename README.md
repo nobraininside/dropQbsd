@@ -737,7 +737,7 @@ verification, and accountability. Three articles lay out the reasoning:
   Why endpoint security products are architecturally incompatible with GDPR
   accountability: root access, undocumented exfiltration, unverifiable claims.
 
- **[You cannot verify what you cannot see](https://blog.nicolabaudo.fr/you-cannot-verify-what-you-cannot-see-closed-source-privacy/)** --
+- **[You cannot verify what you cannot see](https://blog.nicolabaudo.fr/you-cannot-verify-what-you-cannot-see-closed-source-privacy/)** --
   Why "privacy-respecting closed-source software" is a logical contradiction,
   and why audit theater cannot substitute for source access.
 
