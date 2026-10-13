@@ -10,6 +10,7 @@
 # Domain color scheme (see INSTALL.md, color scheme convention)
 textbackground=DarkBlue
 textforeground=Gray100
+textcursor=White
 
 [SETTINGS]
 # Harmonized with the xfe domain scheme

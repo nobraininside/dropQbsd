@@ -19,8 +19,13 @@
 #  Interactive shells (xterm) get ENV from xterm_user /
 #  xterm_userdoc.
 #
+#  Path: /opt/dropQbsd/libexec/wrapper
+#  Permissions: chmod 755, root:wheel
+#
 #  Usage:
 #    /opt/dropQbsd/libexec/wrapper /path/to/script [args...]
+#    OR
+#    Wrapper /path/to/script [args...]
 # ==========================================================
 
 # --- Validate arguments ---

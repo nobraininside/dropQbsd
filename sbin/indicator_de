@@ -14,7 +14,35 @@
 #    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/indicator_de
 #    OR
 #    Indicator
+#
+#  Portability notes:
+#    - Font: use a fontconfig name (e.g. 'DejaVu Sans:size=24'),
+#      NOT an XLFD pattern. FreeBSD no longer ships core X11
+#      bitmap fonts, so an XLFD such as
+#      '-*-*-*-r-*-*-34-*-*-*-*-*-*-*' resolves to nothing and
+#      dzen2 exits without drawing (with a fontconfig warning).
+#    - HOME: the wrapper unsets HOME; dzen2/fontconfig expect it.
+#      Rebuilt below from /etc/passwd via the real uid.
+#    - dzen2 is launched in a detached subshell: a backgrounded
+#      child in a tight loop would otherwise be killed by SIGHUP
+#      before it maps its window.
+#    - OSD duration: -p 1 is too short to be noticed on a busy
+#      desktop; -p 3 is the practical minimum.
 # ==========================================================
+
+# indicator lock -- in a user-writable location, since the
+# indicator runs as the domain user, not root.
+LOCK="${XDG_RUNTIME_DIR:-/tmp}/indicator_de.$(id -u).lock"
+if ! mkdir "$LOCK" 2>/dev/null; then
+    exit 0
+fi
+trap 'rmdir "$LOCK" 2>/dev/null' EXIT INT TERM
+
+# The wrapper unsets HOME. dzen2 (via fontconfig) needs it.
+# Rebuild it from /etc/passwd using the real uid -- never from
+# the environment.
+HOME=$(awk -F: -v u="$(id -u)" '$3==u {print $6}' /etc/passwd)
+export HOME
 
 last_owner=""
 last_change=0
@@ -101,17 +129,25 @@ while true; do
                 wy=$(echo "$geom" | grep "Position" | awk '{print $2}' | cut -d',' -f2)
                 ww=$(echo "$geom" | grep "Geometry" | awk '{print $2}' | cut -d'x' -f1)
                 wh=$(echo "$geom" | grep "Geometry" | awk '{print $2}' | cut -d'x' -f2)
-                px=$(( wx + ww/2 - 200 ))
-                py=$(( wy + wh/2 - 40 ))
-                [ "$px" -lt 0 ] && px=0
-                [ "$py" -lt 0 ] && py=0
+                if [ -n "$wx" ] && [ -n "$ww" ] && [ -n "$wy" ] && [ -n "$wh" ]; then
+                    px=$(( wx + ww/2 - 200 ))
+                    py=$(( wy + wh/2 - 40 ))
+                    [ "$px" -lt 0 ] && px=0
+                    [ "$py" -lt 0 ] && py=0
+                else
+                    px=200; py=200
+                fi
             else
                 px=200; py=200
             fi
 
-            echo "^bg(#000000) ^fg(${fg_color})  ${owner}  ^fg()^bg()" | \
-                dzen2 -p 1 -x "$px" -y "$py" -h 60 -w 400 -ta c -fn '-*-*-*-r-*-*-34-*-*-*-*-*-*-*' &
-        last_change=$now
+            # Detached subshell: a backgrounded dzen2 in a tight
+            # loop can be killed by SIGHUP before it maps.
+            ( echo "^bg(#000000) ^fg(${fg_color})  ${owner}  ^fg()^bg()" | \
+                dzen2 -p 3 -x "$px" -y "$py" -h 60 -w 400 -ta c \
+                      -fn 'DejaVu Sans:size=24' >/dev/null 2>&1 & )
+
+            last_change=$now
         fi
         last_owner="$owner"
     fi

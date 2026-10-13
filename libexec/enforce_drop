@@ -19,7 +19,7 @@
 #  iterates over both '*' and '.*', skipping '.' and '..'.
 #
 #  Path: /opt/dropQbsd/libexec/enforce_drop
-#  Permissions: chmod 700, root:wheel
+#  Permissions: chmod 755, root:wheel
 #  Cron: * * * * * /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/enforce_drop
 #
 #  IMPORTANT: This script MUST be executed via the dropQbsd

@@ -10,18 +10,23 @@
 #      chown <user>:<user> ~/.xsession
 #      chmod 644 ~/.xsession
 #
+#  WARNING -- never install this file on FreeBSD.
+#    SDDM reads ~/.xsession and waits for it to exit; the
+#    "exec <session>" line never returns, so the graphical
+#    session freezes at login. Use ~/.xprofile (SDDM) or
+#    ~/.xinitrc (startx) on FreeBSD.
+#
 #  Coverage:
 #    xenodm reads ~/.xsession and NOT ~/.profile or ~/.xprofile.
-#    This file therefore does two things: it loads the dropQbsd
-#    environment, and it launches the desktop session.
-#
-#  IMPORTANT: adjust the last line to your window manager or
-#  desktop environment (xfce4-session, cwm, twm, i3, ...).
+#    This file therefore loads the dropQbsd environment, starts
+#    the indicator, and launches the desktop session.
 #
 #  Notes:
 #    - This file is sourced by the X session, not by a login
-#      shell: /etc/profile is NOT read. The sourcing below is
-#      therefore mandatory, not redundant.
+#      shell: /etc/profile is NOT read.
+#    - xenodm does not export XAUTHORITY into the session script.
+#      Without it, and with HOME unset by the wrapper, xprop
+#      cannot find the X cookie and the indicator does nothing.
 # ==========================================================
 
 if [ -f /etc/dropQbsd/kshrc ]; then
@@ -29,14 +34,26 @@ if [ -f /etc/dropQbsd/kshrc ]; then
 fi
 
 # xenodm does not export XAUTHORITY into the session script.
-# Without it, and with HOME unset by the wrapper, xprop cannot
-# find the X cookie and the indicator silently does nothing.
 export XAUTHORITY="$HOME/.Xauthority"
 
-# Launch the domain indicator in the background.
-# nohup: the exec below replaces the shell, and background jobs
-# would otherwise receive SIGHUP and exit.
-nohup /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/indicator_de >/dev/null 2>&1 &
+# --- Start the domain indicator ----------------------------------
+# Detached subshell: waits for a real _NET_ACTIVE_WINDOW, then
+# launches the indicator. The atom has TWO fields ("0x... , 0x0");
+# only the FIRST is tested. The indicator's uid-keyed lock
+# prevents a double start if ~/.xprofile is read as well.
+(
+    i=0
+    while [ $i -lt 240 ]; do
+        atom=$(xprop -root _NET_ACTIVE_WINDOW 2>/dev/null)
+        active=$(echo "$atom" | sed 's/.*window id # //' | cut -d',' -f1 | tr -d ' ')
+        if [ -n "$active" ] && [ "$active" != "0x0" ]; then
+            break
+        fi
+        sleep 0.5
+        i=$(( i + 1 ))
+    done
+    exec /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/indicator_de
+) >/dev/null 2>&1 &
 
-# --- Launch the desktop session ---
+# --- Launch the desktop session ----------------------------------
 exec xfce4-session

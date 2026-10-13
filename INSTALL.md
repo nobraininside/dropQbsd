@@ -154,7 +154,8 @@ than by convention.
 Copy the repository contents to `/opt/dropQbsd/`:
 
 ```sh
-cp -r admin bin libexec sbin src templates examples /opt/dropQbsd/
+mkdir -p /opt/dropQbsd/bin
+cp -r admin libexec sbin src templates examples /opt/dropQbsd/
 ```
 
 Set ownership and permissions:
@@ -206,7 +207,7 @@ It is not part of the `run_app` chain.
 ### Build with the helper script (recommended)
 
 ```sh
-    /opt/dropQbsd/admin/build_run_app
+/opt/dropQbsd/admin/build_run_app
 ```
 
 This script:
@@ -221,7 +222,7 @@ setuid bit is lost. Forgetting `chmod 4755` produces a binary that
 looks correct but fails at runtime with:
 
 ```sh
-    dropQbsd: setuid(0) failed: Operation not permitted
+dropQbsd: setuid(0) failed: Operation not permitted
 ```
 
 `build_run_app` re-applies ownership and mode on every run, so the
@@ -230,9 +231,9 @@ step cannot be forgotten.
 ### Build by hand (equivalent)
 
 ```sh
-    cc -static -o /opt/dropQbsd/bin/run_app /opt/dropQbsd/src/run_app.c
-    chown root:wheel /opt/dropQbsd/bin/run_app
-    chmod 4755 /opt/dropQbsd/bin/run_app
+cc -static -o /opt/dropQbsd/bin/run_app /opt/dropQbsd/src/run_app.c
+chown root:wheel /opt/dropQbsd/bin/run_app
+chmod 4755 /opt/dropQbsd/bin/run_app
 ```
 
 ### The `-static` flag is mandatory
@@ -245,14 +246,14 @@ line of defence, not the first.
 Verify the result is static:
 
 ```sh
-    readelf -d /opt/dropQbsd/bin/run_app | grep NEEDED
+readelf -d /opt/dropQbsd/bin/run_app | grep NEEDED
 ```
 No output means no dynamic dependencies: the binary is static.
 
 ### Verify
 
 ```sh
-    ls -l /opt/dropQbsd/bin/run_app
+ls -l /opt/dropQbsd/bin/run_app
 ```
 
 The mode must show `-rwsr-xr-x` -- the `s` is the setuid bit. Without
@@ -273,23 +274,23 @@ Before installing, back up any local dotfiles that would override
 the system-wide configuration. Run as root:
 
 ```sh
-    ts=$(date +%Y%m%d_%H%M%S)
-    for h in /root /home/user /home/userweb /home/usermail /home/userdoc; do
-        for f in .profile .shrc .kshrc .xsession .xinitrc .cshrc .login .xprofile; do
-            [ -f "$h/$f" ] && mv "$h/$f" "$h/$f.bak.$ts"
-        done
+ts=$(date +%Y%m%d_%H%M%S)
+for h in /root /home/user /home/userweb /home/usermail /home/userdoc; do
+    for f in .profile .shrc .kshrc .xsession .xinitrc .cshrc .login .xprofile; do
+        [ -f "$h/$f" ] && mv "$h/$f" "$h/$f.bak.$ts"
     done
+done
 ```
 
 ### 5.2 Global configuration (all logic lives here)
 
 ```sh
-    mkdir -p /etc/dropQbsd
-    cp templates/profile_for_etc  /etc/dropQbsd/profile
-    cp templates/kshrc_for_etc    /etc/dropQbsd/kshrc
-    cp templates/alias_for_etc    /etc/dropQbsd/alias
-    chown root:wheel /etc/dropQbsd/profile /etc/dropQbsd/kshrc /etc/dropQbsd/alias
-    chmod 644        /etc/dropQbsd/profile /etc/dropQbsd/kshrc /etc/dropQbsd/alias
+mkdir -p /etc/dropQbsd
+cp templates/profile_for_etc  /etc/dropQbsd/profile
+cp templates/kshrc_for_etc    /etc/dropQbsd/kshrc
+cp templates/alias_for_etc    /etc/dropQbsd/alias
+chown root:wheel /etc/dropQbsd/profile /etc/dropQbsd/kshrc /etc/dropQbsd/alias
+chmod 644        /etc/dropQbsd/profile /etc/dropQbsd/kshrc /etc/dropQbsd/alias
 ```
 
 ### 5.3 Per-user stubs (pointers only)
@@ -361,6 +362,12 @@ done
 
 `$ENV` is set by `/etc/dropQbsd/kshrc` itself, so every interactive
 child shell sources the chain automatically.
+
+**The domain indicator is started from all three session files**
+(`~/.xprofile`, `~/.xsession`, `~/.xinitrc`). Whichever one the
+session manager reads, the indicator starts. If more than one is
+read in the same session, the indicator's uid-keyed lock prevents a
+double start -- the second instance finds the lock and exits.
 
 **No modification to /etc/profile is required.**
 
@@ -669,33 +676,196 @@ ls -d /var/run/enforce_*.lock 2>/dev/null || echo "OK: no locks (idle)"
 
 ---
 
-## 10. Optional Components
+## 10. Desktop Integration and Utilities
 
-These are not required for dropQbsd to function. Install only what you need.
+This section has two parts.
 
-### Control Panel
+**10.1 -- 10.5: the working environment.** Colors, editor, file
+managers, and the file bridge. These are technically optional, but
+they are what make dropQbsd usable in production. In a
+compartmentalized system, the first problem is not isolation -- it is
+knowing *where you are*. The per-domain color scheme (terminals, `mc`,
+`xfe`, `nnn`) and the OSD indicator answer that question at a glance.
+Without them, the domain model is correct but unusable: you cannot
+tell `userweb` from `usermail` without reading the prompt. Install
+these first.
 
-No extra packages needed (base system only). Run as `user`:
+**10.6 -- 10.11: utilities.** Independent helpers, listed
+alphabetically. Some are important (`Integrity Verification`), some
+are conveniences (`Site Menu`), some are situational (`Syncthing`,
+`VLC`). Install only what you need.
+
+### 10.1 Application Examples -- Bulk Install
+
+The `examples/` tree ships ready-made configuration for the file
+manager, the nnn plugins, the vi editor, and the XFCE application
+menu. This block installs all of it with the correct ownership and
+permissions. It is the concrete counterpart of sections 10.2 -- 10.5.
+
+**WARNING -- this block overwrites existing per-user configuration.**
+It replaces `~/.exrc`, `~/.config/mc/ini`, `~/.config/nnn/plugins/`,
+and (for `user`) the XFCE menu under `~/.local/share/` and
+`~/.config/menus/`. The block backs these up first, appending
+`.bak.<timestamp>`, but the originals are still replaced. On a fresh
+install this is harmless.
+
+**Where to run this from.** The commands below assume `examples/`
+lives in `/opt/dropQbsd/`, i.e. that section 3 (Install Scripts) has
+already been run:
 
 ```sh
-Control
+mkdir -p /opt/dropQbsd/bin 
+cp -r admin libexec sbin src templates examples /opt/dropQbsd/
+```
+If you have not run section 3 yet, do it first. Alternatively, run
+this block from the directory where you cloned the repository --
+`examples/` is present there too -- by replacing the first line with
+a `cd` to that directory.
+
+The opening `cd /opt/dropQbsd` is guarded: if the directory or
+`examples/` is missing, the block stops with an error instead of
+silently copying nothing.
+
+**Run as root:**
+
+```sh
+cd /opt/dropQbsd || { echo "ERROR: /opt/dropQbsd not found -- run section 3 first." >&2; exit 1; }
+[ -d examples ] || { echo "ERROR: examples/ not found in /opt/dropQbsd." >&2; exit 1; }
+
+# ------------------------------------------------------------------
+# Per-account examples (root, user, userdoc, usermail, userweb).
+# root's home is /root; the others are under /home. The group for
+# root is wheel (BSD convention); for the domains it is the user's
+# own group.
+# ------------------------------------------------------------------
+for u in root user userdoc usermail userweb; do
+
+    # Resolve the home directory and the owning group.
+    if [ "$u" = "root" ]; then
+        h=/root
+        grp=wheel
+    else
+        h=/home/$u
+        grp=$u
+    fi
+
+    # --- Back up existing per-user config before overwriting ------
+    ts=$(date +%Y%m%d_%H%M%S)
+    for f in "$h/.exrc" "$h/.config/mc/ini"; do
+        [ -f "$f" ] && cp -p "$f" "$f.bak.$ts"
+    done
+    [ -d "$h/.config/nnn/plugins" ] && \
+        cp -Rp "$h/.config/nnn/plugins" "$h/.config/nnn/plugins.bak.$ts"
+
+    # --- Midnight Commander: skins + preconfigured ini ------------
+    # The ini_for_<account> file selects the domain's own skin, so
+    # the color is active from the first mc launch. Copying the
+    # skins alone would leave mc on its default skin.
+    mkdir -p "$h/.local/share/mc/skins" "$h/.config/mc"
+    cp -R examples/apps/mc/skins/. "$h/.local/share/mc/skins/"
+    cp    examples/apps/mc/ini_for_$u "$h/.config/mc/ini"
+    chown -R $u:$grp "$h/.local/share/mc/skins" "$h/.config/mc"
+    find "$h/.local/share/mc/skins" -type d -exec chmod 755 {} +
+    find "$h/.local/share/mc/skins" -type f -exec chmod 644 {} +
+    chmod 644 "$h/.config/mc/ini"
+
+    # --- nnn plugins ----------------------------------------------
+    # Mandatory for file_bridge (10.4) and useful standalone: the
+    # ;c / ;m / ;i keys call qcp / qmv / qimport, which work from
+    # any shell. Installed for every account, including root.
+    mkdir -p "$h/.config/nnn/plugins"
+    cp -R examples/apps/nnn/plugins/. "$h/.config/nnn/plugins/"
+    chown -R $u:$grp "$h/.config/nnn/plugins"
+    find "$h/.config/nnn/plugins" -type d -exec chmod 755 {} +
+    find "$h/.config/nnn/plugins" -type f -exec chmod 755 {} +
+
+    # --- vi configuration -----------------------------------------
+    cp examples/apps/vi/exrc "$h/.exrc"
+    chown $u:$grp "$h/.exrc"
+    chmod 644 "$h/.exrc"
+
+done
+
+# ------------------------------------------------------------------
+# XFCE application menu -- conductor only (`user`), run ONCE.
+# Not in the loop above: it writes to /home/user/ exclusively, and
+# running it per-account would chown those files to the last user
+# in the loop.
+# ------------------------------------------------------------------
+ts=$(date +%Y%m%d_%H%M%S)
+[ -f /home/user/.config/menus/xfce-applications.menu ] && \
+    cp -p /home/user/.config/menus/xfce-applications.menu \
+          /home/user/.config/menus/xfce-applications.menu.bak.$ts
+for d in applications desktop-directories icons; do
+    [ -d "/home/user/.local/share/$d" ] && \
+        cp -Rp "/home/user/.local/share/$d" \
+               "/home/user/.local/share/$d.bak.$ts"
+done
+
+mkdir -p /home/user/.local/share/applications \
+         /home/user/.local/share/desktop-directories \
+         /home/user/.local/share/icons \
+         /home/user/.config/menus
+cp -R examples/apps/xfce4/applications/.         /home/user/.local/share/applications/
+cp -R examples/apps/xfce4/desktop-directories/.  /home/user/.local/share/desktop-directories/
+cp -R examples/apps/xfce4/icons/.                /home/user/.local/share/icons/
+cp    examples/apps/xfce4/menus/xfce-applications.menu /home/user/.config/menus/
+
+for d in /home/user/.local/share/applications \
+         /home/user/.local/share/desktop-directories \
+         /home/user/.local/share/icons; do
+    find "$d" -type d -exec chmod 755 {} +
+    find "$d" -type f -exec chmod 644 {} +
+done
+chown -R user:user /home/user/.local/share/applications \
+                   /home/user/.local/share/desktop-directories \
+                   /home/user/.local/share/icons
+chown user:user /home/user/.config/menus/xfce-applications.menu
+chmod 644       /home/user/.config/menus/xfce-applications.menu
 ```
 
-Requires `/opt/dropQbsd/libexec/root_snapshot`.
+**Notes:**
 
-### Desktop Environment
+- **This block overwrites existing per-user configuration.** It
+  replaces `~/.exrc`, `~/.config/mc/ini`, `~/.config/nnn/plugins/`,
+  and (for `user`) the XFCE menu. The block backs these up first,
+  appending `.bak.<timestamp>`, but the originals are still replaced.
+  On a fresh install this is harmless.
+- **nnn plugins are installed for every account, including `root`.**
+  They are mandatory for `file_bridge` (10.4) and useful standalone:
+  `;c` / `;m` / `;i` call `qcp` / `qmv` / `qimport`, which work from
+  any shell.
+- **The XFCE menu is conductor-only.** Only `user` runs an XFCE
+  session with a custom menu.
+- **`chown` uses the account's own group** -- the user's own group
+  for the domains, `wheel` for `root` -- not the `drop` group. These
+  are per-user dotfiles, not shared artifacts.
+- **The mc skins encode the domain color** (see the color table in
+  10.2). They are not cosmetic. The matching `ini_for_<account>`
+  file is copied to `~/.config/mc/ini`, so the domain's skin is
+  selected automatically from the first `mc` launch -- no manual
+  step in `Options > Appearance` is required.
+- **Each account has two mc files:** a **skin** under
+  `~/.local/share/mc/skins/<domain>.ini` (the colors), and a
+  **configuration** `~/.config/mc/ini` that selects it. The
+  `ini_for_<account>` files in `examples/apps/mc/` are the
+  configurations -- they contain `[Midnight-Commander]` and a
+  `[skin]` section naming the domain's skin. They are not skins
+  themselves.
+
+### 10.2 Desktop Environment
 
 dropQbsd works with any window manager. Two examples:
 
-- **XFCE** -- full desktop environment, familiar for users migrating from
-  Windows/macOS. Install with `Pkg xfce xfce-extras`.
-- **cwm** -- OpenBSD's native stacking window manager. Minimal, keyboard-driven,
-  zero dependencies beyond the base system.
+- **XFCE** -- full desktop environment, familiar for users migrating
+  from Windows/macOS. Install with `Pkg xfce xfce-extras`.
+- **cwm** -- OpenBSD's native stacking window manager. Minimal,
+  keyboard-driven, zero dependencies beyond the base system.
 
-Any window manager works with `Run` without additional configuration; the
-two above are simply common choices.
+Any window manager works with `Run` without additional configuration;
+the two above are simply common choices.
 
-**Color scheme convention:**
+**Color scheme convention.** In a compartmentalized system, the color is functional: it tells you which domain you are in. The same colors are used by the terminals (`xterm_*`), and `mc`, `nnn`, `xfe` (via the skins installed in 10.1).
 
 | User | Role | Suggested theme color |
 | ---- | ---- | --------------------- |
@@ -705,25 +875,14 @@ two above are simply common choices.
 | `userweb` | Web browser | Dark blue |
 | `root` | System | Dark red |
 
-Set the theme per user via XFCE Settings > Appearance. This gives immediate
-visual feedback about which domain you are working in.
+**On tiling window managers** (`i3`, `dwm`, `spectrwm`) and the base
+window managers (`cwm` on OpenBSD, `twm` on FreeBSD), the OSD
+indicator is redundant. Domain differentiation is provided entirely by
+the color schemes of terminals, `mc`, `nnn` and `xfe` launchers. On these
+environments the color convention is not a suggestion -- it is the
+only domain signal available.
 
-### Domain Indicator
-
-For XFCE and other desktop environments, install the indicator dependencies:
-
-| OpenBSD | FreeBSD |
-| ------- | ------- |
-| `pkg_add dzen2 xdotool` | `pkg install dzen2 xdotool` |
-
-The indicator is launched automatically by `~/.xprofile` when `user` logs in.
-
-For tiling window managers (`i3`, `dwm`, `spectrwm`) and the base window
-managers (`cwm` on OpenBSD, `twm` on FreeBSD), the OSD indicator is not used.
-Domain differentiation is provided by the color schemes of terminals, `mc`, and
-`xfe` launchers.
-
-### Editor and Application Menu
+### 10.3 Editor and Application Menu
 
 **vi -- editor configuration:**
 
@@ -734,7 +893,22 @@ cp examples/apps/vi/exrc ~/.exrc
 Provides key bindings for nvi (OpenBSD base system vi): toggle visible
 whitespace, tab width control, paste mode, quick save/quit.
 
-### File Bridge (tmux + nnn)
+This is installed for every domain by the bulk block in 10.1. The
+command above is the manual equivalent for a single user.
+
+**XFCE application menu** (conductor only): the menu is installed by
+the bulk block in 10.1, which copies
+`examples/apps/xfce4/{applications,desktop-directories,icons,menus}`
+into `~/.local/share/` and `~/.config/menus/` for `user`. It groups
+the domain launchers (`Run userweb ...`, `Run usermail ...`) so they
+are reachable without typing, and it uses the same per-domain icons
+and colors as the rest of the environment.
+
+### 10.4 File Bridge (tmux + nnn)
+
+The four-quadrant bridge is the interactive way to move files between
+domains. It depends on the `nnn` plugins installed by the bulk block
+in 10.1 -- without them, `;c` / `;m` / `;i` do nothing.
 
 Install requirements:
 
@@ -742,10 +916,8 @@ Install requirements:
 | ------- | ------- |
 | `pkg_add nnn tmux` | `pkg install nnn tmux` |
 
-`nnn` is also usable standalone as a file manager (see File Managers).
-`tmux` is required only for the four-quadrant bridge.
-
-Install the nnn plugins for each domain:
+The `nnn` color schemes are installed by the bulk block in 10.1. The
+manual equivalent for a single software install:
 
 ```sh
 cd /opt/dropQbsd
@@ -756,6 +928,9 @@ for d in userdoc usermail userweb; do
     chown -R $d:drop /home/$d/.config/nnn
 done
 ```
+
+`nnn` is also usable standalone as a file manager (see File Managers).
+`tmux` is required only for the four-quadrant bridge.
 
 Launch from the conductor:
 
@@ -788,38 +963,41 @@ in the domain's home (e.g. `/home/userdoc/.cache/dropQbsd/nnn_plugins.log`).
 If you create a desktop launcher (XFCE, MATE, ...) for the file
 bridge, the command must go through the wrapper:
 
-    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_user \
-        /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/file_bridge
+/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_user \
+     /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/file_bridge
 
 The inner wrapper is required: file_bridge has no shebang (dropQbsd
 convention for sbin/ and libexec/ scripts), so it cannot be exec'd
 directly by xterm.
 
-### File Managers
+### 10.5 File Managers
 
 Three recommendations, all lightweight:
 
 - **nnn** -- terminal-based, minimal, keyboard-driven. Already
-  installed for `file_bridge` (see File Bridge). The natural
-  choice for scripted and keyboard-heavy workflows.
+  installed for `file_bridge` (10.4). The natural choice for scripted
+  and keyboard-heavy workflows.
 - **Xfe** -- graphical, dual-pane. For when you want a GUI.
 - **Midnight Commander (`mc`)** -- terminal-based, dual-pane. Classic,
-  with a menu-driven interface.
+  with a menu-driven interface. Its per-domain skins are installed by
+  the bulk block in 10.1 and encode the domain color.
 
-Install:
+Install requirements:
 
 | OpenBSD | FreeBSD |
 | ------- | ------- |
 | `pkg_add xfe mc` | `pkg install xfe mc` |
 
-Copy the example color schemes:
+The `mc` color schemes are installed by the bulk block in 10.1. The
+manual equivalent for a single domain:
 
 ```sh
-for d in userdoc usermail userweb; do
-    mkdir -p /home/$d/.config/mc
-    cp examples/apps/mc/skins/$d.ini /home/$d/.config/mc/ini
-    chown -R $d:drop /home/$d/.config/mc
-done
+d=userdoc
+mkdir -p /home/$d/.local/share/mc/skins
+cp -R examples/apps/mc/skins/. /home/$d/.local/share/mc/skins/
+chown -R $d:$d /home/$d/.local/share/mc/skins
+find /home/$d/.local/share/mc/skins -type d -exec chmod 755 {} +
+find /home/$d/.local/share/mc/skins -type f -exec chmod 644 {} +
 ```
 
 Launch via `Run`:
@@ -829,7 +1007,69 @@ Run userdoc xfe /home/userdoc
 Run userdoc mc
 ```
 
-### Integrity Verification
+### 10.6 -- 10.11: Utilities
+
+The rest of this section covers independent helpers, listed
+alphabetically. They are not part of the working environment above;
+install only what you need. `Integrity Verification` (10.8) is the
+One most worth setting up on any real deployment.
+
+### 10.6 Control Panel
+
+No extra packages needed (base system only). Run as `user`:
+
+```sh
+Control
+```
+
+An ncurses dashboard showing compartment status, drop zone contents, and system
+health.
+
+**What you see:**
+
+- **Domains** -- which compartments are active and what process is running in each
+- **Drop zone** -- files awaiting import (newer than 60 minutes), with the file/quarantine totals in the section header, plus permissions and quarantine status
+- **System** -- PF state, load average, free space on /home, tmpfs usage, enforcement logs, integrity verification (requires root authentication)
+
+**Keys:**
+
+| Key | Action                                                              |
+| --- | ------------------------------------------------------------------- |
+| `q` | Quit                                                                |
+| `a` | Authenticate as root (shows PF state, logs, integrity)              |
+| `r` | Refresh root snapshot (re-authenticates)                            |
+
+**Privilege model:** root data is time-boxed. The snapshot expires after 5
+minutes, and every refresh re-authenticates. The snapshot is written by
+`root_snapshot` (running as root) into `/var/run/dropQbsd/` with `root:drop
+0640`; the owner is verified before the panel trusts it, and the lines are
+sanitized (ESC stripped) before printing.
+
+
+### 10.7 Domain Indicator
+
+For XFCE and other desktop environments, install the indicator dependencies:
+
+| OpenBSD | FreeBSD |
+| ------- | ------- |
+| `pkg_add dzen2 xdotool` | `pkg install dzen2 xdotool` |
+
+The indicator is launched automatically from the session file when
+`user` logs in -- `~/.xprofile` under SDDM/LightDM, `~/.xsession`
+under xenodm (OpenBSD), `~/.xinitrc` under startx. It waits for the
+window manager to publish a real `_NET_ACTIVE_WINDOW` before
+starting, so it works with any EWMH-compliant WM (XFCE, MATE, ...).
+
+The indicator's single-instance lock is keyed by uid and lives in
+`${XDG_RUNTIME_DIR:-/tmp}` -- **not** in `/var/run/`, which is
+root-only and would make the lock fail for the non-root domain user.
+
+For tiling window managers (`i3`, `dwm`, `spectrwm`) and the base window
+managers (`cwm` on OpenBSD, `twm` on FreeBSD), the OSD indicator is not used.
+Domain differentiation is provided by the color schemes of terminals, `mc`, and
+`xfe` launchers.
+
+### 10.8 Integrity Verification
 
 dropQbsd can cryptographically verify that critical scripts have not been
 tampered with, using `signify(1)`.
@@ -974,7 +1214,7 @@ the chain must be rebuilt.
 | `Sign`   | `admin/sign_filelist`        | Sign the integrity manifest                          |
 | `Verify` | `libexec/verify_integrity`   | Verify monitored files against the signed manifest   |
 
-### Site Menu + Password Manager
+### 10.9 Site Menu + Password Manager
 
 For daily use, **KeePassXC** is recommended -- it runs in its own domain, keeps
 the password database isolated, and works with any browser.
@@ -1035,7 +1275,7 @@ pass insert finance/bank_pw
 Site
 ```
 
-### Syncthing -- LAN File Synchronization
+### 10.10 Syncthing -- LAN File Synchronization
 
 Set up Syncthing for `userdoc` with the Sync directory at
 `/home/userdoc/Sync`. The `enforce_sync` script maintains correct permissions
@@ -1072,7 +1312,7 @@ Settings > Default Folder Path: `/home/userdoc/Sync`.
 device is listening on TCP 22000, and check that `pf.conf` allows incoming TCP
 22000 and UDP 21027 from the LAN.
 
-### VLC in userdoc
+### 10.11 VLC in userdoc
 
 MIT-SHM (X11 shared memory) is not available across user boundaries. VLC will
 decode video but fail to render frames. Force software output:
@@ -1363,6 +1603,43 @@ user. Per-user network isolation -- the foundation of dropQbsd's model -- cannot
 be expressed in `npf`. `gen_fwall` refuses to generate a partial ruleset rather
 than emit a firewall that silently drops per-user isolation.
 
+### The domain indicator lock
+
+`indicator_de` takes a single-instance lock keyed by uid, in a
+user-writable location:
+```sh
+LOCK="${XDG_RUNTIME_DIR:-/tmp}/indicator_de.$(id -u).lock"
+```
+
+**Do not place this lock in `/var/run/`.** The indicator runs as a
+domain user, not root, and `/var/run` is root-only (`drwxr-xr-x`).
+`mkdir` there fails with `EACCES`, and the guard
+```sh
+if ! mkdir "$LOCK" 2>/dev/null; then exit 0; fi
+```
+would exit immediately on every start -- the indicator would never
+run. The uid in the name is required: each domain is a separate
+user, and without it the first domain to start would block the
+others.
+
+### Waiting for the window manager
+
+The indicator is launched from the session file in a detached
+subshell that polls `_NET_ACTIVE_WINDOW` until a real window id
+appears. The atom has **two** fields:
+```sh
+NET_ACTIVE_WINDOW(WINDOW): window id # 0x2800004, 0x0
+```
+
+The second field is always `0x0`. A naive test such as
+`grep -q 'window id'` matches even when the first field is `0x0`
+(no active window yet), so the indicator would start too early and
+poll an empty atom. Test only the **first** field:
+```sh
+active=$(echo "$atom" | sed 's/.*window id # //' | cut -d',' -f1 | tr -d ' ')
+if [ -n "$active" ] && [ "$active" != "0x0" ]; then break; fi
+```
+
 ---
 
 ## 14. Shell portability rules
@@ -1403,11 +1680,12 @@ invisible until a path or a comment hit the edge case.
 strip leading and trailing whitespace FIRST, then test for the
 comment marker. An indented comment (`  # note`) must still be
 skipped:
-
-    line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-    case "$line" in
-        ""|\#*) continue ;;
-    esac
+```sh
+line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+case "$line" in
+    ""|\#*) continue ;;
+esac
+```
 
 The reverse order lets an indented comment through, and a comment
 passed to `sha256` or a file operation becomes a missing-file error.
@@ -1415,10 +1693,11 @@ passed to `sha256` or a file operation becomes a missing-file error.
 **Use `xargs -0` for path lists.** When a list of paths is
 materialised and later consumed by a command, write it NUL-separated
 and read it with `xargs -0`:
-
-    printf '%s\0' "$path" >> "$FILE_ARGS"
-    ...
-    xargs -0 sha256 < "$FILE_ARGS"
+```sh
+printf '%s\0' "$path" >> "$FILE_ARGS"
+...
+xargs -0 sha256 < "$FILE_ARGS"
+```
 
 Plain `xargs` splits on newlines AND spaces, so a path containing a
 space becomes two arguments. `xargs -0` splits only on NUL and
@@ -1428,9 +1707,10 @@ passes each path as a single argument.
 
 Never create a temp file with a predictable name in a
 world-writable directory:
-
-    TMP="/tmp/foo.$$"                         # WRONG
-    TMP=$(mktemp /tmp/foo.XXXXXX) || exit 1   # RIGHT
+```sh
+TMP="/tmp/foo.$$"                         # WRONG
+TMP=$(mktemp /tmp/foo.XXXXXX) || exit 1   # RIGHT
+```
 
 `$$` is the PID, visible via `ps`. A local user can predict the
 name, pre-create a symlink to an attacker-chosen path, and the `>`

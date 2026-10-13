@@ -11,16 +11,16 @@ cannot.*
 GDPR accountability rests on two pillars that most organisations treat as
 paperwork:
 
-1. **Data protection by design** (Art. 25) — protection must be built into the
+1. **Data protection by design** (Art. 25) -- protection must be built into the
    system, not added after the fact.
-2. **Staff awareness and training** (Art. 39) — personnel must understand how
+2. **Staff awareness and training** (Art. 39) -- personnel must understand how
    personal data is handled.
 
 Mainstream operating systems make both difficult to satisfy in practice.
 
 - **Telemetry is on by default.** Windows, macOS, and most mainstream Linux
-  distributions transmit system diagnostics, application usage, and — in some
-  configurations — document and browsing content to vendor infrastructure.
+  distributions transmit system diagnostics, application usage, and -- in some
+  configurations -- document and browsing content to vendor infrastructure.
   These transfers are governed by the vendor's terms, not by a data processing
   agreement the controller negotiated.
 - **The processing logic is not auditable.** The controller cannot inspect what
@@ -31,7 +31,7 @@ Mainstream operating systems make both difficult to satisfy in practice.
 This is not an argument that these systems are malicious. It is a statement
 about **what a controller can demonstrate**. Art. 5(2) places the burden of
 demonstrating compliance on the controller. Article 5(2) requires that you be
-able to *show* compliance — not merely assert it.
+able to *show* compliance -- not merely assert it.
 
 You cannot demonstrate what you cannot inspect.
 
@@ -48,7 +48,8 @@ The relevant properties for a controller are architectural, not procedural:
 | | Mainstream stack | dropQbsd on the BSD family |
 | -- | -- | -- |
 | **Telemetry** | Vendor-defined, on by default | None in the base system |
-| **Auditability** | Closed source | ~2,500 lines of `ksh` + 9 lines of C |
+| **Auditability** | Closed source | ~2,800 lines of `ksh`+ ~300 lines of shell templates +
+35 lines of C + 35 lines of C |
 | **Licensing cost** | OS + productivity + endpoint security | None (ISC license) |
 | **Endpoint security model** | Reactive scanning software with root access | Domain isolation enforced by Unix permissions and `pf` |
 | **Verification method** | Vendor representation, third-party audit | Direct source inspection |
@@ -65,7 +66,7 @@ Adopting dropQbsd changes what a controller can demonstrate:
 - **Data protection by design becomes architectural rather than declarative.**
   The base system has no telemetry to disable. Cross-domain propagation is
   prevented by Unix permissions and a default-deny firewall, policed every 60
-  seconds — not by policy.
+  seconds -- not by policy.
 - **Staff awareness becomes operational rather than ceremonial.** Personnel
   work daily with a system that requires deliberate action to move data between
   contexts. This is not a substitute for a training programme; it is an
@@ -99,12 +100,12 @@ about to discover.
 ## 5. On the separation of roles
 
 If a DPO also supplies the system they are assessing, the independence required
-by Art. 38(3) and Art. 39(1)(b) is compromised — not necessarily in intent, but
+by Art. 38(3) and Art. 39(1)(b) is compromised -- not necessarily in intent, but
 in structure. The same principle that prevents a lawyer from advising a client
 and certifying the same matter applies here.
 
 **For a given controller, the roles must be separated:** either the provider of
-dropQbsd, or the DPO — not both. This is not a limitation of the project. It is
+dropQbsd, or the DPO -- not both. This is not a limitation of the project. It is
 the condition under which any recommendation of it remains credible.
 
 ---
@@ -114,7 +115,7 @@ the condition under which any recommendation of it remains credible.
 If you advise clients on GDPR compliance while their processing runs on systems
 you cannot inspect, the question is worth asking directly:
 
-- Is the gap between what you claim and what you can verify something your architecture closes — or something your documentation is asked to cover?
+- Is the gap between what you claim and what you can verify something your architecture closes -- or something your documentation is asked to cover?
 - Can you verify what the operating system does with the personal data your
   client processes?
 - Can you determine what leaves the network, under what legal basis, and to

@@ -17,7 +17,7 @@
 #  second line of defense for anything not using that pattern.
 #
 #  Path: /opt/dropQbsd/libexec/enforce_sync
-#  Permissions: chmod 700, root:wheel
+#  Permissions: chmod 755, root:wheel
 #  Cron: * * * * * /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/enforce_sync
 #
 #  IMPORTANT: This script MUST be executed via the dropQbsd

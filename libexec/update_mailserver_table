@@ -9,7 +9,7 @@
 #  section [mailserver], key "hosts".
 #
 #  Path: /opt/dropQbsd/libexec/update_mailserver_table
-#  Permissions: chmod 700, root:wheel
+#  Permissions: chmod 755, root:wheel
 #
 #  IMPORTANT: This script MUST be executed via the dropQbsd
 #  wrapper or its alias. Do NOT run it directly.

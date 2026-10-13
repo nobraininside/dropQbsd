@@ -31,7 +31,7 @@
 #  and by the private-key policy above.
 #
 #  Path: /opt/dropQbsd/libexec/verify_integrity
-#  Permissions: chmod 700, root:wheel
+#  Permissions: chmod 755, root:wheel
 #  Cron: */5 * * * * /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/verify_integrity
 #
 #  IMPORTANT: This script MUST be executed via the dropQbsd

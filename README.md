@@ -14,7 +14,7 @@ and documents run as separate users with no shared access except a policed drop
 zone. No hypervisor, no VM images, no daemon.
 
 ~2,800 lines of `ksh` (executable scripts in `sbin/`, `libexec/`, `admin/`,
-comments and blank lines excluded) plus ~250 lines of shell templates, plus
+comments and blank lines excluded) plus ~300 lines of shell templates, plus
 35 lines of C -- small enough to audit in an afternoon.
 
 Runs on 1 GB of RAM. Installs in ~30 minutes. Rebuilds faster -- no databases, no
@@ -91,6 +91,12 @@ system. The process takes roughly 30 minutes and is documented step by step in
 
 An install script is on the roadmap -- it is the single biggest barrier to
 adoption today, and the next development priority.
+
+**Application examples.** The `examples/` tree provides ready-made
+configuration for `mc`, the `nnn` plugins, `vi`, and the XFCE
+application menu. INSTALL.md §10 includes a single bulk-install block
+that copies everything with the correct ownership and permissions.
+The `nnn` plugins are mandatory for `file_bridge`.
 
 **Prerequisites:**
 
@@ -225,8 +231,14 @@ than emit a firewall that silently drops per-user isolation.
 
 ### Domain Indicators
 
-`indicator_de` shows an OSD popup when the active domain changes. Detection is a
-cascade:
+`indicator_de` shows an OSD popup when the active domain changes. It is
+started from the session file -- `~/.xprofile` (SDDM/LightDM),
+`~/.xsession` (xenodm), or `~/.xinitrc` (startx) -- in a detached
+subshell that waits for the window manager to publish a real
+`_NET_ACTIVE_WINDOW` before launching. A uid-keyed lock prevents a
+double start when more than one session file is read.
+
+Detection is a cascade:
 
 1. Window title -- exact match for `userweb`/`usermail`/`userdoc`/`user`/`root`
 2. Window title containing `[root@` -- the shell prompt betrays root
@@ -243,9 +255,27 @@ Color mapping is consistent across the project:
 | `user` (conductor) | White         | `#FFFFFF` |
 | `root`             | Bright red    | `#FF3333` |
 
+The indicator's lock lives in `${XDG_RUNTIME_DIR:-/tmp}`, keyed by uid.
+It is deliberately **not** in `/var/run/`: the indicator runs as a domain
+user, and `/var/run` is root-only, so a lock there would fail to be
+created and the indicator would exit immediately on every start.
+
 For tiling window managers (`i3`, `dwm`, `spectrwm`), the OSD indicator is not used. The base window managers of the supported platforms -- `cwm` on OpenBSD, `twm` on FreeBSD -- are also not suited to it: in these environments, domain differentiation is provided by the color schemes of terminals, `mc`, and `xfe` launchers (`examples/apps/mc/skins`, `xterm_*`).
 
 Requires `dzen2`, `xdotool` and `xprop` (base X11).
+
+### Knowing Where You Are
+
+Compartmentalization only works if you can tell the compartments
+apart. dropQbsd uses a single, consistent color per domain across
+every surface: the terminals (`xterm_*`), `mc`, `xfe`, and the OSD
+indicator. `userweb` is always blue, `usermail` always orchid,
+`userdoc` always green, the conductor white, root red. The color is
+not decoration -- in a system where every window looks alike, it is
+the fastest signal of which domain you are about to type into.
+
+The color schemes are installed by the bulk block in INSTALL.md
+10.1.
 
 ---
 
@@ -561,6 +591,10 @@ $ Verify
 | `xterm_usermail` | user (conductor only) | Color-coded xterm for usermail domain (dark orchid)                  |
 | `xterm_userweb`  | user (conductor only) | Color-coded xterm for userweb domain (dark blue)                     |
 
+`indicator_de` is started automatically from the session file
+(`~/.xprofile`, `~/.xsession`, or `~/.xinitrc`) when the conductor
+logs in. See "Domain Indicators" above.
+
 ### Export/Import Pipeline
 
 Run automatically by root's crontab on a schedule. Can also be run manually.
@@ -708,7 +742,7 @@ and boring -- exactly what you want from a security tool.
 
 - 📋 Ports tree submission (OpenBSD first, then FreeBSD)
 - 📋 dropQbsd-paired + server (WireGuard client-server, input isolation)
-- 📋 **dropQlnx** -- a separate Linux variant. Linux has no
+- 📋 dropQlnx -- a separate Linux variant. Linux has no
   per-user packet filter (no `pf`, no `nftables` uid match), so
   the network isolation model must be rebuilt on cgroup v2 +
   nftables. A rewrite of the policy layer, not a port. Higher

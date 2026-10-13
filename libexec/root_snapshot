@@ -18,7 +18,7 @@
 #  mfs:* (OpenBSD) or tmpfs (FreeBSD), devfs/fdescfs filtered.
 #
 #  Path: /opt/dropQbsd/libexec/root_snapshot
-#  Permissions: chmod 700, root:wheel
+#  Permissions: chmod 755, root:wheel
 #
 #  IMPORTANT: This script MUST be executed via
 #    - /opt/dropQbsd/sbin/control_panel OR Control

@@ -1,25 +1,48 @@
 # ==========================================================
 #  dropQbsd -- xprofile_for_home
 #
-#  Per-user graphical session stub. Installed as ~/.xprofile
-#  in the home of every dropQbsd user (user, userdoc,
-#  usermail, userweb) and root.
+#  Universal per-user X session hook. Read by SDDM and LightDM
+#  on both OpenBSD and FreeBSD, and by startx.
+#
+#  Installed as ~/.xprofile in the home of every dropQbsd
+#  user (user, userdoc, usermail, userweb) and root.
 #
 #  Installation:
 #      cp /opt/dropQbsd/templates/xprofile_for_home ~/.xprofile
 #      chown <user>:<user> ~/.xprofile
 #      chmod 644 ~/.xprofile
 #
-#  Coverage:
-#    Graphical sessions started by SDDM or LightDM, which do
-#    NOT read ~/.profile.
-#
 #  Notes:
-#    - This file is a STUB. All logic lives in
-#      /etc/dropQbsd/kshrc, which is idempotent.
-#    - This file MUST be sourced, not executed.
+#    - The domain indicator is started here, in a detached
+#      subshell that waits for the window manager to publish a
+#      real _NET_ACTIVE_WINDOW before launching. This works with
+#      any EWMH-compliant WM (XFCE, MATE, ...).
+#    - The indicator is also launched from ~/.xsession (xenodm)
+#      and ~/.xinitrc (startx). Its internal lock, keyed by uid,
+#      prevents a double start when more than one of these files
+#      is read in the same session.
 # ==========================================================
 
+# --- Load the dropQbsd environment -------------------------------
 if [ -f /etc/dropQbsd/kshrc ]; then
     . /etc/dropQbsd/kshrc
 fi
+
+# --- Start the domain indicator ----------------------------------
+# Detached subshell: survives whatever execs the session next.
+# It polls _NET_ACTIVE_WINDOW until a REAL window id appears.
+# The atom has TWO fields ("0x... , 0x0"); the second is always
+# 0x0, so only the FIRST field is tested.
+(
+    i=0
+    while [ $i -lt 240 ]; do
+        atom=$(xprop -root _NET_ACTIVE_WINDOW 2>/dev/null)
+        active=$(echo "$atom" | sed 's/.*window id # //' | cut -d',' -f1 | tr -d ' ')
+        if [ -n "$active" ] && [ "$active" != "0x0" ]; then
+            break
+        fi
+        sleep 0.5
+        i=$(( i + 1 ))
+    done
+    exec /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/indicator_de
+) >/dev/null 2>&1 &
