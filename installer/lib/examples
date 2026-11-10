@@ -1,0 +1,194 @@
+# ==========================================================
+#  dropQbsd installer -- examples
+#
+#  Installs the "working environment" from INSTALL_MANUAL.md 10.1
+#  through 10.5: the per-domain colour scheme and the tools
+#  that make the domain model usable.
+#
+#  In a compartmentalized system the colour is FUNCTIONAL: it
+#  tells you which domain you are in. The same colours are used
+#  by the terminals (xterm_*), mc (skins), nnn, and the xfe
+#  launchers. Without them the domain model is correct but
+#  unusable -- you cannot tell userweb from usermail without
+#  reading the prompt.
+#
+#  OWNERSHIP POLICY (v0.4.0):
+#
+#  Two classes, and they must not be confused:
+#
+#  OVERWRITTEN (a backup is taken first, in BACKUP_DIR):
+#    ~/.exrc, ~/.config/mc/ini, ~/.config/mc/menu,
+#    ~/.config/nnn/plugins, and the mc skins.
+#    These are the project's defaults for the working environment;
+#    the installer keeps them current with the shipped version.
+#
+#  INSTALL-ONLY-IF-ABSENT (operator-owned, never overwritten):
+#    ~/.gtkrc-2.0, ~/.config/xfe/xferc, ~/.config/xfe/xfwrc,
+#    ~/.xbindkeysrc.
+#    These are personal: the operator may customise them, and an
+#    update must not clobber the customisation.
+#
+#  The mc skins sit in the first group on purpose: they are colour
+#  definitions, not personal config, and the domain colour convention
+#  must stay current.
+#
+#  What this does NOT install (INSTALL_MANUAL.md 10.6-10.15):
+#    control panel, domain indicator, integrity (handled by the
+#    integrity module), site menu, Syncthing, VLC.
+#
+#  Sourced by install.sh and update.sh. No shebang, no extension.
+# ==========================================================
+
+# install_examples: the bulk block of INSTALL_MANUAL.md 10.1.
+#
+# Per-account files are installed for root, conductor, userdoc,
+# usermail, userweb. 
+# Run ONCE -- running it per-account would chown those files to
+# the last user in the loop.
+install_examples() {
+    CONDUCTOR_USER="${CONDUCTOR_USER:-$(getent passwd | awk -F: 'index($5, "dropQbsd_conductor") > 0 {print $1; exit}')}"
+    CONDUCTOR_USER="${CONDUCTOR_USER:-conductor}"
+    apps="${INSTALL_DIR}/examples/apps"
+    [ -d "$apps" ] || {
+        warn "examples/apps not found: $apps -- skipping desktop integration"
+        return 0
+    }
+
+    # Per-account: root uses wheel; domains use their own group.
+    install_examples_for root /root wheel ""
+
+    # Each domain: role (suffix of the mc/ and gtk/ template names) and
+    # account (the real Unix user) can differ for the conductor.
+    # For the other three they coincide.
+    for role in conductor userdoc usermail userweb; do
+        case "$role" in
+            conductor) acct="$CONDUCTOR_USER" ;;
+            *)         acct="$role" ;;
+        esac
+        h="$(home_of "$acct")"
+        if [ -z "$h" ] || [ ! -d "$h" ]; then
+            warn "home directory not found for $acct, skipping examples"
+            continue
+        fi
+        install_examples_for "$acct" "$h" "$acct" "$role"
+    done
+}
+
+# install_examples_for: mc skins, mc ini, nnn plugins and vi
+# config for one account. u = user, h = home, grp = owning group.
+#
+# All files are overwritten with a backup taken first (in
+# BACKUP_DIR). The overwrite keeps the operator current with
+# the project's defaults; the backup is the safety net.
+install_examples_for() {
+    u="$1"; h="$2"; grp="$3"; role="$4"
+    apps="${INSTALL_DIR}/examples/apps"
+
+    # ------------------------------------------------------------------
+    # Blocks that do NOT depend on $role: run for every account,
+    # including root (role=""). These copy whole directories or a
+    # fixed file, so there is no per-role suffix to resolve.
+    # ------------------------------------------------------------------
+
+    # --- Midnight Commander: skins (all, project-owned) ---------------
+    if [ -d "${apps}/mc/skins" ]; then
+        run mkdir -p "${h}/.local/share/mc/skins" "${h}/.config/mc"
+        run cp -R "${apps}/mc/skins/." "${h}/.local/share/mc/skins/"
+        run chown -R "$u":"$grp" "${h}/.local/share/mc/skins" "${h}/.config/mc"
+        run sh -c "find '${h}/.local/share/mc/skins' -type d -exec chmod 755 {} +"
+        run sh -c "find '${h}/.local/share/mc/skins' -type f -exec chmod 644 {} +"
+    fi
+
+    # --- nnn plugins (all, project-owned) -----------------------------
+    if [ -d "${apps}/nnn/plugins" ]; then
+        backup_before_overwrite "${h}/.config/nnn/plugins"
+        run mkdir -p "${h}/.config/nnn/plugins"
+        run cp -R "${apps}/nnn/plugins/." "${h}/.config/nnn/plugins/"
+        run chown -R "$u":"$grp" "${h}/.config/nnn/plugins"
+        run sh -c "find '${h}/.config/nnn/plugins' -type d -exec chmod 755 {} +"
+        run sh -c "find '${h}/.config/nnn/plugins' -type f -exec chmod 755 {} +"
+    fi
+
+    # --- vi config (fixed file) ---------------------------------------
+    if [ -f "${apps}/vi/exrc" ]; then
+        backup_before_overwrite "${h}/.exrc"
+        run cp "${apps}/vi/exrc" "${h}/.exrc"
+        run chown "$u":"$grp" "${h}/.exrc"
+        run chmod 644 "${h}/.exrc"
+    elif [ "$DRY_RUN" = true ]; then
+        info "[dry-run] vi/exrc will be copied by the replace step"
+    fi
+
+    # ------------------------------------------------------------------
+    # Blocks that DO depend on $role: run only when a role is given.
+    # root (role="") skips these silently -- there is no per-role
+    # file for root, and warning about a missing "ini." would be
+    # noise. The suffix is the ROLE, not the account: the conductor
+    # account may be renamed, but the file is always "ini.conductor".
+    # ------------------------------------------------------------------
+    if [ -n "$role" ]; then
+
+        # --- mc ini: selects the domain skin (role-specific) ----------
+        if [ -d "${apps}/mc/skins" ]; then
+            if [ -f "${apps}/mc/ini.${role}" ]; then
+                run cp "${apps}/mc/ini.${role}" "${h}/.config/mc/ini"
+                run chmod 644 "${h}/.config/mc/ini"
+            elif [ "$DRY_RUN" = true ]; then
+                info "[dry-run] mc ini.${role} will be copied by the replace step" 
+            else
+                warn "mc ini.${role} missing, keeping default skin selection"
+            fi
+            if [ -f "${apps}/mc/menu_for_any" ]; then
+                run cp "${apps}/mc/menu_for_any" "${h}/.config/mc/menu"
+                run chmod 644 "${h}/.config/mc/menu"
+            else
+                warn "mc menu_for_any missing"
+            fi
+        fi
+
+    # --- GTK2 theme (role-specific, operator-owned) ---------------
+    #
+    # The template is named after the DESTINATION (~/.gtkrc-2.0), not
+    # after Xdialog: GTK2 reads this file for ANY GTK2 application in
+    # that domain, and Xdialog is only the one we launch today.
+    if [ -f "${apps}/gtk/gtkrc.${role}" ]; then
+        if [ -e "${h}/.gtkrc-2.0" ]; then
+            warn "exists, not overwriting (operator-owned): ${h}/.gtkrc-2.0"
+            warn " the new template is at ${apps}/gtk/gtkrc.${role}"
+        else
+            run cp "${apps}/gtk/gtkrc.${role}" "${h}/.gtkrc-2.0"
+            run chown "$u":"$grp" "${h}/.gtkrc-2.0"
+            run chmod 644 "${h}/.gtkrc-2.0"
+        fi
+    elif [ "$DRY_RUN" = true ]; then
+        # On a fresh --dry-run the files step has not run yet, so the
+        # template is not in INSTALL_DIR. The real install copies it.
+        info "[dry-run] GTK2 theme for role '${role}' would be copied to ${h}/.gtkrc-2.0"
+    else
+        warn "no GTK2 template for role '${role}': ${apps}/gtk/gtkrc.${role}"
+    fi
+
+        # --- Xfe seeds (role-specific, operator-owned) ----------------
+        if [ -d "${apps}/xfe" ]; then
+            for f in xferc xfwrc; do
+                src="${apps}/xfe/${f}.${role}"
+                if [ ! -f "$src" ]; then
+                    [ "$DRY_RUN" = true ] && info "[dry-run] xfe ${f}.${role} will be copied by the replace step"
+                    continue
+                fi
+                [ -f "$src" ] || continue
+                run mkdir -p "${h}/.config/xfe"
+                dst="${h}/.config/xfe/${f}"
+                if [ -e "$dst" ]; then
+                    warn "exists, not overwriting (operator-owned): ${dst}"
+                else
+                    run cp "$src" "$dst"
+                    run chown "$u":"$grp" "$dst"
+                    run chmod 644 "$dst"
+                fi
+            done
+        fi
+
+    fi
+}
+

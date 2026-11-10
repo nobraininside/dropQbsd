@@ -1,0 +1,326 @@
+# ==========================================================
+#  dropQbsd installer -- checklist
+#
+#  Final verification and the list of manual actions that
+#  remain. The installer deliberately stops short of things
+#  that need human judgement: passwords, local.conf values,
+#  and the firewall regeneration that follows those edits.
+#
+#  Two checklists exist:
+#    final_checklist      -- the installer (install.sh)
+#    update_checklist     -- the updater (update.sh)
+#  Both use check_soft, which counts failures instead of
+#  aborting, so the operator sees EVERY problem in one pass
+#  rather than only the first.
+#
+#  check_local_conf_sections compares the operator's local.conf
+#  against the repository template. It is shared by both
+#  checklists. See below.
+#
+#  Sourced by install.sh and update.sh. No shebang, no extension.
+# ==========================================================
+
+final_checklist() {
+    # In dry-run nothing was installed: every check below would
+    # fail against the pre-existing (or absent) state and report
+    # false failures. Skip in dry-run.
+    if [ "$DRY_RUN" = true ]; then
+        info "[dry-run] skipping final verification (nothing was installed)"
+        return 0
+    fi
+
+    echo ""
+    info "verifying domain users and key files"
+
+    for u in $USER_LIST; do
+        check_soft "id '$u' >/dev/null 2>&1" "domain user exists: $u"
+    done
+    for u in $USER_LIST; do
+        if verify_domain_marker "$u"; then
+            success "domain user '$u' carries the dropQbsd GECOS marker"
+        else
+            warn "domain user '$u' does NOT carry the dropQbsd GECOS marker"
+            SOFT_FAILURES=$((SOFT_FAILURES + 1))
+        fi
+    done 
+
+    check_soft "test -u '${INSTALL_DIR}/bin/run_app'" \
+               "run_app is setuid"
+    # pf.conf is produced by the firewall step. When that step deferred
+    # (FIREWALL_PENDING=1) there may be no new pf.conf on purpose:
+    # counting it here would turn a correct deferral into a fatal
+    # "verification failed".
+    if [ "${FIREWALL_PENDING:-0}" -eq 0 ]; then
+        check_soft "test -s /etc/pf.conf" \
+            "pf.conf is present and non-empty"
+    fi
+    check_soft "test -f '${ETC_DIR}/local.conf'" \
+               "local.conf is present"
+    check_soft "test -f '${ETC_DIR}/kshrc'" \
+               "kshrc is present"
+    check_soft "test -d '${LOG_DIR}' && [ \"\$(stat -f '%Lp' '${LOG_DIR}')\" = 750 ]" \
+               "log directory exists with mode 750"
+    check_soft "test -x '${INSTALL_DIR}/libexec/wrapper'" \
+               "wrapper is executable"
+
+    # Firewall must be loaded.
+    if command -v pfctl >/dev/null 2>&1; then
+        check_soft "pfctl -s info 2>/dev/null | grep -qi enabled" \
+                   "pf is enabled"
+        for t in updates mailserver services; do
+            check_soft "pfctl -t '$t' -T show >/dev/null 2>&1" \
+                       "PF table <$t> exists"
+        done
+    fi
+
+    # Cron entries installed.
+    check_soft "crontab -l 2>/dev/null | grep -q dropQbsd" \
+               "dropQbsd cron entries installed"
+
+    # local.conf sections vs template (version-agnostic).
+    # After a fresh install local.conf IS the example, so this
+    # passes unless the operator deleted a section before editing.
+    check_local_conf_sections
+
+    # Optional packages: informational only. A missing package
+    # disables ONE command, not the system, so it must not count
+    # toward SOFT_FAILURES.
+    check_optional_packages
+
+    # Firewall deferred (bad or missing local.conf): surface it here so
+    # it does not vanish between the warning at step 10 and the end.
+    if [ "${FIREWALL_PENDING:-0}" -eq 1 ]; then
+        warn "firewall NOT applied -- fix local.conf, then run: Gen $FW_BACKEND"
+    fi
+
+    if [ "$SOFT_FAILURES" -gt 0 ]; then
+        fail "$SOFT_FAILURES verification(s) failed -- see above"
+    fi 
+
+    # Integrity filelist coherence: every shipped file must be
+    # monitored, and every listed file must exist. Same check as the
+    # installer, same position: last, after the soft checks, so a hard
+    # fail here cannot hide them.
+    check_filelist_coverage 
+
+    success "installation verified" 
+}
+
+update_checklist() {
+    if [ "$DRY_RUN" = true ]; then
+        info "[dry-run] skipping update verification (nothing changed)"
+        return 0
+    fi
+
+    echo ""
+    info "verifying the update"
+
+    # Operator config survived.
+    check_soft "test -f '${ETC_DIR}/local.conf'" \
+               "local.conf still present"
+    check_soft "grep -q -F '[network]' '${ETC_DIR}/local.conf'" \
+               "local.conf still has [network]"
+
+    # Project files in place.
+    check_soft "test -f '${ETC_DIR}/domains.conf'" \
+               "domains.conf present"
+    check_soft "test -f '${ETC_DIR}/kshrc'" \
+               "kshrc present"
+    check_soft "test -u '${INSTALL_DIR}/bin/run_app'" \
+               "run_app is setuid"
+    # See final_checklist: a deferred firewall has no new pf.conf by
+    # design, and must not be counted as a failed check.
+    if [ "${FIREWALL_PENDING:-0}" -eq 0 ]; then
+        check_soft "test -s /etc/pf.conf" \
+            "pf.conf is present and non-empty"
+    fi
+
+    # Domain users carry the dropQbsd GECOS marker.
+    for u in $USER_LIST; do
+        if verify_domain_marker "$u"; then
+            success "domain user '$u' carries the dropQbsd GECOS marker"
+        else
+            warn "domain user '$u' does NOT carry the dropQbsd GECOS marker"
+            SOFT_FAILURES=$((SOFT_FAILURES + 1))
+        fi
+    done 
+
+    # Firewall loaded and tables present.
+    if command -v pfctl >/dev/null 2>&1; then
+        check_soft "pfctl -s info 2>/dev/null | grep -qi enabled" \
+                   "pf is enabled"
+        for t in updates mailserver services; do
+            check_soft "pfctl -t '$t' -T show >/dev/null 2>&1" \
+                       "PF table <$t> exists"
+        done
+    fi
+
+    # Cron intact.
+    check_soft "crontab -l 2>/dev/null | grep -q dropQbsd" \
+               "dropQbsd cron entries present"
+
+    # Version recorded.
+    check_soft "test -f '${INSTALL_DIR}/VERSION'" \
+               "VERSION file present"
+
+    # Firewall deferred (bad or missing local.conf): surface it here so
+    # it does not vanish between the warning at step 10 and the end.
+    if [ "${FIREWALL_PENDING:-0}" -eq 1 ]; then
+        warn "firewall NOT applied -- fix local.conf, then run: Gen $FW_BACKEND"
+    fi
+
+    # local.conf sections vs template (version-agnostic).
+    # When a future version adds a section to the template, this
+    # check picks it up automatically without changing this file.
+    check_local_conf_sections
+
+    if [ "$SOFT_FAILURES" -gt 0 ]; then
+        fail "$SOFT_FAILURES check(s) failed -- review before trusting the update"
+    fi
+
+    # Integrity filelist coherence: every shipped file must be
+    # monitored, and every listed file must exist. Same check as the
+    # installer, same position: last, after the soft checks, so a hard
+    # fail here cannot hide them.
+    check_filelist_coverage
+
+    success "update verified"
+}
+
+# check_local_conf_sections: compare the operator's local.conf
+# against the repository template.
+#
+# The template is the source of truth for what local.conf should
+# contain. For every ACTIVE section (a line "[name]" that is not
+# commented) in the template, verify that the same section exists
+# in the operator's local.conf. A missing section is reported --
+# it may be new in this version.
+#
+# This is VERSION-AGNOSTIC: when a future version adds a section
+# to the template, this check picks it up automatically, without
+# changing this function. It does not hard-code any section name.
+#
+# Sections are extracted with sed from lines starting with "["
+# (active, not "# ["). The list is written to a temp file, then
+# read back in a loop -- NOT via a pipe, so the 'missing' counter
+# survives (a pipe would run the loop in a subshell).
+check_local_conf_sections() {
+    lc=; tpl=; section=; missing=; tmp=
+    lc="${ETC_DIR}/local.conf"
+    tpl="${REPO_ROOT}/examples/system/local.conf.example"
+
+    [ -f "$lc" ] || { warn "local.conf missing: $lc"; return 0; }
+    [ -f "$tpl" ] || { warn "template missing: $tpl"; return 0; }
+
+    missing=0
+    tmp=$(mktemp) || { warn "cannot create temp file"; return 0; }
+
+    # Active sections from the template: lines whose first
+    # character is "[". Extract the name between the brackets
+    # using index/substr -- NO backslashes, so the pattern
+    # cannot be corrupted in transit.
+    awk '
+        substr($0, 1, 1) == "[" {
+            close_brace = index($0, "]")
+            if (close_brace > 0) {
+                print substr($0, 2, close_brace - 2)
+            }
+        }
+    ' "$tpl" 2>/dev/null > "$tmp"
+
+    while IFS= read -r section; do
+        [ -n "$section" ] || continue
+        if ! grep -q -F "[${section}]" "$lc" 2>/dev/null; then
+            warn "local.conf has no [${section}] section"
+            warn "  it is in the template (new in this version?) -- see ${tpl}"
+            missing=$((missing + 1))
+        fi
+    done < "$tmp"
+    rm -f "$tmp"
+
+    if [ "$missing" -gt 0 ]; then
+        warn "$missing section(s) missing from local.conf -- review the template"
+    else
+        info "local.conf has all template sections"
+    fi
+}
+
+# check_optional_packages: report which optional packages are
+# missing. INFORMATIONAL: a missing package disables one command,
+# not the system. It does not count toward SOFT_FAILURES.
+#
+# The list lives in installer/optional_packages_list, one entry
+# per line: "<platform> <package>" (platform: all | openbsd |
+# freebsd). The package name doubles as the binary probed with
+# command -v; a future need for a distinct binary is a third
+# column. Platform is matched case-insensitively.
+check_optional_packages() {
+    list="${REPO_ROOT}/installer/optional_packages_list"
+    if [ ! -f "$list" ]; then
+        warn "optional packages list not found: $list"
+        return 0
+    fi
+
+    echo ""
+    info "optional packages (install before the installer for full features)"
+
+    os="$(printf '%s' "$OS" | tr 'A-Z' 'a-z')"
+    while read -r platform pkg; do
+        # Skip blank lines and comments.
+        case "$platform" in
+            ""|\#*) continue ;;
+        esac
+
+        # Platform filter (case-insensitive): all, or this OS.
+        plat="$(printf '%s' "$platform" | tr 'A-Z' 'a-z')"
+        case "$plat" in
+            all|"$os") ;;
+            *) continue ;;
+        esac
+
+        if command -v "$pkg" >/dev/null 2>&1; then
+            info "  present: $pkg"
+        else
+            warn "  missing: $pkg"
+        fi
+    done < "$list"
+}
+
+print_manual_steps() {
+    echo ""
+    echo "========================================="
+    echo "   Installation complete"
+    echo "========================================="
+    echo ""
+    echo "Manual steps remaining:"
+    echo ""
+    echo "  1. Set passwords for the four domain users:"
+    for u in $USER_LIST; do
+        echo "       passwd $u"
+    done
+    echo ""
+    echo "  2. Edit /etc/dropQbsd/local.conf with your LAN subnet,"
+    echo "     mail servers and any extra services."
+    echo ""
+    echo "  3. After editing local.conf, regenerate the firewall:"
+    echo "       ${INSTALL_DIR}/libexec/wrapper ${INSTALL_DIR}/admin/gen_fwall ${FW_BACKEND}"
+    echo "       pfctl -nf /etc/pf.conf && pfctl -f /etc/pf.conf"
+    echo "       ${INSTALL_DIR}/libexec/wrapper ${INSTALL_DIR}/libexec/update_mailserver_table"
+    echo "       ${INSTALL_DIR}/libexec/wrapper ${INSTALL_DIR}/libexec/update_services_table"
+    echo "       ${INSTALL_DIR}/libexec/wrapper ${INSTALL_DIR}/libexec/ensure_updates_table"
+    echo ""
+    echo "  4. Verify the enforcers are running:"
+    echo "       tail -f /var/log/dropQbsd/enforce_drop.log"
+    echo ""
+    echo "  5. FreeBSD: do NOT create ~/.xsession. Use ~/.xprofile"
+    echo "     (SDDM) or ~/.xinitrc (startx). ~/.xsession freezes"
+    echo "     SDDM at login."
+    echo ""
+    echo "  Log:    ${LOG_FILE}"
+    if [ -n "$BACKUP_DIR" ]; then
+        echo "  Backup: ${BACKUP_DIR}"
+    else
+        echo "  Backup: skipped"
+    fi
+    echo ""
+}

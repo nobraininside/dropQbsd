@@ -1,0 +1,43 @@
+# ==========================================================
+#  dropQbsd installer -- logins
+#
+#  Appends the per-user resource classes to /etc/login.conf
+#  and rebuilds the login database.
+#
+#  The classes prevent resource exhaustion under load:
+#    userdoc  -- high open files for Syncthing
+#    usermail -- extra memory for large mail archives
+#    userweb  -- generous limits for multiple browser tabs
+#    conductor     -- modest limits for the conductor
+#
+#  The append is idempotent (marker-based) and cap_mkdb is
+#  verified afterwards: a stale login.db silently ignores the
+#  new classes, which would defeat the whole point.
+#
+#  NOTE: a missing template is NOT fatal -- the class block is
+#  optional -- but it is reported, because a silent skip would
+#  leave the resource classes unapplied without the operator
+#  knowing. If the template is absent, the "prevent resource
+#  exhaustion" goal is quietly unmet.
+#
+#  Sourced by install.sh. No shebang, no extension.
+# ==========================================================
+
+setup_login_conf() {
+    src="${TEMPLATES_DIR}/login.conf_append"
+
+    if [ -f "$src" ]; then
+        append_once "$src" /etc/login.conf
+    else
+        warn "no login.conf_append template: resource classes NOT applied"
+        warn "  (expected at ${src})"
+    fi
+
+    if [ "$DRY_RUN" = true ]; then
+        info "[dry-run] skipping cap_mkdb"
+        return 0
+    fi
+
+    check cap_mkdb /etc/login.conf
+    success "login database rebuilt"
+}

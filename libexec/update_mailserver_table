@@ -8,8 +8,14 @@
 #  Hostnames read from /etc/dropQbsd/local.conf,
 #  section [mailserver], key "hosts".
 #
+#  The table is PERSISTENT. It is populated here every
+#  15 minutes via cron. A pfctl -f reload empties all
+#  persistent tables, so the cron must run after any
+#  firewall regeneration.
+#
 #  Path: /opt/dropQbsd/libexec/update_mailserver_table
 #  Permissions: chmod 755, root:wheel
+#  Cron: */15 * * * * /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/update_mailserver_table
 #
 #  IMPORTANT: This script MUST be executed via the dropQbsd
 #  wrapper or its alias. Do NOT run it directly.

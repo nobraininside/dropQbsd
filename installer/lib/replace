@@ -1,0 +1,161 @@
+# ==========================================================
+#  dropQbsd updater -- replace
+#
+#  Replaces the project-owned files and directories with the
+#  versions from the repository, and classifies the files that
+#  are present in the install dir but absent from the repo.
+#
+#  Replaces only files whose content ACTUALLY CHANGED: an
+#  unchanged file is left alone, so the update touches the
+#  minimum. Uses cmp (content comparison), not timestamps: a
+#  timestamp is not evidence of change.
+#
+#  Before overwriting, backup_before_overwrite copies the old
+#  file into BACKUP_DIR. Nothing is lost.
+#
+#  Files present in the install dir but absent from the repo are
+#  NOT touched. They are classified and reported:
+#
+#    - OBSOLETE: the basename exists elsewhere in the repo, so the
+#      file was a project file that moved or was removed. It is
+#      probably safe to delete, but the updater does NOT delete it
+#      and does NOT rename it: it reports it and lets the operator
+#      decide. Renaming automatically is unsafe: a file that moved
+#      (e.g. a plugin now shipped from a different directory) is
+#      still needed, and marking it would break it.
+#      Recorded in OBSOLETE_FILES.
+#
+#    - LEFT ALONE: the basename is not in the repo at all. It is
+#      the operator's file. Reported, never touched.
+#      Recorded in LEFT_ALONE_FILES.
+#
+#  Sourced by update.sh. No shebang, no extension.
+# ==========================================================
+
+CHANGED_FILES=""
+OBSOLETE_FILES=""
+LEFT_ALONE_FILES=""
+
+replace_all() {
+    CHANGED_FILES=""
+    OBSOLETE_FILES=""
+    LEFT_ALONE_FILES=""
+
+    replace_file "${REPO_ROOT}/templates/doas.conf_for_etc" /etc/doas.conf
+    replace_file "${REPO_ROOT}/templates/domains.conf_for_etc" "${ETC_DIR}/domains.conf"
+    replace_file "${REPO_ROOT}/templates/schema_for_etc" "${ETC_DIR}/schema"
+    replace_file "${REPO_ROOT}/templates/kshrc_for_etc" "${ETC_DIR}/kshrc"
+    replace_file "${REPO_ROOT}/templates/profile_for_etc" "${ETC_DIR}/profile"
+    replace_file "${REPO_ROOT}/templates/alias_for_etc" "${ETC_DIR}/alias"
+    replace_file "${REPO_ROOT}/templates/filelist_for_etc" "${ETC_DIR}/filelist"
+    # Project-owned by design (see lib/ownership): attach.conf is
+    # restricted to userdoc -> usermail/userweb, and conductor.conf is
+    # the allowlist of root-runnable actions. A local edit is backed up
+    # and then restored to the shipped version -- intended, not an
+    # accident.
+    replace_file "${REPO_ROOT}/templates/attach.conf_for_etc" "${ETC_DIR}/attach.conf"
+    replace_file "${REPO_ROOT}/templates/conductor.conf_for_etc" "${ETC_DIR}/conductor.conf" 
+
+    for d in admin bin libexec sbin src; do
+        replace_tree "${REPO_ROOT}/${d}" "${INSTALL_DIR}/${d}"
+    done
+    replace_tree "${REPO_ROOT}/templates" "${INSTALL_DIR}/templates"
+    replace_tree "${REPO_ROOT}/examples"  "${INSTALL_DIR}/examples"
+
+    if [ -n "$CHANGED_FILES" ]; then
+        info "changed files:${CHANGED_FILES}"
+    else
+        info "no project files changed"
+    fi
+}
+
+# replace_file: copy src over dst if the content differs. The old
+# file is backed up before being overwritten.
+replace_file() {
+    src="$1"; dst="$2"
+    [ -f "$src" ] || { warn "source missing: $src"; return 0; }
+
+    # Safety net: never write an operator-owned path, even if a future
+    # edit adds one to replace_all by mistake. lib/ownership is the
+    # single source of truth; this makes the classification enforceable
+    # instead of decorative.
+    if is_operator_owned "$dst"; then
+        warn "refusing to replace operator-owned file: $dst"
+        return 0
+    fi
+
+    if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
+        info "unchanged: $dst"
+        return 0
+    fi
+    backup_before_overwrite "$dst"
+    run cp "$src" "$dst"
+    CHANGED_FILES="${CHANGED_FILES} ${dst}"
+    success "replaced $dst"
+}
+
+# replace_tree: replace each file whose content differs, add new
+# files, and classify files present in dst but absent from src.
+#
+# The file list is read from find output via a here-doc, NOT a
+# pipe: a pipe runs the loop in a subshell and CHANGED_FILES
+# would be lost.
+replace_tree() {
+    src="$1"; dst="$2"
+    [ -d "$src" ] || return 0
+    run mkdir -p "$dst"
+
+    # --- replace/add ---
+    list="$(cd "$src" && find . -type f | sort)"
+    prev_dir=""
+    while IFS= read -r rel; do
+        [ -n "$rel" ] || continue
+        rel="${rel#./}"
+        s="${src}/${rel}"
+        d="${dst}/${rel}"
+        if [ -f "$d" ] && cmp -s "$s" "$d"; then
+            continue
+        fi
+        ddir="$(dirname "$d")"
+        if [ "$ddir" != "$prev_dir" ]; then
+            run mkdir -p "$ddir"
+            prev_dir="$ddir"
+        fi
+        backup_before_overwrite "$d"
+        run cp "$s" "$d"
+        CHANGED_FILES="${CHANGED_FILES} ${d}"
+    done <<EOF
+${list}
+EOF
+
+    # --- classify files present in dst but absent from src ---
+    olist="$(cd "$dst" && find . -type f)"
+    while IFS= read -r rel; do
+        [ -n "$rel" ] || continue
+        rel="${rel#./}"
+        [ -f "${src}/${rel}" ] && continue
+        classify_extra "${dst}/${rel}"
+    done <<EOF
+${olist}
+EOF
+}
+
+# classify_extra: a file is present in the install dir but not in
+# the repo. It is NEVER touched -- only reported.
+#
+# If its basename exists elsewhere in the repo, it was a project
+# file that moved or was removed: OBSOLETE_FILES.
+# If its basename is not in the repo, it is the operator's:
+# LEFT_ALONE_FILES.
+classify_extra() {
+    p="$1"
+    base="$(basename "$p")"
+
+    if find "${REPO_ROOT}" -name "$base" -type f 2>/dev/null | grep -q .; then
+        info "obsolete project file (not touched, review by hand): ${p}"
+        OBSOLETE_FILES="${OBSOLETE_FILES} ${p}"
+    else
+        info "not in repo, not a known project file (left alone): ${p}"
+        LEFT_ALONE_FILES="${LEFT_ALONE_FILES} ${p}"
+    fi
+}

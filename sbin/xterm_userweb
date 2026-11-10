@@ -19,16 +19,14 @@
 
 if [ $# -gt 0 ]; then
     nohup /opt/dropQbsd/bin/run_app userweb xterm \
-        -T "userweb" \
-        -bg darkblue -fg white \
+        -T "userweb" -bg darkblue -fg white \
         -fa monospace -fs 12 \
-        -e ksh -c '. /etc/dropQbsd/kshrc; exec "$@"' ksh "$@" \
+        -e "$@" \
         </dev/null >/dev/null 2>&1 &
 else
     nohup /opt/dropQbsd/bin/run_app userweb xterm \
-        -T "userweb" \
-        -bg darkblue -fg white \
+        -T "userweb" -bg darkblue -fg white \
         -fa monospace -fs 12 \
-        -e ksh -c '. /etc/dropQbsd/kshrc; exec ksh -l' \
+        -ls \
         </dev/null >/dev/null 2>&1 &
 fi

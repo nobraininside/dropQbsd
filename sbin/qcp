@@ -34,6 +34,11 @@
 
 set -u
 
+# Conductor account fallback: qmv is invoked via the wrapper, which
+# exports CONDUCTOR_USER. Guard against direct invocation anyway
+# (set -u would abort on an unset variable).
+: "${CONDUCTOR_USER:=conductor}"
+
 DST="/home/drop"
 
 #-----------------------------------------------------------------------------
@@ -60,7 +65,7 @@ TARGET="$1"
 # ARGUMENT VALIDATION
 #-----------------------------------------------------------------------------
 if [ -z "$TARGET" ]; then
-    echo "Usage: qcp <file_or_directory>" >&2
+    echo "Usage: $(basename "$0") <file_or_directory>" >&2
     exit 1
 fi
 
@@ -68,21 +73,6 @@ if [ ! -e "$TARGET" ]; then
     echo "Error: '$TARGET' not found." >&2
     exit 1
 fi
-
-case "$(realpath "$TARGET")" in
-    /home/drop|/home/drop/*)
-        echo "Error: '$TARGET' is already inside the drop zone." >&2
-        exit 1
-        ;;
-esac
-
-case "$(realpath "$TARGET")" in
-    /|/bin|/bin/*|/sbin|/sbin/*|/usr|/usr/*|/etc|/etc/*|\
-    /var|/var/*|/root|/root/*|/tmp|/tmp/*)
-        echo "Error: refusing to operate on system path '$TARGET'." >&2
-        exit 1
-        ;;
-esac
 
 # Refuse to operate on anything already inside /home/drop.
 case "$(realpath "$TARGET")" in
@@ -102,6 +92,15 @@ case "$(realpath "$TARGET")" in
         exit 1
         ;;
 esac
+
+# Guard: never operate on a domain home directory itself.
+TARGET_REAL=$(realpath "$TARGET")
+for h in "/home/$CONDUCTOR_USER" /home/userdoc /home/usermail /home/userweb /root; do
+    if [ "$TARGET_REAL" = "$h" ]; then
+        echo "Error: refusing to operate on '$TARGET' (home directory)." >&2
+        exit 1
+    fi
+done
 
 #-----------------------------------------------------------------------------
 # PREPARE STAGING NAME

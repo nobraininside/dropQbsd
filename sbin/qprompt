@@ -1,0 +1,86 @@
+# ==========================================================
+#  dropQbsd -- qprompt
+#
+#  Run a command with a prompt loop, in the current terminal.
+#
+#  dropQbsd commands are always executed via the wrapper
+#  (sanitized environment, correct shell). qprompt resolves a
+#  name to its script path and runs it through the wrapper.
+#
+#  Generic: works for any dropQbsd command (qinspect, qimport,
+#  qcp, ...) and, as a fallback, for plain system commands
+#  (ls, xterm_userdoc, ...).
+#
+#  SECURITY: qprompt runs as the CALLER (the conductor), with
+#  the caller's privileges -- it does NOT elevate to root and
+#  is NOT the run_app gate. It is a convenience for
+#  interactive use, not an escalation path.
+#
+#  Path: /opt/dropQbsd/sbin/qprompt
+#  Permissions: chmod 755, root:wheel
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    Qprompt <name> [fixed-args...]
+#    Qprompt qinspect
+#    Qprompt qimport
+#    Qprompt ls
+#
+#  Prompts for ONE argument, runs '<wrapper> <script> [args...]
+#  <arg>', loops until empty input.
+# ==========================================================
+
+set -u
+
+WRAPPER="/opt/dropQbsd/libexec/wrapper"
+ROOT="/opt/dropQbsd"
+
+# resolve_name <name> -- print the script path for a dropQbsd command,
+# or the name itself if it is a plain system command (fallback).
+resolve_name() {
+    # 1. Drop the root comment overhead: try sbin/, libexec/, admin/.
+    for d in sbin libexec admin; do
+        if [ -x "$ROOT/$d/$1" ]; then
+            echo "$ROOT/$d/$1"
+            return 0
+        fi
+    done
+    # 2. Fallback: a system command (no wrapper) if it exists.
+    if command -v "$1" >/dev/null 2>&1; then
+        echo "$1"
+        return 0
+    fi
+    return 1
+}
+
+[ $# -ge 1 ] || { echo "Usage: Qprompt <name> [args...]" >&2; exit 1; }
+
+name="$1"; shift
+
+cmd="$(resolve_name "$name")" || {
+    echo "ERROR: '$name' not found in $ROOT/{sbin,libexec,admin}, nor in PATH" >&2
+    exit 1
+}
+
+# Decide whether to use the wrapper. dropQbsd scripts (resolved under
+# $ROOT) go through it; system commands run directly.
+case "$cmd" in
+    "$ROOT"/*) EXEC="$WRAPPER"; SCRIPT="$cmd" ;;
+    *)         EXEC="";        SCRIPT="$cmd" ;;
+esac
+
+while :; do
+    echo ""
+    echo "Argument for '$name' (empty input exits):"
+    printf "> "
+    IFS= read -r arg || exit 0
+    [ -z "$arg" ] && exit 0
+
+    if [ -n "$EXEC" ]; then
+        "$EXEC" "$SCRIPT" "$@" "$arg"
+    else
+        "$SCRIPT" "$@" "$arg"
+    fi
+    echo ""
+done

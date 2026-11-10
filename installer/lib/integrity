@@ -1,0 +1,293 @@
+# ==========================================================
+#  dropQbsd installer -- integrity
+#
+#  Sets up script integrity verification with signify(1), and
+#  verifies the result.
+#
+#  This step is optional and interactive: the private key is
+#  protected by a passphrase that only the operator knows, so
+#  it cannot be automated. Verification itself is public-key
+#  only, so cron never needs the private key.
+#
+#  CRITICAL: signing is delegated to admin/sign_filelist. Do
+#  NOT reimplement the signing here. sign_filelist and
+#  verify_integrity MUST use the same filter and the same
+#  order over /etc/dropQbsd/filelist (skip comments and blank
+#  lines, trim first, hash in filelist order, xargs -0). An
+#  inline "sha256 $(cat filelist) | signify" pipeline does NOT
+#  reproduce that filter -- it passes comments and blank lines
+#  to sha256, word-splits paths with spaces, and produces a
+#  signature verify_integrity will reject. sign_filelist exists
+#  precisely so the filter lives in one place.
+#
+#  The private key is NOT regenerated on re-run: doing so would
+#  invalidate every prior signature. If a key already exists,
+#  the operator is asked before it is replaced.
+#
+#  The file list is NOT signed with verify_integrity in it:
+#  that script is the trust anchor and cannot check itself.
+#
+#  DRY-RUN: the interactive prompts are skipped in dry-run.
+#  Asking questions during a plan-only run serves no purpose;
+#  the plan prints what would happen and assumes "no" for both
+#  the integrity toggle and the key regeneration.
+#
+#  Sourced by install.sh. No shebang, no extension.
+# ==========================================================
+
+setup_integrity() {
+    # In dry-run, do not prompt. Print the plan and stop.
+    if [ "$DRY_RUN" = true ]; then
+        info "[dry-run] would ask: configure script integrity? (yes/no)"
+        info "[dry-run] (assuming 'no' for a plan-only run)"
+        return 0
+    fi
+
+    printf "Configure script integrity with signify? (yes/no): "
+    read answer || answer=no
+    case "$answer" in
+        [Yy]*) : ;;
+        *) info "integrity setup skipped"; return 0 ;;
+    esac
+
+    command -v signify >/dev/null 2>&1 || {
+        warn "signify not found; install it and re-run this step"
+        return 0
+    }
+
+    pub="${INSTALL_DIR}/keys/dropQbsd.pub"
+    sec="/root/dropQbsd.sec"
+    sig="${INSTALL_DIR}/keys/dropQbsd_scripts.sha256.sig"
+    filelist="${ETC_DIR}/filelist"
+    sign="${INSTALL_DIR}/admin/sign_filelist"
+    wrapper="${INSTALL_DIR}/libexec/wrapper"
+
+    [ -f "$filelist" ] || fail "file list missing: $filelist"
+    [ -f "$sign" ] || fail "sign_filelist missing: $sign"
+
+    # --- key pair -------------------------------------------------
+    # Do NOT silently regenerate an existing key: that would invalidate
+    # every prior signature and turn the trust anchor into a moving
+    # target.
+    #
+    # When the operator DOES ask for rotation, it must actually happen.
+    # Answering yes and then re-signing with the old key is worse than
+    # not asking: it looks like a rotation while the compromised key
+    # stays the trust anchor.
+    if [ -f "$sec" ]; then
+        warn "private key already exists: $sec"
+        printf "Regenerate the key pair? This invalidates the current signature. (yes/no): "
+        read answer || answer=no
+        case "$answer" in
+            [Yy]*)
+                # Remove BOTH halves and the detached signature.
+                # signify -G refuses to overwrite an existing key, and
+                # a stale .sig would be verified against the NEW public
+                # key and fail with a confusing mismatch.
+                info "removing the existing key pair and signature"
+                run rm -f "$sec" "$pub"
+                run rm -f "$sig"
+                ;;
+            *)
+                info "keeping the existing key; re-signing below"
+                ;;
+        esac
+    fi
+
+    # --- generate when there is no key ----------------------------
+    # Runs on a fresh install (no key yet) AND after a confirmed
+    # rotation (the rm above removed it).
+    #
+    # This block MUST stay outside the "key exists" branch above:
+    # nesting it inside that branch leaves a fresh install with no
+    # key at all, and sign_filelist then dies with SETUP INCOMPLETE.
+    if [ ! -f "$sec" ]; then
+        info "generating an encrypted key pair (a passphrase will be asked)"
+        run rm -f "$pub"
+        run signify -G -e -p "$pub" -s "$sec"
+        run chmod 600 "$sec"
+    fi
+
+    # --- sign the manifest, via the canonical helper ---------------
+    info "signing the manifest (passphrase may be asked)"
+    run "$wrapper" "$sign"
+
+    check_sh "test -s '$sig'"
+    success "integrity configured: public key at $pub"
+    warn "the private key is at $sec (encrypted). Keep the passphrase elsewhere."
+}
+
+# verify_integrity_setup: run one verification pass now rather
+# than waiting for the first cron cycle (up to 5 minutes of
+# silent failures if the signature is wrong).
+#
+# verify_integrity does NOT exit non-zero on an integrity
+# violation: it reports the result in its log and returns 0.
+# Trusting its exit code would report "passed" on a violation.
+# The check below reads the log's last line instead.
+verify_integrity_setup() {
+    filelist="${ETC_DIR}/filelist"
+    [ -f "$filelist" ] || fail "filelist missing: $filelist"
+    [ -s "$filelist" ] || fail "filelist is empty: $filelist"
+
+    pub="${INSTALL_DIR}/keys/dropQbsd.pub"
+    if [ ! -f "$pub" ]; then
+        info "integrity not configured (no public key); skipping check"
+        return 0
+    fi
+
+    wrapper="${INSTALL_DIR}/libexec/wrapper"
+    verify="${INSTALL_DIR}/libexec/verify_integrity"
+    [ -x "$verify" ] || { warn "verify_integrity missing: $verify"; return 0; }
+
+    if [ "$DRY_RUN" = true ]; then
+        info "[dry-run] skipping integrity verification"
+        return 0
+    fi
+
+    info "running initial integrity verification"
+    "$wrapper" "$verify" || true
+
+    # Read the result from the log, not the exit code. The log's
+    # last line is canonical: "YYYY-MM-DD HH:MM:SS <message>".
+    logfile="/var/log/dropQbsd/verify_integrity.log"
+    if [ -f "$logfile" ] && tail -1 "$logfile" | grep -q "OK - all files verified"; then
+        success "integrity verification passed"
+    else
+        fail "integrity verification did not pass -- check $logfile"
+    fi
+}
+
+# ==========================================================
+# updater variant: update_integrity
+# ==========================================================
+# Re-signs the manifest after an update. It NEVER regenerates the key:
+# the trust anchor must survive updates, or every prior signature
+# becomes meaningless and the operator's verification chain is broken.
+#
+# If no public key exists, the integrity system was never configured;
+# the updater says so and leaves it alone. Enabling integrity is the
+# operator's decision, made at install time.
+#
+# If the private key is missing while the public one is present, the
+# manifest cannot be signed: that is reported, not worked around.
+#
+# If monitored files changed during the update (the scripts are
+# project-owned), the old signature no longer matches, so re-signing is
+# mandatory. This is the expected path, not an error.
+# ==========================================================
+update_integrity() {
+    # Every path this function uses is resolved HERE, before anything
+    # else. `sig` in particular: it is used by the final check, and
+    # under `set -u` a reference to an unassigned variable aborts the
+    # whole updater at step 11 -- after the signature was already
+    # written, and before steps 12-14 ran.
+    pub="${INSTALL_DIR}/keys/dropQbsd.pub"
+    sec="/root/dropQbsd.sec"
+    sig="${INSTALL_DIR}/keys/dropQbsd_scripts.sha256.sig"
+    sign="${INSTALL_DIR}/admin/sign_filelist"
+    wrapper="${INSTALL_DIR}/libexec/wrapper"
+
+    # No public key: integrity was never configured. Not an error.
+    if [ ! -f "$pub" ]; then
+        info "integrity not configured (no public key); skipping re-sign"
+        return 0
+    fi
+
+    # Public key without private key: the chain cannot be rebuilt.
+    # Say what the operator will see, and what to do about it.
+    if [ ! -f "$sec" ]; then
+        warn "public key present but private key missing: $sec"
+        warn " cannot re-sign. Integrity verification will report a"
+        warn " violation until you restore the key and run 'Sign'."
+        return 0
+    fi
+
+    [ -f "$sign" ] || fail "sign_filelist missing: $sign"
+
+    if [ "$DRY_RUN" = true ]; then
+        info "[dry-run] would re-sign the manifest via sign_filelist"
+        return 0
+    fi
+
+    info "re-signing the manifest (passphrase may be asked)"
+    run "$wrapper" "$sign"
+
+    check_sh "test -s '$sig'"
+    success "manifest re-signed"
+}
+
+# check_filelist_coverage: verify that the integrity filelist is
+# coherent.
+#
+# Two checks:
+#   1. Every file the install ships (from templates/filelist_for_etc)
+#      is present in the installed filelist. A shipped file missing
+#      from the list is a SILENT monitoring gap: verify_integrity
+#      will never check it. This is a fail.
+#
+#   2. Every file the installed filelist references actually exists.
+#      Paths relative to /opt/dropQbsd are resolved against it;
+#      absolute paths are used as-is. A reference to a missing file
+#      means the filelist is stale. This is a warn (the file may
+#      have been removed by an update, or renamed).
+#
+# The installed filelist may contain MORE entries than the template
+# (the operator may monitor custom files); that is allowed. It may
+# not contain FEWER (the project guarantees the shipped files are
+# protected).
+check_filelist_coverage() {
+    filelist="${ETC_DIR}/filelist"
+    tpl="${REPO_ROOT}/templates/filelist_for_etc"
+    missing=0
+    stale=0
+
+    [ -f "$filelist" ] || fail "filelist missing: $filelist"
+
+    # --- 1. Every shipped file is listed --------------------------
+    #
+    # The template is the source of truth for what the project ships.
+    # A shipped file missing from the installed filelist is a SILENT
+    # monitoring gap: verify_integrity will never look at it.
+    #
+    # Trim BEFORE the comment check (INSTALL_MANUAL.md 14): an
+    # indented comment ("  # note") must still be skipped, or it is
+    # treated as a path and reported as a missing file.
+    if [ -f "$tpl" ]; then
+        while IFS= read -r line; do
+            line=$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            case "$line" in
+                ''|\#*) continue ;;
+            esac
+            if ! grep -qxF "$line" "$filelist" 2>/dev/null; then
+                warn "filelist does not monitor shipped file: $line"
+                missing=$((missing + 1))
+            fi
+        done < "$tpl"
+    else
+        warn "template not found, skipping shipped-coverage check: $tpl"
+    fi
+
+    # --- 2. Every listed file exists ------------------------------
+    while IFS= read -r line; do
+        line=$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        case "$line" in
+            ''|\#*) continue ;;
+            /*) path="$line" ;;
+            *)  path="${INSTALL_DIR}/${line}" ;;
+        esac
+        if [ ! -f "$path" ]; then
+            warn "filelist references a missing file: $path"
+            stale=$((stale + 1))
+        fi
+    done < "$filelist"
+
+    if [ "$missing" -gt 0 ]; then
+        fail "$missing shipped file(s) missing from filelist"
+    fi
+    if [ "$stale" -gt 0 ]; then
+        warn "$stale filelist reference(s) point at missing files"
+    else
+        info "filelist coherent: all referenced files exist"
+    fi
+}

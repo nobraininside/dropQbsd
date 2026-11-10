@@ -1,5 +1,5 @@
 # ==========================================================
-#  dropQbsd -- local.conf
+#  dropQbsd -- local.conf.example
 #
 #  YOUR local configuration. One file, one source of truth
 #  for all of dropQbsd.
@@ -78,7 +78,6 @@ mirrors = 151.101.0.0/16 199.232.0.0/16 23.235.32.0/20 104.156.80.0/20
 [mailserver]
 # hosts = mail.example.com imap.example.com smtp.example.com
 
-
 # ----------------------------------------------------------
 # [services] -- YOUR EXTERNAL SERVICES (OPTIONAL)
 # ----------------------------------------------------------
@@ -93,7 +92,6 @@ mirrors = 151.101.0.0/16 199.232.0.0/16 23.235.32.0/20 104.156.80.0/20
 # Uncomment and replace the example values:
 [services]
 # hosts = 198.51.100.10 @ssh.github.com
-
 
 # ----------------------------------------------------------
 # [extra.*] -- YOUR PERSONAL EXCEPTIONS (OPTIONAL)
@@ -112,3 +110,60 @@ mirrors = 151.101.0.0/16 199.232.0.0/16 23.235.32.0/20 104.156.80.0/20
 # Example: SSH toward the LAN (adjust port if non-standard)
 # [extra.userdoc]
 # allow = tcp:22@lan
+
+# ----------------------------------------------------------
+# [sync] -- ARCHIVE DIRECTORIES
+# ----------------------------------------------------------
+# Where the export scripts read from, and where the import
+# scripts write to. If a value is omitted, the default is used.
+#
+# Export sources (read by export_www_to_drop / export_mail_to_drop):
+#   www_src   -- default /home/userweb/www
+#   mail_src  -- default /home/usermail/.mail
+#
+# Import destination (read by import_www_from_drop /
+# import_mail_from_drop):
+#   dst       -- default /home/userdoc/Sync
+[sync]
+dst      = /home/userdoc/Sync
+www_src  = /home/userweb/www
+mail_src = /home/usermail/.mail
+
+# ----------------------------------------------------------
+# [qmenu] -- APPS IN DROPQBSD MENU 
+# ---------------------------------------------------------
+
+[qmenu]
+CONDUCTOR
+/opt/dropQbsd/bin/run_app qattach userdoc | Qattach ~ attach file or folder from userdoc
+/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_conductor /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qcontrol | Qcontrol ~ monitor domains and drop
+/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_conductor /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qfile | Qfile ~ cross-domain file manager
+/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_conductor /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qprompt qinspect | Qinspect ~ check drop before import
+/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qsite | Qsite ~ website password manager
+xfe | Xfe (conductor)
+xkill | Xkill
+/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_conductor | Xterm (conductor)
+ROOT
+/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_root | Xterm (root)
+USERDOC
+/opt/dropQbsd/bin/run_app userdoc /usr/local/bin/gimp-3.0 | Gimp
+/opt/dropQbsd/bin/run_app userdoc keepassxc %f | KeePassXC
+/opt/dropQbsd/bin/run_app userdoc /usr/local/bin/soffice | LibreOffice
+/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_userdoc mc | MC (userdoc)
+/opt/dropQbsd/bin/run_app userdoc /usr/local/bin/qutebrowser --temp-basedir http://127.0.0.1:8384 | Syncthing Web
+/opt/dropQbsd/bin/run_app userdoc xfe | Xfe (userdoc)
+/opt/dropQbsd/bin/run_app userdoc /usr/local/bin/xpdf | Xpdf
+/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_userdoc | Xterm (userdoc)
+USERMAIL
+/opt/dropQbsd/bin/run_app usermail claws-mail | Claws Mail
+/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_usermail mc | MC (usermail)
+/opt/dropQbsd/bin/run_app usermail thunderbird | Thunderbird
+/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_usermail | Xterm (usermail)
+USERWEB
+/opt/dropQbsd/bin/run_app userweb /usr/local/bin/librewolf --temp-profile https://qwant.com | Librewolf (disposable)
+/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_userweb mc | MC (userweb)
+/opt/dropQbsd/bin/run_app userweb /usr/local/bin/qutebrowser --temp-basedir https://qwant.com | Qutebrowser (disposable)
+/opt/dropQbsd/bin/run_app userweb /usr/local/bin/ungoogled-chromium --temp-profile https://qwant.com | Ungoogled Chromium (disposable)
+/opt/dropQbsd/bin/run_app userweb xfe | Xfe (userweb)
+/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_userweb | Xterm (userweb)
+

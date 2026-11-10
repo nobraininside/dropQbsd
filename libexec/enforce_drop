@@ -121,17 +121,15 @@ CYCLE_FILES=0
 # 1. MAIN SANITIZATION LOOP
 #-----------------------------------------------------------------------------
 for item in * .*; do
-
-    [[ "$item" == "." || "$item" == ".." ]] && continue
-
-    # Skip special directories
-    [[ "$item" == "_quarantine" ]] && continue
-    [[ "$item" == *"_export" ]] && continue
-
-    # Skip qcp/qmv staging directories: they are private (700) and
-    # still in use. Changing their permissions would break the
-    # pending mv. Abandoned ones are collected below by age.
-    [[ "$item" == .staging.* ]] && continue
+    # Skip: dot entries ('.' / '..'), the quarantine dir, export
+    # dirs, and qcp/qmv staging dirs (private, still in use --
+    # changing their permissions would break the pending mv;
+    # abandoned ones are collected below by age).
+    case "$item" in
+        .|..|_quarantine) continue ;;
+        *_export) continue ;;
+        .staging.*) continue ;;
+    esac 
 
     #---------------------------------------------------------------------
     # 1a. GRACE PERIOD -- skip files younger than GRACE_MIN
@@ -267,9 +265,9 @@ find "$DROP_DIR" -maxdepth 1 -type d -name '.staging.*' -mmin +60 \
 exdir="$DROP_DIR/usermail_export"
 if [ -d "$exdir" ]; then
     find "$exdir" -type f -name 'mail_*.tar.gz' -mmin +360 -delete 2>/dev/null
-    find "$exdir" $ ! -user root -o ! -group drop $ -exec chown root:drop {} + 2>/dev/null
+    find "$exdir" \( ! -user root -o ! -group drop \) -exec chown root:drop {} + 2>/dev/null
     find "$exdir" -type d ! -perm 2770 -exec chmod 2770 {} + 2>/dev/null
-    # NEVER touch *.tmp: atomic-publish in progress (see INSTALL.md)
+    # NEVER touch *.tmp: atomic-publish in progress (see INSTALL_MANUAL.md)
     find "$exdir" -type f ! -name '*.tmp' ! -perm 440 -exec chmod 440 {} + 2>/dev/null
 fi
 
@@ -277,7 +275,7 @@ fi
 exdir="$DROP_DIR/userweb_export"
 if [ -d "$exdir" ]; then
     find "$exdir" -type f -name 'www_*.tar.gz' -mmin +240 -delete 2>/dev/null
-    find "$exdir" $ ! -user root -o ! -group drop $ -exec chown root:drop {} + 2>/dev/null
+    find "$exdir" \( ! -user root -o ! -group drop \) -exec chown root:drop {} + 2>/dev/null
     find "$exdir" -type d ! -perm 2770 -exec chmod 2770 {} + 2>/dev/null
     find "$exdir" -type f ! -name '*.tmp' ! -perm 440 -exec chmod 440 {} + 2>/dev/null
 fi

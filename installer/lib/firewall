@@ -1,0 +1,231 @@
+# ==========================================================
+#  dropQbsd installer -- firewall
+#
+#  Generates and applies the firewall, then populates the
+#  PF tables.
+#
+#  Order is load-bearing (INSTALL_MANUAL.md §7):
+#    1. gen_fwall  -- emit /etc/pf.conf from policy
+#    2. pfctl -nf  -- syntax-check WITHOUT loading
+#    3. pfctl -f   -- apply
+#    4. update_*   -- populate the persist tables
+#
+#  gen_fwall MUST be invoked through the wrapper: its header
+#  forbids direct execution ("Do NOT run it directly"). The
+#  wrapper sanitizes the environment and selects the shell.
+#
+#  Why step 4 is mandatory, not cosmetic: pfctl -f empties
+#  ALL persistent tables, not just <updates>. Without
+#  repopulating <mailserver> and <services>, usermail and
+#  userweb stay offline until their next cron cycle. The
+#  admin scripts (patch/pkg/update/upgrade) do the same
+#  repopulation after their own pfctl -f for the same reason.
+#
+#  Exit-code handling for the table scripts (verified against
+#  the v0.3.0 scripts):
+#    0  success, including "nothing to do" (section absent)
+#    2  not running as root -- a real failure
+#    3  FATAL: the table could not be populated. In
+#       ensure_updates_table this means no mirrors resolved,
+#       no IPs resolved, or the table is empty after replace.
+#       It is NOT a lock. A lock concept does not exist in
+#       these scripts. Exit 3 must STOP the install: a live
+#       firewall with an empty <updates> table silently breaks
+#       system updates later.
+#    *  real failure -- stop the install
+#
+#  A firewall that fails to load leaves the system without
+#  protection, so a failure here stops the install.
+#
+#  Sourced by install.sh. No shebang, no extension.
+# ==========================================================
+
+# verify_local_conf: read the sections the table scripts and gen_fwall
+# need. [network] is REQUIRED (INSTALL_MANUAL.md 6): without it,
+# gen_fwall dies on '@lan' and userdoc loses its LAN rules. The other
+# three are OPTIONAL -- their scripts exit 0 with "nothing to do".
+#
+# Returns non-zero ONLY when a required section is missing, so the
+# caller can defer the firewall instead of aborting.
+verify_local_conf() {
+    lc="${ETC_DIR}/local.conf"
+    [ -f "$lc" ] || fail "local.conf missing: $lc"
+
+    if grep -q -F "[network]" "$lc"; then
+        info "local.conf: [network] present"
+    else
+        warn "local.conf has no [network] section (REQUIRED)"
+        return 1
+    fi
+
+    for section in mailserver services updates; do
+        if grep -q -F "[${section}]" "$lc"; then
+            info "local.conf: [${section}] present"
+        else
+            warn "local.conf has no [${section}] section (optional)"
+        fi
+    done
+    return 0
+}
+
+# setup_firewall -- generate and apply the PF firewall.
+#
+# The firewall is DERIVED from /etc/dropQbsd/local.conf. If that file
+# is stale or malformed (mid-migration, unknown sections, a required
+# value missing), the firewall cannot be generated or applied safely.
+# This is NOT fatal to the update: the rest proceeds, and the operator
+# regenerates the firewall after fixing local.conf.
+#
+# A firewall that is not applied is always REPORTED, never skipped
+# silently. The operator is told exactly what to do: fix local.conf
+# and run "Gen <backend>".
+setup_firewall() {
+    wrapper="${INSTALL_DIR}/libexec/wrapper"
+    gen="${INSTALL_DIR}/admin/gen_fwall"
+    [ -x "$wrapper" ] || fail "wrapper missing: $wrapper"
+    [ -x "$gen" ] || fail "gen_fwall missing: $gen"
+
+    # 0. Sanity-check the config the table scripts will read.
+    # Read-only, so it runs in dry-run too: the operator learns NOW
+    # that the config is unusable, not after the update.
+    if ! verify_local_conf; then
+        warn "FIREWALL NOT APPLIED: local.conf failed validation."
+        warn " Fix /etc/dropQbsd/local.conf (compare with local.conf.example)"
+        warn " then run: Gen $FW_BACKEND"
+        FIREWALL_PENDING=1
+        return 0
+    fi
+
+    # Plan-only run: print what would happen and STOP.
+    # gen_fwall is not wrapped in run(), so without this gate a
+    # --dry-run would rewrite /etc/pf.conf. A plan that mutates the
+    # live ruleset file is not a plan.
+    if [ "$DRY_RUN" = true ]; then
+        info "[dry-run] would run: $wrapper $gen $FW_BACKEND"
+        info "[dry-run] would verify: pfctl -nf /etc/pf.conf"
+        info "[dry-run] would apply: pfctl -f /etc/pf.conf"
+        info "[dry-run] would populate: update_mailserver_table update_services_table ensure_updates_table"
+        return 0
+    fi
+
+    # 1. Generate. gen_fwall writes atomically (tmp + mv), so a
+    # failure leaves /etc/pf.conf untouched.
+    if ! gen_output=$("$wrapper" "$gen" "$FW_BACKEND" 2>&1); then
+        warn "FIREWALL NOT APPLIED: gen_fwall failed."
+        warn " $gen_output"
+        warn " Fix /etc/dropQbsd/local.conf (compare with local.conf.example)"
+        warn " then run: Gen $FW_BACKEND"
+        FIREWALL_PENDING=1
+        return 0
+    fi
+
+    # Surface the pf.conf backup path gen_fwall reports on stderr.
+    case "$gen_output" in
+        *"Backed up"*)
+            bak_line=$(printf '%s\n' "$gen_output" | grep "Backed up" | tail -1)
+            info "$bak_line"
+            ;;
+    esac
+
+    # 2. Verify a ruleset was actually produced.
+    #
+    # These are DEFERRAL checks, not assertions: a bad ruleset must
+    # warn and skip the firewall, never abort the run (INSTALL_MANUAL
+    # 11). check / check_sh CANNOT be used here -- both call fail(),
+    # which exits, and made every branch below unreachable.
+    if [ ! -s /etc/pf.conf ]; then
+        warn "FIREWALL NOT APPLIED: no pf.conf produced."
+        warn " Fix /etc/dropQbsd/local.conf and run: Gen $FW_BACKEND"
+        FIREWALL_PENDING=1
+        return 0
+    fi
+    if ! grep -q 'Generated by gen_fwall' /etc/pf.conf; then
+        warn "FIREWALL NOT APPLIED: pf.conf is not a gen_fwall ruleset."
+        warn " Run: Gen $FW_BACKEND"
+        FIREWALL_PENDING=1
+        return 0
+    fi
+
+    # 3. Syntax check -- never apply a broken ruleset.
+    if ! pfctl -nf /etc/pf.conf; then
+        warn "FIREWALL NOT APPLIED: pfctl -nf rejected the ruleset."
+        warn " This is a dropQbsd bug or a malformed local.conf."
+        warn " Fix /etc/dropQbsd/local.conf and run: Gen $FW_BACKEND"
+        FIREWALL_PENDING=1
+        return 0
+    fi
+
+    # 4. Apply. This empties every persistent table.
+    run pfctl -f /etc/pf.conf
+
+    # 5. Repopulate the tables. Order matters: ensure_updates_table
+    # is the one the admin scripts depend on, and it does its own
+    # final empty-table check.
+    populate_table update_mailserver_table
+    populate_table update_services_table
+    populate_table ensure_updates_table
+    success "firewall generated, applied, tables populated"
+}
+
+# populate_table: run a table script through the wrapper and
+# interpret its exit code. run() cannot be used here: it would
+# abort on any non-zero exit, but we need to distinguish exit 2
+# (not root) and exit 3 (fatal, table empty) from a generic
+# failure for a clearer message.
+populate_table() {
+    name="$1"
+    script="${INSTALL_DIR}/libexec/${name}"
+    wrapper="${INSTALL_DIR}/libexec/wrapper"
+
+    if [ ! -x "$script" ]; then
+        warn "table script missing: $name"
+        return 0
+    fi
+
+    log "EXEC: $wrapper $script"
+
+    if [ "$DRY_RUN" = true ]; then
+        printf "${BLUE}[dry-run]${NC} %s %s\n" "$wrapper" "$script"
+        return 0
+    fi
+
+    # Run the script and CAPTURE its exit code.
+    #
+    # 'cmd; rc=$?' does NOT work under 'set -e': a non-zero exit
+    # terminates the shell at 'cmd', so 'rc=$?' never runs and the
+    # case below never fires -- the operator gets no diagnosis at
+    # all, only a silent exit with the script's code.
+    #
+    # Wrapping the call in an 'if' suspends set -e for that one
+    # command. That is the portable way to read a status.
+    if "$wrapper" "$script"; then
+        rc=0
+    else
+        rc=$?
+    fi
+
+    case "$rc" in
+        0)
+            success "$name: done"
+            ;;
+        2)
+            fail "$name: must run as root (exit 2)"
+            ;;
+        3)
+            # FATAL: the table could not be populated. The firewall is
+            # already applied, so the service it gates is offline until
+            # the table is filled. Say so, and say how to fix it.
+            warn "$name: could not populate its table (exit 3)"
+            warn " See /var/log/dropQbsd/${name}.log"
+            warn " The firewall is applied but the table is empty: the service"
+            warn " it gates (mail / web / updates) stays offline until repopulated."
+            warn " Fix /etc/dropQbsd/local.conf, then run: ${script##*/}"
+            fail "$name: table not populated"
+            ;;
+        *)
+            fail "$name failed (exit $rc)"
+            ;;
+    esac
+}
+
+

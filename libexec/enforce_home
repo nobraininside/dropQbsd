@@ -1,0 +1,104 @@
+# ==========================================================
+#  dropQbsd -- enforce_home
+#
+#  Enforces the correct owner, group and mode on the domain
+#  home directories and /root.
+#
+#  The drop zone (/home/drop) and the Sync folder are handled
+#  by enforce_drop and enforce_sync respectively. This script
+#  covers the homes themselves.
+#
+#  The conductor account is RENAME-PROOF: it is derived from
+#  the GECOS marker "dropQbsd_conductor", not hardcoded by
+#  name. This script derives it the same way the installer
+#  and updater do, with "conductor" as the fallback for
+#  pre-GECOS installs. The run_app gate resolves it the same
+#  way, so renaming the account is safe.
+#
+#  Rule per home:
+#    /home/<conductor> -> <conductor>:<conductor> 700
+#    /home/userdoc     -> userdoc:userdoc 700
+#    /home/usermail    -> usermail:usermail 700
+#    /home/userweb     -> userweb:userweb 700
+#    /root             -> root:wheel   700
+#
+#  The group is the user's OWN group, NOT drop: the drop group
+#  is the shared channel for the drop zone only. A home with
+#  mode 700 is private to its owner; the group is irrelevant, so
+#  it is set to the user's own group for clarity.
+#
+#  The CONTENT of a home is NOT touched: a 700 home protects its
+#  files regardless of their individual modes. Forcing every file
+#  to 600 would break legitimate 644 files (e.g. dotfiles).
+#
+#  Path: /opt/dropQbsd/libexec/enforce_home
+#  Permissions: chmod 755, root:wheel
+#  Cron: * * * * * via the wrapper (like enforce_drop/enforce_sync)
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#  /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/enforce_home
+#  OR
+#  Enhome
+# ==========================================================
+
+LOG="/var/log/dropQbsd/enforce_home.log"
+
+# Conductor account (derived from GECOS, single source of truth).
+# Cron runs this script with a minimal environment, so CONDUCTOR_USER
+# is not inherited; derive it here. Fallback to "conductor" if no
+# account carries the marker (pre-GECOS install).
+CONDUCTOR_USER="${CONDUCTOR_USER:-$(getent passwd | awk -F: 'index($5, "dropQbsd_conductor") > 0 {print $1; exit}')}"
+CONDUCTOR_USER="${CONDUCTOR_USER:-conductor}"
+
+log() {
+    printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$LOG"
+}
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Must run as root." >&2
+    exit 2
+fi
+
+count=0
+
+# enforce: owner, group, mode on one home. Fix only what is wrong
+# and count what is fixed.
+enforce() {
+    h="$1"; owner="$2"; group="$3"
+
+    [ -d "$h" ] || return 0
+
+    mode=$(stat -f '%Lp' "$h" 2>/dev/null)
+    if [ "$mode" != "700" ]; then
+        chmod 700 "$h"
+        log "fixed mode: $h (was ${mode:-?})"
+        count=$((count+1))
+    fi
+
+    cur_owner=$(stat -f '%Su' "$h" 2>/dev/null)
+    if [ "$cur_owner" != "$owner" ]; then
+        chown "$owner" "$h"
+        log "fixed owner: $h (was ${cur_owner:-?})"
+        count=$((count+1))
+    fi
+
+    cur_group=$(stat -f '%Sg' "$h" 2>/dev/null)
+    if [ "$cur_group" != "$group" ]; then
+        chgrp "$group" "$h"
+        log "fixed group: $h (was ${cur_group:-?})"
+        count=$((count+1))
+    fi
+}
+
+enforce "/home/$CONDUCTOR_USER"  "$CONDUCTOR_USER"  "$CONDUCTOR_USER"
+enforce /home/userdoc    userdoc    userdoc
+enforce /home/usermail   usermail   usermail
+enforce /home/userweb    userweb    userweb
+enforce /root            root       wheel
+
+log "cycle complete: fixed=$count"
+exit 0
+
+

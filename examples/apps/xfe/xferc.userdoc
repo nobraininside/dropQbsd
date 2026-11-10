@@ -12,7 +12,7 @@ xterm="xterm -bg darkgreen -fg white -fa monospace -fs 12"
 videoplayer=vlc
 
 [SETTINGS]
-# Domain color scheme (see INSTALL.md, color scheme convention)
+# Domain color scheme (see INSTALL_MANUAL.md, color scheme convention)
 listforecolor=Gray100
 highlightcolor=DarkGreen
 listbackcolor=DarkGreen

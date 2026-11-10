@@ -1,0 +1,69 @@
+# ==========================================================
+#  dropQbsd -- login.conf_append 
+#
+#  Appended to /etc/login.conf by the installer. Defines one
+#  resource class per domain user, plus the conductor.
+#
+#  The class name matches the user name, so `su -l <user>`
+#  picks it up automatically (the login class defaults to the
+#  user's name when no explicit class is set in master.passwd).
+#
+#  After appending, login.db MUST be rebuilt:
+#      cap_mkdb /etc/login.conf
+#  A stale login.db silently ignores the new classes.
+#
+#  Marker "dropQbsd" below makes the installer's append_once
+#  idempotent: re-running does not duplicate these classes.
+# ==========================================================
+
+# --- dropQbsd: userdoc (Syncthing, LAN file sync) ----------
+# Syncthing keeps many files open across sync folders; the
+# default openfiles limit is far too low and makes sync stall.
+userdoc:\
+    :openfiles-cur=32768:\
+    :openfiles-max=32768:\
+    :tc=daemon:
+
+# --- dropQbsd: usermail (large mail archives) --------------
+# Compressing 40+ GB archives needs extra memory and file
+# descriptors; the default datasize truncates the operation.
+usermail:\
+    :openfiles-cur=32768:\
+    :openfiles-max=32768:\
+    :datasize-cur=2048M:\
+    :datasize-max=4096M:\
+    :memoryuse=2048M:\
+    :vmemoryuse=4096M:\
+    :stacksize-cur=128M:\
+    :stacksize-max=128M:\
+    :memorylocked-max=256M:\
+    :maxproc-cur=256:\
+    :maxproc-max=512:\
+    :tc=default:
+
+# --- dropQbsd: userweb (browser, many tabs) ----------------
+# Multiple browser tabs under a disposable tmpfs session need
+# generous file and process limits.
+userweb:\
+    :openfiles-cur=8192:\
+    :openfiles-max=16384:\
+    :datasize-cur=1024M:\
+    :datasize-max=2048M:\
+    :memoryuse=1024M:\
+    :vmemoryuse=2048M:\
+    :maxproc-cur=256:\
+    :maxproc-max=512:\
+    :tc=default:
+
+# --- dropQbsd: user (conductor) ----------------------------
+# The conductor orchestrates; modest limits are enough.
+conductor:\
+    :openfiles-cur=4096:\
+    :openfiles-max=8192:\
+    :datasize-cur=512M:\
+    :datasize-max=1G:\
+    :stacksize-cur=8M:\
+    :stacksize-max=64M:\
+    :memoryuse-cur=512M:\
+    :memoryuse-max=1G:\
+    :tc=default:

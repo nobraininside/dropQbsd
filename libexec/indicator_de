@@ -1,0 +1,198 @@
+# ==========================================================
+#  dropQbsd -- indicator_de
+#
+#  OSD popup on domain change.
+#
+#  Path: /opt/dropQbsd/libexec/indicator_de
+#  Permissions: chmod 755, root:wheel
+#
+#  Requirements: xfce4, dzen2, xdotool
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/indicator_de
+#    OR
+#    Indicator
+#
+#  Portability notes:
+#  - Font: this dzen2 is built WITHOUT Xft, so it needs an
+#    XLFD pattern, not a fontconfig name ('DejaVu Sans:size=24'
+#    fails with "cannot load font"). pick_font selects a valid
+#    XLFD from the server via xlsfonts: the largest -fixed-
+#    family, else the largest of any family, else 'fixed'.
+#  - HOME: the wrapper unsets HOME; dzen2/fontconfig expect it.
+#    Rebuilt below from /etc/passwd via the real uid.
+#  - dzen2 is launched in a detached subshell: a backgrounded
+#    child in a tight loop would otherwise be killed by SIGHUP
+#    before it maps its window.
+#  - OSD contrast: the domain color is the BACKGROUND, text is
+#    white -- dark text on black was illegible.
+#  - Lock: single-instance, uid-keyed, in ${XDG_RUNTIME_DIR:-/tmp}
+#    (not /var/run, which is root-only), with an age TTL so a
+#    killed run (SIGKILL cannot be trapped) is reclaimed instead
+#    of blocking the indicator forever.
+#  - dzen2 may emit "free(): bogus pointer" at exit on some
+#    builds (known package bug, after render); ulimit -c 0 in
+#    the subshell suppresses the core dump. Harmless.
+# ==========================================================
+
+# Conductor is rename-proof: resolve from the GECOS marker.
+# Fall back to 'conductor' only if no account carries the marker.
+CONDUCTOR_USER="${CONDUCTOR_USER:-$(getent passwd | awk -F: 'index($5, "dropQbsd_conductor") >0 {print $1; exit}')}"
+CONDUCTOR_USER="${CONDUCTOR_USER:-conductor}"
+
+# indicator lock -- in a user-writable location, since the
+# indicator runs as the domain user, not root. Single-instance,
+# uid-keyed, with an age TTL for orphaned locks (SIGKILL).
+LOCK="${XDG_RUNTIME_DIR:-/tmp}/indicator_de.$(id -u).lock"
+LOCK_MAX_AGE=120        # seconds; reclaim an orphaned lock this old
+if ! mkdir "$LOCK" 2>/dev/null; then
+    # Lock exists. Reclaim if it is stale (owner killed).
+    if [ -d "$LOCK" ]; then
+        lock_age=$(stat -f '%m' "$LOCK" 2>/dev/null)   # BSD stat: mtime epoch
+        now=$(date +%s)
+        if [ $(( now - lock_age )) -gt "$LOCK_MAX_AGE" ]; then
+            rmdir "$LOCK" 2>/dev/null || exit 0
+            mkdir "$LOCK" 2>/dev/null || exit 0
+        else
+            exit 0   # another instance is alive
+        fi
+    else
+        exit 0
+    fi
+fi
+trap 'rmdir "$LOCK" 2>/dev/null; exit 0' EXIT INT TERM
+
+# The wrapper unsets HOME. dzen2 (via fontconfig) needs it.
+# Rebuild it from /etc/passwd using the real uid -- never from
+# the environment.
+HOME=$(awk -F: -v u="$(id -u)" '$3==u {print $6}' /etc/passwd)
+export HOME
+
+last_owner=""
+last_change=0
+
+find_owner() {
+    typeset wid="$1" pid owner uid wm_name wm_class ps_flag
+    # ps user-filter flag differs: OpenBSD -U, FreeBSD -u
+    if [ "$(uname -s)" = "FreeBSD" ]; then
+        ps_flag="-u"
+    else
+        ps_flag="-U"
+    fi
+    # 1. Window title -- exact domain matches.
+    #    The conductor is matched by name (from GECOS derivation)
+    #    and reported as the logical "conductor" (black color).
+    wm_name=$(xprop -id "$wid" WM_NAME 2>/dev/null | cut -d'"' -f2)
+    case "$wm_name" in
+        "userweb"|"userweb "*|*" userweb") echo "userweb"; return ;;
+        "usermail"|"usermail "*|*" usermail") echo "usermail"; return ;;
+        "userdoc"|"userdoc "*|*" userdoc") echo "userdoc"; return ;;
+        "$CONDUCTOR_USER"|"$CONDUCTOR_USER "*|*" $CONDUCTOR_USER") echo "conductor"; return ;;
+        "root"|"root "*|*" root") echo "root"; return ;;
+    esac
+    # 2. Window title contains [root@] -- shell prompt betrays root
+    case "$wm_name" in
+        *"[root@"*) echo "root"; return ;;
+    esac
+    # 3. _NET_WM_PID
+    pid=$(xprop -id "$wid" _NET_WM_PID 2>/dev/null | awk '{print $NF}')
+    if [ -n "$pid" ] && [ "$pid" -gt 0 ] 2>/dev/null; then
+        uid=$(ps -o uid= -p "$pid" 2>/dev/null | tr -d ' ')
+        owner=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
+        if [ "$uid" = "0" ]; then echo "root"; return; fi
+        case "$owner" in
+            userweb|usermail|userdoc|"$CONDUCTOR_USER") echo "$owner"; return ;;
+        esac
+    fi
+    # 4. WM_CLASS fallback for xfe/Thunar
+    wm_class=$(xprop -id "$wid" WM_CLASS 2>/dev/null | cut -d'"' -f2)
+    case "$wm_class" in
+        "xfe"|"Xfe"|"Thunar"|"thunar")
+            for domain in userweb usermail userdoc; do
+                if ps "$ps_flag" "$domain" -o comm= 2>/dev/null | grep -qi "$wm_class"; then
+                    echo "$domain"; return
+                fi
+            done
+            ;;
+    esac
+    echo "unknown"
+}
+
+# pick_font: choose a core X font that exists on this server.
+# dzen2 is built without Xft, so it needs an XLFD pattern.
+pick_font() {
+    typeset cand
+    cand=$(xlsfonts 2>/dev/null \
+        | grep -- "-fixed-" \
+        | awk -F- '{print $10, $0}' \
+        | sort -rn \
+        | head -1 \
+        | cut -d' ' -f2-)
+    if [ -n "$cand" ]; then
+        printf '%s' "$cand"; return
+    fi
+    cand=$(xlsfonts 2>/dev/null \
+        | awk -F- '{print $10, $0}' \
+        | sort -rn \
+        | head -1 \
+        | cut -d' ' -f2-)
+    if [ -n "$cand" ]; then
+        printf '%s' "$cand"; return
+    fi
+    printf '%s' "fixed"
+}
+
+FONT=$(pick_font)
+
+while true; do
+    raw=$(xprop -root _NET_ACTIVE_WINDOW 2>/dev/null)
+    active_id=$(echo "$raw" | sed 's/.*window id # //' | cut -d',' -f1 | tr -d ' ')
+    if [ -z "$active_id" ] || [ "$active_id" = "0x0" ]; then
+        last_owner=""
+        sleep 0.5
+        continue
+    fi
+    owner=$(find_owner "$active_id")
+    now=$(date +%s)
+    if [ "$owner" != "$last_owner" ] && [ -n "$owner" ] && [ "$owner" != "unknown" ]; then
+        if [ $(( now - last_change )) -gt 1 ]; then
+            case "$owner" in
+                userweb)    bg_color="#00008B"; text_color="#FFFFFF" ;;
+                usermail)   bg_color="#9F32CC"; text_color="#FFFFFF" ;;
+                userdoc)    bg_color="#006400"; text_color="#FFFFFF" ;;
+                conductor|"$CONDUCTOR_USER") bg_color="#000000"; text_color="#FFFFFF" ;;
+                root)       bg_color="#8B0000"; text_color="#FFFFFF" ;;
+                *)          bg_color="#333333"; text_color="#FFFFFF" ;;
+            esac
+            geom=$(xdotool getwindowgeometry "$active_id" 2>/dev/null)
+            if [ -n "$geom" ]; then
+                wx=$(echo "$geom" | grep "Position" | awk '{print $2}' | cut -d',' -f1)
+                wy=$(echo "$geom" | grep "Position" | awk '{print $2}' | cut -d',' -f2)
+                ww=$(echo "$geom" | grep "Geometry" | awk '{print $2}' | cut -d'x' -f1)
+                wh=$(echo "$geom" | grep "Geometry" | awk '{print $2}' | cut -d'x' -f2)
+                if [ -n "$wx" ] && [ -n "$ww" ] && [ -n "$wy" ] && [ -n "$wh" ]; then
+                    px=$(( wx + ww/2 - 200 ))
+                    py=$(( wy + wh/2 - 40 ))
+                    [ "$px" -lt 0 ] && px=0
+                    [ "$py" -lt 0 ] && py=0
+                else
+                    px=200; py=200
+                fi
+            else
+                px=200; py=200
+            fi
+            # Detached subshell: backgrounded dzen2 in a tight loop
+            # can be killed by SIGHUP before it maps. ulimit -c 0
+            # suppresses core dumps from dzen2's known double-free
+            # at cleanup (cosmetic; harmless).
+            ( ulimit -c 0; echo "^bg(${bg_color}) ^fg(${text_color}) ${owner} ^fg()^bg()" | \
+              dzen2 -p 1 -x "$px" -y "$py" -h 60 -w 400 -ta c \
+                   -fn "$FONT" >/dev/null 2>&1 & )
+            last_change=$now
+        fi
+        last_owner="$owner"
+    fi
+    sleep 0.5
+done

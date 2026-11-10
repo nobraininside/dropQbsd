@@ -1,0 +1,8 @@
+C   Copy to drop
+    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qcp %f
+
+M   Move to drop
+    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qmv %f
+
+I   Import from drop
+    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qimport %f

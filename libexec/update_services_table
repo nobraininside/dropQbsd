@@ -4,9 +4,17 @@
 #  Populates the <services> PF table from
 #  /etc/dropQbsd/local.conf, section [services], key "hosts".
 #  Supports static IPs and hostnames (prefixed with @).
+#  Hostnames are resolved via userweb DNS each run; root
+#  never touches the network directly.
+#
+#  The table is PERSISTENT. It is populated here every
+#  15 minutes via cron. A pfctl -f reload empties all
+#  persistent tables, so the cron must run after any
+#  firewall regeneration.
 #
 #  Path: /opt/dropQbsd/libexec/update_services_table
 #  Permissions: chmod 755, root:wheel
+#  Cron: */15 * * * * /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/update_services_table
 #
 #  IMPORTANT: This script MUST be executed via the dropQbsd
 #  wrapper or its alias. Do NOT run it directly.

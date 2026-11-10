@@ -4,7 +4,7 @@
 #
 #  nnn plugin: copy the selected file or directory into the
 #  drop zone. Invoked from nnn with ';c' (see NNN_PLUG in
-#  file_bridge).
+#  qfile).
 #
 #  Install:
 #      cp nnnqcp ~/.config/nnn/plugins/

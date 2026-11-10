@@ -4,7 +4,7 @@
 #
 #  nnn plugin: import the selected file or directory from the
 #  drop zone into the domain's ~/Downloads.
-#  Invoked from nnn with ';i' (see NNN_PLUG in file_bridge).
+#  Invoked from nnn with ';i' (see NNN_PLUG in qfile).
 #
 #  Install:
 #      cp nnnqimport ~/.config/nnn/plugins/

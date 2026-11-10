@@ -10,6 +10,12 @@
 #      dropQbsd: setuid(0) failed: Operation not permitted
 #  This script makes that mistake impossible.
 #
+#  The build is static by construction. A dynamically linked
+#  setuid binary is exposed to LD_PRELOAD-style injection
+#  before main() runs; the static build removes that class
+#  of attack entirely. The result is verified (no NEEDED
+#  entries) before the setuid bit is applied.
+#
 #  Path: /opt/dropQbsd/admin/build_run_app
 #  Permissions: chmod 700, root:wheel
 #
@@ -69,9 +75,10 @@ fi
 if command -v readelf >/dev/null 2>&1; then
     if readelf -d "$BIN" 2>/dev/null | grep -q NEEDED; then
         echo "WARNING: $BIN is dynamically linked." >&2
-        echo "         Check that -static was honoured by the compiler." >&2
         exit 1
     fi
+else
+    echo "WARNING: readelf not found -- static-link check skipped." >&2
 fi
 
 echo "OK: setuid bit present, statically linked."

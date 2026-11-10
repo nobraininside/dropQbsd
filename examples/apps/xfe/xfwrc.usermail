@@ -7,7 +7,7 @@
 # installation seed, not as a live file.
 
 [OPTIONS]
-# Domain color scheme (see INSTALL.md, color scheme convention)
+# Domain color scheme (see INSTALL_MANUAL.md, color scheme convention)
 textbackground=DarkOrchid3
 textforeground=Gray100
 textcursor=White

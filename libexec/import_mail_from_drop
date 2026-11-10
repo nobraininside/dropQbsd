@@ -23,8 +23,31 @@ set -eu
 # set -x # for debugging
 
 SRC="/home/drop/usermail_export"
-DST="/home/userdoc/Sync/"
-# IMPORTANT: Adjust destination path above according to your needs
+
+# Read the sync destination from local.conf [sync] dst, with a
+# fallback to the default. The section match uses a literal
+# comparison ($0 == "[sync]"), not a regex, so no backslash is
+# needed and the pattern cannot be corrupted in transit.
+SYNC_DST=$(awk '
+    $0 == "[sync]" { s=1; next }
+    /^[[]/         { s=0 }
+    s && /^dst[[:space:]]*=/ {
+        sub(/^dst[[:space:]]*=[[:space:]]*/, "")
+        print
+        exit
+    }
+' /etc/dropQbsd/local.conf)
+[ -n "$SYNC_DST" ] || SYNC_DST="/home/userdoc/Sync"
+
+# The destination may not exist yet (first run, or Syncthing not
+# set up): create it. Unlike the export source, a missing import
+# destination is not an error -- it is the normal first-run state.
+if [ ! -d "$SYNC_DST" ]; then
+    mkdir -p "$SYNC_DST" || {
+        log "FATAL: cannot create destination: $SYNC_DST"
+        exit 1
+    }
+fi
 
 #-----------------------------------------------------------------------------
 # PRE-FLIGHT CHECKS
@@ -34,7 +57,7 @@ if [ ! -d "$SRC" ]; then
     exit 1
 fi
 
-mkdir -p "$DST"
+mkdir -p "$SYNC_DST"
 
 #-----------------------------------------------------------------------------
 # 1. FIND THE LATEST ARCHIVE
@@ -54,7 +77,7 @@ FILENAME=$(basename "$LATEST")
 #-----------------------------------------------------------------------------
 # 2. SKIP IF ALREADY PRESENT
 #-----------------------------------------------------------------------------
-if [ -f "$DST/$FILENAME" ]; then
+if [ -f "$SYNC_DST/$FILENAME" ]; then
     echo "File $FILENAME already present in destination. Skipped."
     exit 0
 fi
@@ -62,17 +85,17 @@ fi
 #-----------------------------------------------------------------------------
 # 3. COPY AND SET PERMISSIONS
 #-----------------------------------------------------------------------------
-cp "$LATEST" "$DST/"
-chmod 600 "$DST/$FILENAME"
+cp "$LATEST" "$SYNC_DST/"
+chmod 600 "$SYNC_DST/$FILENAME"
 
 #-----------------------------------------------------------------------------
 # 4. VERIFY INTEGRITY
 #-----------------------------------------------------------------------------
-if tar -tzf "$DST/$FILENAME" >/dev/null 2>&1; then
+if tar -tzf "$SYNC_DST/$FILENAME" >/dev/null 2>&1; then
     echo "Archive $FILENAME imported and verified successfully."
 else
     echo "ERROR: Archive $FILENAME is corrupt!" >&2
-    rm "$DST/$FILENAME"
+    rm "$SYNC_DST/$FILENAME"
     exit 1
 fi
 
@@ -80,10 +103,10 @@ fi
 # 5. KEEP ONLY THE LATEST ARCHIVE LOCALLY
 #-----------------------------------------------------------------------------
 (
-    cd "$DST" || exit 1
+    cd "$SYNC_DST" || exit 1
     FILES=$(find . -maxdepth 1 -name 'mail_*.tar.gz' -type f -print 2>/dev/null)
     if [ -n "$FILES" ]; then
-	    find "$DST" -maxdepth 1 -name 'mail_*.tar.gz' -type f 2>/dev/null \
+	    find "$SYNC_DST" -maxdepth 1 -name 'mail_*.tar.gz' -type f 2>/dev/null \
         | sort -r \
         | tail -n +2 \
         | while IFS= read -r f; do rm -f "$f"; done

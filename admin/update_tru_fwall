@@ -10,7 +10,7 @@
 #    4. pkg_delete -a (orphans)
 #
 #  FreeBSD (traditional):
-#    1. freebsd-update --not-tty fetch install (system patches)
+#    1. freebsd-update fetch install (system patches)
 #    2. (firmware handled by pkg/freebsd-update)
 #    3. pkg upgrade -y (packages)
 #    4. pkg autoremove -y (orphans)
@@ -18,6 +18,12 @@
 #  FreeBSD (PkgBase):
 #    1-3. pkg upgrade -y (base + packages together)
 #    4. pkg autoremove -y (orphans)
+#
+#  The <updates> table is populated by the cron
+#  job and re-populated on entry and after any `pfctl -f`
+#  (which empties all persistent tables). It is flushed on
+#  exit (`FLUSH_ON_EXIT=1`): the mirror IPs are reachable
+#  only while the update actually runs (least privilege).
 #
 #  Path: /opt/dropQbsd/admin/update_tru_fwall
 #  Permissions: chmod 700, root:wheel
@@ -37,7 +43,7 @@ ENSURE_SCRIPT="/opt/dropQbsd/libexec/ensure_updates_table"
 UPD_MAILSERV="/opt/dropQbsd/libexec/update_mailserver_table"
 UPD_SERVICES="/opt/dropQbsd/libexec/update_services_table"
 LOGFILE="/var/log/dropQbsd/update_tru_fwall.log"
-FLUSH_ON_EXIT=1
+FLUSH_ON_EXIT=1   # Set to 0 to keep the <updates> table populated after run
 DNS_RULES_ADDED=0
 CLEANED=0
 
@@ -87,7 +93,7 @@ else
 fi
 
 #-----------------------------------------------------------------------------
-# CONCURRENCY CHECK — one update operation at a time.
+# CONCURRENCY CHECK -- one update operation at a time.
 # Run BEFORE touching pf: never open the network window for a doomed run.
 #-----------------------------------------------------------------------------
 BUSY=$(pgrep -x "$LOCK_PROC")
@@ -160,7 +166,7 @@ log "== dropQbsd SYSTEM UPDATE ($OS) ============="
 log "=============================================="
 
 #-----------------------------------------------------------------------------
-# CLEANUP — idempotent, runs on signals AND on exit
+# CLEANUP -- idempotent, runs on signals AND on exit
 #-----------------------------------------------------------------------------
 cleanup() {
     [ "$CLEANED" -eq 1 ] && return
@@ -173,6 +179,9 @@ cleanup() {
     if [ "$FLUSH_ON_EXIT" -eq 1 ]; then
         pfctl -t updates -T flush 2>/dev/null
         log "<updates> table flushed."
+    else
+        log "<updates> table left populated (FLUSH_ON_EXIT=0)."
+        log "To flush manually: pfctl -t updates -T flush"
     fi
 }
 trap 'cleanup signal; exit 130' 2 15
@@ -204,7 +213,8 @@ if [ "$OS" = "FreeBSD" ] && [ "$PKGBASE" -eq 1 ]; then
     log "  pkg autoremove: exit code $RC_ORPHAN"
 
 elif [ "$OS" = "FreeBSD" ]; then
-    # --- Traditional FreeBSD. --not-tty: no tty inside $(). ---
+# --- Traditional FreeBSD. See patch_tru_fwall: --not-tty is
+# --- undocumented but accepted, and required without a tty. ---
     log "Step 2: System patches (freebsd-update fetch install)..."
     OUT=$(freebsd-update --not-tty fetch install 2>&1)
     RC_SP=$?

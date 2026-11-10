@@ -2,9 +2,11 @@
 #  dropQbsd -- upgrade_tru_fwall
 #
 #  Upgrades the OS to the next release through restrictive
-#  PF. Populates the <updates> table, runs the upgrade tool.
-#  If the tool returns without rebooting, the table is
-#  flushed to restore default-deny for root.
+#  PF. The <updates> table is populated by the cron
+#  job and re-populated on entry and after any `pfctl -f`
+#  (which empties all persistent tables). It is flushed on
+#  exit (`FLUSH_ON_EXIT=1`): the mirror IPs are reachable
+#  only while the update actually runs (least privilege).
 #
 #  OpenBSD:               sysupgrade (auto-reboot)
 #  FreeBSD (traditional): freebsd-update upgrade -r RELEASE
@@ -18,6 +20,13 @@
 #
 #  Run the full-update script first to ensure all patches
 #  and packages are current.
+#
+#  On FreeBSD, when the upgrade is prepared but the reboot
+#  is not yet completed, a pending-reboot marker is written
+#  to /var/log/dropQbsd/upgrade_pending. The login notice
+#  reads it and reminds the operator of the post-reboot
+#  install steps. Remove the marker only after those steps
+#  are done.
 #
 #  Path: /opt/dropQbsd/admin/upgrade_tru_fwall
 #  Permissions: chmod 700, root:wheel
@@ -39,9 +48,9 @@ UPD_MAILSERV="/opt/dropQbsd/libexec/update_mailserver_table"
 UPD_SERVICES="/opt/dropQbsd/libexec/update_services_table"
 LOGFILE="/var/log/dropQbsd/upgrade_tru_fwall.log"
 # PENDING_REBOOT: marker consumed by the login notice
-# (see /etc/dropQbsd/profile snippet in INSTALL.md).
+# (see /etc/dropQbsd/profile snippet in INSTALL_MANUAL.md).
 PENDING_REBOOT="/var/log/dropQbsd/upgrade_pending"
-FLUSH_ON_EXIT=1
+FLUSH_ON_EXIT=1   # Set to 0 to keep the <updates> table populated after run
 DNS_RULES_ADDED=0
 CLEANED=0
 

@@ -1,14 +1,18 @@
 # ==========================================================
 #  dropQbsd -- export_www_to_drop
 #
-#  Compresses the userweb www directory and places the
-#  archive in /home/drop/userweb_export for archival by
-#  userdoc.
+#  Compresses userweb's web directory into userweb_export, and
+#  verifies the archive's integrity before publishing it.
 #
-#  Permissions on the exported archive are enforced by
-#  enforce_drop (cron), not by this script -- the export
-#  directory is owned by root:drop, so userweb cannot
-#  chmod files there.
+#  The source directory is read from /etc/dropQbsd/local.conf,
+#  section [sync], key "www_src". If absent, the default
+#  /home/userweb/www is used. The source MUST exist: it holds
+#  the data being exported, so a missing directory is a hard
+#  error, not something to create.
+#
+#  Archives are published atomically: the exporter writes a
+#  *.tar.gz.tmp file and renames it when complete, so an
+#  importer never sees a partial archive.
 #
 #  Path: /opt/dropQbsd/libexec/export_www_to_drop
 #  Permissions: chmod 755, root:wheel
@@ -18,16 +22,37 @@
 #
 #  IMPORTANT: This script MUST be executed via the dropQbsd
 #  wrapper or its alias. Do NOT run it directly.
-#  Usage (-v verbose output). Run as userweb:
+#  Usage (run as userweb):
 #    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/export_www_to_drop [-v]
 #    OR
 #    Exwww [-v]
+#    -v   Verbose output
 # ==========================================================
 
 set -eu
 umask 002
 
-SRC="/home/userweb/www"
+# --- source directory from local.conf [sync] www_src ----------
+# The section match uses a literal comparison ($0 == "[sync]"),
+# not a regex, so no backslash is needed and the pattern cannot
+# be corrupted in transit.
+SRC=$(awk '
+    $0 == "[sync]" { s=1; next }
+    /^[[]/         { s=0 }
+    s && /^www_src[[:space:]]*=/ {
+        sub(/^www_src[[:space:]]*=[[:space:]]*/, "")
+        print
+        exit
+    }
+' /etc/dropQbsd/local.conf)
+[ -n "$SRC" ] || SRC="/home/userweb/www"
+
+if [ ! -d "$SRC" ]; then
+    echo "[ERROR] Export source does not exist: $SRC" >&2
+    echo "[ERROR] Set [sync] www_src in local.conf, or create the directory" >&2 
+    exit 1
+fi
+
 DST="/home/drop/userweb_export"
 
 #-----------------------------------------------------------------------------

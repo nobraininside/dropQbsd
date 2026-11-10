@@ -1,0 +1,7 @@
+tyle "usermail" {
+    bg[NORMAL] = "#7B1FA2"
+    fg[NORMAL] = "#ffffff"
+    base[NORMAL] = "#4A148C"
+    text[NORMAL] = "#ffffff"
+}
+widget_class "*" style "usermail"

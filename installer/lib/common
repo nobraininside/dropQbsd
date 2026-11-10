@@ -1,0 +1,434 @@
+# ==========================================================
+#  dropQbsd installer -- common
+#
+#  Constants, logging, colour output, the dry-run gate, and
+#  the primitives every other module uses:
+#
+#    run        -- perform an action (suppressed in dry-run)
+#    check      -- verify a condition (fails the run)
+#    check_sh   -- verify a shell test (fails the run)
+#    check_soft -- verify a condition (counts failures)
+#
+#  Separating action from verification is deliberate: in
+#  dry-run mode the plan is printed but nothing is executed,
+#  while verification logic stays exercisable in tests.
+#
+#  Constants live HERE, at the top of the first-sourced module,
+#  so every later module can reference them without depending
+#  on sourcing order. Do not define them elsewhere.
+#
+#  Sourced by install.sh. No shebang, no extension.
+# ==========================================================
+
+# --- constants ------------------------------------------------------
+# Single source of truth. Every module reads these; none sets them.
+INSTALL_DIR="/opt/dropQbsd"
+ETC_DIR="/etc/dropQbsd"
+HOME_DROP="/home/drop"
+BACKUP_DIR=""
+LOG_DIR="/var/log/dropQbsd"
+LOG_FILE="${LOG_DIR}/install.log"
+
+# Set by parse_args; declared here so `set -u` never trips on them.
+DRY_RUN=false
+SKIP_BACKUP=false
+# Set by setup_firewall when the firewall could not be applied; read by
+# the two checklists so the deferral is reported at the end of the run.
+FIREWALL_PENDING=0
+# Accumulated by seed_or_report(). Nothing reads it yet: the fourth
+# section of print_update_notes() lands with the calls that populate it.
+DIVERGED_FILES=""
+
+# ----------------------------------------
+# Conductor account name resolution.
+#
+# Priority:
+#   1. $CONDUCTOR_USER exported by the operator (explicit override)
+#   2. An existing account carrying the dropQbsd_conductor GECOS marker
+#      (upgrade / re-install: rename-proof)
+#   3. The default name 'conductor' -- unless an account named 'conductor'
+#      already exists without the marker. In that case, the install FAILS
+#      with a clear message: the operator must set CONDUCTOR_USER=<name>.
+#      We never prompt and never guess. Deterministic and auditable.
+# ----------------------------------------
+resolve_conductor_name() {
+    [ -n "${CONDUCTOR_USER:-}" ] && { echo "$CONDUCTOR_USER"; return 0; }
+
+    existing="$(getent passwd | awk -F: 'index($5, "dropQbsd_conductor") > 0 {print $1; exit}')"
+    [ -n "$existing" ] && { echo "$existing"; return 0; }
+
+    if id conductor >/dev/null 2>&1; then
+        echo "ERROR: ..." >&2
+        return 1
+    fi
+    echo "conductor"
+}
+
+# Resolve the conductor name: environment, then GECOS marker, then
+# 'conductor' as last resort. Do NOT use a bare :=conductor default --
+# it would hardcode 'conductor' even when a real account carries the
+# dropQbsd_conductor marker (e.g. 'user' on a migrated system).
+CONDUCTOR_USER="$(resolve_conductor_name)" || CONDUCTOR_USER="conductor"
+USER_LIST="$CONDUCTOR_USER userdoc usermail userweb"
+
+GROUP="drop"
+
+# System files the installer may modify, for the backup step.
+# Space-separated; paths contain no spaces.
+#
+# /etc/dropQbsd/local.conf and /etc/dropQbsd/attach.conf are the
+# operator-owned files inside ETC_DIR. The installer seeds them
+# once and never overwrites them (see seed_once in lib/files), but
+# they are backed up here all the same: they are the two files
+# whose loss is not recoverable from the repository.
+BACKUP_FILES="/etc/doas.conf /etc/pf.conf /etc/newsyslog.conf /etc/login.conf \
+/etc/dropQbsd/local.conf /etc/dropQbsd/attach.conf"
+
+# Set by parse_args; declared here so `set -u` never trips on them.
+DRY_RUN=false
+SKIP_BACKUP=false
+
+# --- output helpers -------------------------------------------------
+
+fail() {
+    printf "${RED}[ERROR]${NC} %s\n" "$1" >&2
+    log "ERROR: $1"
+    exit 1
+}
+
+WARN_COUNT=0
+
+warn() {
+    WARN_COUNT=$((WARN_COUNT + 1))
+    printf "${YELLOW}[WARN]${NC} %s\n" "$1"
+    log "WARN: $1"
+}
+
+info() {
+    printf "${BLUE}[INFO]${NC} %s\n" "$1"
+    log "INFO: $1"
+}
+
+success() {
+    printf "${GREEN}[OK]${NC} %s\n" "$1"
+    log "OK: $1"
+}
+
+step() {
+    printf "\n${BOLD}--- %s ---${NC}\n" "$1"
+    log "STEP: $1"
+}
+
+banner() {
+    echo ""
+    echo "========================================="
+    echo "   dropQbsd Installer (OpenBSD/FreeBSD)"
+    echo "========================================="
+}
+
+# --- colours --------------------------------------------------------
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+# --- logging --------------------------------------------------------
+
+# init_log must run after check_root (needs write access to /var/log).
+# It creates the log directory WITH the correct permissions when it
+# is missing: the first log line is written before create_directories
+# runs, and a directory left at the default mkdir mode (usually 0755)
+# would be visible to every local user for the rest of the install.
+init_log() {
+    if [ ! -d "$LOG_DIR" ]; then
+        mkdir -p "$LOG_DIR" || fail "cannot create $LOG_DIR"
+        chown root:wheel "$LOG_DIR"
+        chmod 750 "$LOG_DIR"
+    fi
+    : >> "$LOG_FILE" || fail "cannot write $LOG_FILE"
+    log "=== installer started $(date '+%Y-%m-%d %H:%M:%S') ==="
+}
+
+log() {
+    # Logging must never abort the run: if the log is unwritable
+    # we continue silently rather than fail the install.
+    [ -w "$LOG_FILE" ] 2>/dev/null || return 0
+    printf '%s\n' "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_FILE" 2>/dev/null || true
+}
+
+# --- backup --------------------------------------------------------
+
+# backup_before_overwrite: copy a path to BACKUP_DIR before it is
+# overwritten. No-op if BACKUP_DIR is empty (not set) or the path
+# does not exist. The flat name (path with / replaced by _) makes
+# the file easy to find and restore.
+#
+# BACKUP_DIR is set by backup_all (installer) or preserve_all
+# (updater); both name their directory the same way, so this
+# helper works for both.
+backup_before_overwrite() {
+    p="$1"
+    [ -e "$p" ] || return 0
+    [ -n "$BACKUP_DIR" ] || return 0
+    run cp -Rp "$p" "${BACKUP_DIR}/$(flat_name "$p")"
+}
+
+# flat_name: absolute path with / replaced by _.
+# /etc/pf.conf -> etc_pf.conf ; /home/x/.exrc -> home_x_.exrc
+flat_name() {
+    printf '%s' "$1" | sed 's#^/##; s#/#_#g'
+}
+
+# --- the primitives ------------------------------------------------
+
+# run: execute an action. In dry-run, print the plan instead.
+run() {
+    log "EXEC: $*"
+    if [ "$DRY_RUN" = true ]; then
+        printf "${BLUE}[dry-run]${NC} %s\n" "$*"
+        return 0
+    fi
+    "$@" || fail "command failed: $*"
+}
+
+# check: verify a condition. Always evaluated, even in dry-run,
+# because it is read-only and failure must be visible.
+check() {
+    log "CHECK: $*"
+    "$@" || fail "verification failed: $*"
+}
+
+# check_sh: run a shell test expression. Used for compound checks
+# that would be awkward to express as a command invocation.
+check_sh() {
+    log "CHECK-SH: $1"
+    sh -c "$1" || fail "verification failed: $1"
+}
+
+# check_soft: like check_sh, but does NOT abort. It counts failures
+# in SOFT_FAILURES and returns the count. Used by the final
+# checklist so a single missing item does not hide the others.
+SOFT_FAILURES=0
+check_soft() {
+    log "CHECK-SOFT: $1"
+    if sh -c "$1"; then
+        success "$2"
+    else
+        warn "$2"
+        SOFT_FAILURES=$((SOFT_FAILURES + 1))
+    fi
+}
+
+# seed_or_report: install a file that is MISSING; never overwrite one that
+# exists. If the shipped version differs from the installed one, record it
+# for the end-of-run report -- the operator owns the content.
+#
+# Intended for the per-home files (.xbindkeysrc, GTK2 theme, Xfe seeds).
+# Nothing calls it yet, and it lives in common because more than one module
+# will: a utility shared across modules must be reachable by all of them,
+# including an updater that sources a subset.
+seed_or_report() {
+    src="$1"; dst="$2"
+
+    [ -f "$src" ] || { warn "template missing: $src"; return 0; }
+
+    if [ ! -e "$dst" ]; then
+        run cp "$src" "$dst"
+        success "installed $dst"
+        return 0
+    fi
+
+    if cmp -s "$src" "$dst"; then
+        info "unchanged: $dst"
+        return 0
+    fi
+
+    DIVERGED_FILES="${DIVERGED_FILES} ${dst}"
+    warn "differs from the shipped version, not written: $dst"
+}
+
+# --- argument parsing ----------------------------------------------
+
+parse_args() {
+    DRY_RUN=false
+    SKIP_BACKUP=false
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --dry-run) DRY_RUN=true ;;
+            --skip-backup) SKIP_BACKUP=true ;;
+            --help|-h)
+                cat <<'EOF'
+Usage: install.sh [--dry-run] [--skip-backup] [--help]
+  --dry-run       Print the plan without executing anything.
+  --skip-backup   Skip the backup step. You must back up manually.
+  --help          Show this message.
+
+The installer is idempotent and non-destructive. It never deletes
+users or directories it did not create, and it never overwrites
+system files outside /etc/dropQbsd/.
+EOF
+                exit 0
+                ;;
+            *) fail "unknown option: $1" ;;
+        esac
+        shift
+    done
+}
+
+# --- updater additions ---------------------------------------------
+
+# banner_update: the updater's banner.
+banner_update() {
+    echo ""
+    echo "========================================="
+    echo "   dropQbsd Updater (OpenBSD/FreeBSD)"
+    echo "========================================="
+}
+
+# parse_args for the updater: adds --from <version>.
+parse_args_update() {
+    DRY_RUN=false
+    SKIP_BACKUP=false
+    FROM_VERSION=""
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --dry-run) DRY_RUN=true ;;
+            --skip-backup) SKIP_BACKUP=true ;;
+            --from)
+                shift
+                [ $# -gt 0 ] || fail "--from requires a version argument"
+                FROM_VERSION="$1"
+                ;;
+            --help|-h)
+                cat <<'EOF'
+Usage: update.sh [--dry-run] [--from <version>] [--help]
+
+  --dry-run        Print the plan without executing anything.
+  --from <version> Source version, for installations that
+                   predate the VERSION file.
+  --help           Show this message.
+
+The updater preserves the operator's configuration, replaces
+only project-owned files that changed, and never regenerates
+the signing key. On failure it stops; recovery is manual, from
+the backup directory it prints.
+EOF
+                exit 0
+                ;;
+            *) fail "unknown option: $1" ;;
+        esac
+        shift
+    done
+}
+
+# print_update_notes: the report at the end of an update. Three
+# sections, each with the full path list: files overwritten,
+# files obsolete, files left alone.
+#
+# Nothing is deleted or renamed by the updater. The last two
+# sections are for the operator to review and act on by hand.
+print_update_notes() {
+    echo ""
+    echo "========================================="
+    echo "   Update complete"
+    echo "========================================="
+    echo ""
+    echo "  From:    ${INSTALLED_VERSION}"
+    echo "  To:      ${REPO_VERSION}"
+    echo "  Backup:  ${BACKUP_DIR}"
+    echo "  Log:     ${LOG_FILE}"
+    echo ""
+
+    # --- Files overwritten ---
+    if [ -n "$CHANGED_FILES" ]; then
+        n=$(echo "$CHANGED_FILES" | wc -w | tr -d ' ')
+        echo "Files overwritten ($n -- project files, backed up in ${BACKUP_DIR}):"
+        echo ""
+        echo "  These are the project files this update replaced."
+        echo ""
+        for f in $CHANGED_FILES; do
+            echo "  $f"
+        done
+    else
+        echo "No project files overwritten."
+    fi
+    echo ""
+
+    # --- Files obsolete ---
+    if [ -n "$OBSOLETE_FILES" ]; then
+        n=$(echo "$OBSOLETE_FILES" | wc -w | tr -d ' ')
+        echo "Files obsolete ($n -- project files no longer in the repo):"
+        echo ""
+        echo "  These were project files that moved or were removed."
+        echo "  The new copies are already installed."
+        echo ""
+        for f in $OBSOLETE_FILES; do
+            echo "  $f"
+        done
+        echo ""
+        echo "  Nothing was deleted. Review and delete these by hand."
+    else
+        echo "No obsolete files."
+    fi
+    echo ""
+
+    # --- Files left alone ---
+    if [ -n "$LEFT_ALONE_FILES" ]; then
+        n=$(echo "$LEFT_ALONE_FILES" | wc -w | tr -d ' ')
+        echo "Files left alone ($n -- extra in ${INSTALL_DIR}, not in repo):"
+        echo ""
+        echo "  These are files the updater does not recognise. They"
+        echo "  may be from an older version or added by hand. They"
+        echo "  were not touched."
+        echo ""
+        for f in $LEFT_ALONE_FILES; do
+            echo "  $f"
+        done
+    else
+        echo "No files left alone."
+    fi
+    echo ""
+
+    # --- Preserved (operator-owned) ---
+    # Counted from the classification, never hardcoded: the list and the
+    # count drifted apart while attach.conf was still listed as
+    # operator-owned but replaced by replace_all.
+    np=0
+    for f in $OPERATOR_FILES; do np=$((np + 1)); done
+    for d in $OPERATOR_DIRS; do np=$((np + 1)); done
+    echo "Preserved files ($np -- operator-owned, never written):"
+    echo ""
+    echo " These are your configuration and secrets. The updater"
+    echo " never writes them; they were backed up to ${BACKUP_DIR}."
+    echo ""
+    for f in $OPERATOR_FILES; do echo " ${f}"; done
+    for d in $OPERATOR_DIRS; do echo " ${d}"; done
+    echo ""
+
+    # --- General warning summary ---
+    printf "${YELLOW}Note: $WARN_COUNT %s warning(s) were emitted during this "
+    printf "update -- review them above before relying on the result.${NC}\n" 
+    echo ""
+
+    echo "To restore a file:"
+    echo "  cp -Rp ${BACKUP_DIR}/<flat-name> <original-path>"
+    echo "  (flat name = path with / replaced by _)"
+    echo ""
+}
+
+# home_of: resolve a user's home directory from /etc/passwd.
+# Never use eval echo ~user: the tilde expansion is shell-specific
+# and eval is unnecessary attack surface.
+#
+# Lives in common (not backup or dirs) because several modules
+# use it: backup, dirs, files, examples. A utility shared by
+# more than one module must live where every module can reach
+# it, or an updater that sources a subset will fail.
+home_of() {
+    awk -F: -v u="$1" '$1 == u {print $6; exit}' /etc/passwd
+}
+
+

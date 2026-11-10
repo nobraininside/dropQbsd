@@ -1,0 +1,7 @@
+tyle "userweb" {
+    bg[NORMAL] = "#1565C0"
+    fg[NORMAL] = "#ffffff"
+    base[NORMAL] = "#0D47A1"
+    text[NORMAL] = "#ffffff"
+}
+widget_class "*" style "userweb"

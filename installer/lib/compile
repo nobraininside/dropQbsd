@@ -1,0 +1,60 @@
+# ==========================================================
+#  dropQbsd installer -- compile
+#
+#  Delegates the build to admin/build_run_app.
+#
+#  build_run_app already enforces everything that matters:
+#    - -static (mandatory: a dynamic setuid binary is exposed
+#      to LD_PRELOAD injection before main() runs)
+#    - chown root:wheel
+#    - chmod 4755
+#    - post-build verification: setuid bit present, no NEEDED
+#      entries in readelf -d
+#
+#  Reimplementing any of that here would only create a second
+#  place to get it wrong. Call the existing script.
+#
+#  NOTE: build_run_app uses the hardcoded path /opt/dropQbsd
+#  (it is a standalone admin tool). If INSTALL_DIR were ever
+#  changed from /opt/dropQbsd, build_run_app would build the
+#  wrong location. The post-checks below verify the binary at
+#  ${INSTALL_DIR}/bin/run_app, so a mismatch would be caught
+#  here rather than silently accepted.
+#
+#  Sourced by install.sh. No shebang, no extension.
+# ==========================================================
+
+compile_run_app() {
+    build="${INSTALL_DIR}/admin/build_run_app"
+    bin="${INSTALL_DIR}/bin/run_app"
+
+    [ -f "$build" ] || fail "build script missing: $build"
+
+    # build_run_app is installed by copy_scripts with the source
+    # tree's mode. INSTALL_MANUAL.md 3 requires admin/* to be 700; if
+    # the source tree drifted, enforce it here before running.
+    run chmod 700 "$build"
+
+    run "$build"
+
+    # In dry-run nothing was built: the run above was printed,
+    # not executed. Checking the binary would test a stale file
+    # (or fail if it does not exist yet). Skip in dry-run.
+    if [ "$DRY_RUN" = true ]; then
+        info "[dry-run] skipping run_app build verification"
+        return 0
+    fi
+
+    check_sh "test -u '$bin'"
+
+    # Confirm the binary is statically linked if readelf is available.
+    if command -v readelf >/dev/null 2>&1; then
+        check_sh "! readelf -d '$bin' 2>/dev/null | grep -q NEEDED"
+    else
+        info "readelf not available, skipping static-link check"
+    fi
+
+    success "run_app built: setuid, statically linked"
+}
+
+

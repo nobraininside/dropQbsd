@@ -13,15 +13,19 @@ Qubes-style domain isolation using native Unix users, `pf`, and `ksh`. Web, mail
 and documents run as separate users with no shared access except a policed drop
 zone. No hypervisor, no VM images, no daemon.
 
-~2,800 lines of `ksh` (executable scripts in `sbin/`, `libexec/`, `admin/`,
-comments and blank lines excluded) plus ~300 lines of shell templates, plus
-35 lines of C -- small enough to audit in an afternoon.
+About 5,750 lines in total, comments and blank lines excluded
+(counted -- see [Recount it](#recount-it)). One person who knows shell
+can read all of it in a day -- and audit it, boundaries and all, in a few.
 
-Runs on 1 GB of RAM. Installs in ~30 minutes. Rebuilds faster -- no databases, no
-daemon state to restore. Zero lock-in.
+Runs on 1 GB of RAM. The installer takes under a minute -- give it fifteen,
+because you should read the dry-run and set the passwords deliberately. The
+updater takes seconds -- give it five, because the obsolete-files report is
+worth reading. No databases to restore, no daemon state to rebuild.
+Zero lock-in.
+
 
 [![Status](https://img.shields.io/badge/status-beta-orange)](https://github.com/nobraininside/dropQbsd)
-[![Version](https://img.shields.io/badge/version-0.3.0-blue)](https://github.com/nobraininside/dropQbsd)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue)](https://github.com/nobraininside/dropQbsd)
 [![License](https://img.shields.io/badge/license-ISC-green)](./LICENSE)
 [![OpenBSD](https://img.shields.io/badge/OpenBSD-tested-brightgreen)](https://www.openbsd.org/)
 [![FreeBSD](https://img.shields.io/badge/FreeBSD-tested-brightgreen)](https://www.freebsd.org/)
@@ -35,7 +39,7 @@ daemon state to restore. Zero lock-in.
 
 [![dropQbsd demo: launching a disposable browser, moving a file through the drop zone, checking the control panel](thumbnail.jpg)](https://gnulinux.tube/w/aymeWDMEZMbk2YQMqnMm93)
 
-Three commands. Three habits. About thirty minutes. Done.
+Three commands. Three habits. About fifteen minutes. Done.
 
 ---
 
@@ -66,9 +70,9 @@ following, dropQbsd is not the right tool today -- **Qubes OS is**.
   sessions, per-session cookies, XTEST disabled where possible -- reduce the
   exposure window. They do not close it. **The paired desktop/server
   configuration (roadmap) resolves this.**
-- **Conductor compromise.** `user` can launch apps in any domain via `run_app`.
-  If `user` is compromised, all domains are compromised. Keep `user` minimal:
-  no untrusted binaries, inspect files before importing.
+- **Conductor compromise.** The conductor account can launch apps in any domain
+  via `run_app`. If the conductor is compromised, all domains are compromised.
+  Keep `conductor` minimal: no untrusted binaries, inspect files before importing.
 - **Kernel-level attacks.** All domains share one kernel. A kernel exploit in
   one domain compromises everything. This is the tradeoff for avoiding
   virtualization.
@@ -83,27 +87,189 @@ isolation.
 
 ---
 
+## Prerequisites
+
+- A fresh **OpenBSD 7.5+** (reference platform) or **FreeBSD 14.0+**
+  installation.
+- **1 GB RAM** minimum (2 GB recommended for daily use).
+- Root access (`doas` or `su`).
+- **Korn shell:**
+  - OpenBSD: `/bin/ksh` (base system).
+  - FreeBSD: `mksh` — `pkg install mksh`.
+
+### Optional packages
+
+Install these **before** running the installer, if you want the
+corresponding features. The installer installs no packages: it has
+no network policy yet, and silently installing packages during a
+security install is not acceptable. If you prefer to install them
+**after**, or step by step, follow
+[INSTALL_MANUAL.md](./INSTALL_MANUAL.md).
+
+| Package | Enables | If missing |
+|---------|---------|------------|
+| `tmux`, `nnn` | `Qfile` | `Qfile` does not work |
+| `dzen2`, `xdotool` | `Indicator` (domain indicator) | `Indicator` does not work |
+| `yad`, `xbindkeys`, `pass`, `xclip` | `Qmenu` (conductor menu), `Qsite` (site menu) | `Qmenu` and `Qsite` do not work |
+| `Xdialog` | `Qattach` (attach a file to a mail/upload) | `Qattach` does not work |
+| `signify` | Integrity verification (`Sign`/`Verify`) | Integrity not available |
+| `syncthing` | LAN file sync for `userdoc` | **dropQbsd still works**; only `userdoc` loses sync |
+| a window manager | XFCE, cwm, twm, i3, ... | no graphical session |
+
+Four of the seven rows are functional dependencies of a command. If the
+package is missing, that command does not work; everything else is unaffected.
+**`signify`, `syncthing`, and a window manager are different**: they are optional
+(`signify` for integrity verification, `syncthing` for one domain, userdoc, and
+a window manager only for a graphical session), and their absence does not affect
+dropQbsd's core.
+
+On OpenBSD:
+
+```sh
+doas pkg_add tmux nnn dzen2 xdotool yad xbindkeys pass xclip syncthing Xdialog
+```
+
+On FreeBSD:
+
+```sh
+doas pkg install tmux nnn dzen2 xdotool yad xbindkeys pass xclip syncthing xdialog
+```
+
+**A pre-existing account that collides with the conductor name stops the
+installer.** The conductor defaults to the account name `conductor`
+(rename-proof: recognized by the `dropQbsd_conductor` GECOS marker, not by
+name). If an account named `conductor` already exists on your system (for
+example, your personal login), the installer **fails with a clear message**
+rather than guessing or prompting. Set a different name and re-run:
+
+```sh
+CONDUCTOR_USER=myconductor doas ./install.sh
+```
+
+The GECOS marker stays `dropQbsd_conductor` regardless of the account name.
+A conductor account must be empty: it only directs domains, it does not hold
+data (data belongs in `userdoc`).
+
+---
+
 ## Install
 
-dropQbsd currently requires a manual installation on a fresh OpenBSD or FreeBSD
-system. The process takes roughly 30 minutes and is documented step by step in
-[INSTALL.md](./INSTALL.md).
+From the repository's `installer/` directory, as root:
 
-An install script is on the roadmap -- it is the single biggest barrier to
-adoption today, and the next development priority.
+```sh
+chmod +x install.sh
+doas ./install.sh --dry-run     # see the plan first
+doas ./install.sh
+```
 
-**Application examples.** The `examples/` tree provides ready-made
-configuration for `mc`, the `nnn` plugins, `vi`, and the XFCE
-application menu. INSTALL.md §10 includes a single bulk-install block
-that copies everything with the correct ownership and permissions.
-The `nnn` plugins are mandatory for `file_bridge`.
+The installer is idempotent and non-destructive of **system
+configuration**: it never touches `local.conf`, the signing keys, or
+operator-owned files. It **does** overwrite per-user dotfiles
+(`~/.exrc`, `~/.config/mc/ini`, `~/.config/nnn/plugins/`) when
+installing the desktop integration -- each overwritten file is backed up
+first as `.bak.<timestamp>`.
 
-**Prerequisites:**
+**Domain accounts are never merged.** Each of the four domain users
+(`$CONDUCTOR_USER`, `userdoc`, `usermail`, `userweb`) is created with a dropQbsd
+GECOS role marker. If the account already exists *with the correct marker*,
+the installer reuses it (upgrade/re-install). If it exists *without the marker*
+(a pre-existing personal account), the installer **refuses to proceed**.
+See the Prerequisites warning above.
 
-- A fresh OpenBSD (reference platform) or FreeBSD install
-- 1 GB RAM minimum (2 GB recommended for daily use)
-- `ksh` (OpenBSD base) or `mksh` (FreeBSD: `pkg install mksh`)
-- Optional: `tmux`, `nnn`, `dzen2`, `xdotool`, `pass`, `zenity`, `xclip`
+See **[INSTALL.md](./INSTALL.md)** for the quick start, and
+**[INSTALL_MANUAL.md](./INSTALL_MANUAL.md)** for the manual procedure.
+
+---
+
+## Update
+
+To update an existing installation to the version in the repository:
+
+```sh
+chmod +x update.sh
+doas ./update.sh --dry-run      # see the plan first
+doas ./update.sh
+```
+
+The updater:
+
+- **Preserves** your configuration. local.conf is the single
+operator-owned file; it is never written.
+- **Replaces** project files only when their content changed.
+- **Backs** up every file it overwrites, into a single versioned
+directory (`/var/backups/dropQbsd_update_<timestamp>/`), so any
+file can be restored with one cp.
+- **Never regenerates the signing key.** If integrity is
+configured, it re-signs the manifest; the trust anchor is
+preserved.
+- **Never deletes or renames anything.** Files no longer in the
+repository are reported, not removed.
+
+**The updater verifies the GECOS markers.** Before touching anything,
+it checks that every domain account carries its dropQbsd role marker.
+If a marker is missing -- a foreign account, or a pre-marker installation
+that was never migrated -- the updater refuses to run. On a pre-marker
+system, run the migration once first (see INSTALL_MANUAL.md 1, "Marking
+an existing dropQbsd system"), or re-run the installer.
+
+It prints a report in three sections: **files overwritten**,
+**files obsolete** (project files no longer in the repo -- usually
+the old copy of a file that moved), and **files left alone** (your
+files, untouched).
+**Takes about 5 minutes.** The updater itself runs in seconds; most
+of the time is reviewing the "files obsolete" section before
+deleting anything by hand.
+
+---
+
+## Desktop Integration
+
+The `examples/` tree provides ready-made configuration for the
+per-domain working environment:
+
+- **`mc` skins** -- the per-domain colour scheme for Midnight Commander.
+- **`nnn` plugins** -- the `;c` / `;m` / `;i` key bindings that call
+  `qcp`, `qmv` and `qimport`. **Mandatory for `Qfile`.**
+- **`vi` config** -- key bindings for `nvi`.
+- **`qmenu`** -- the conductor menu. A single YAD window with coloured domain
+  headers, driven by the `[qmenu]` section of `local.conf`. Bound to **`Mod4+q`**
+  via `xbindkeys` in the conductor's `~/.xbindkeysrc`.
+
+**The installer installs this automatically** (the "Desktop
+integration" step). For a manual install, see
+[INSTALL_MANUAL.md](./INSTALL_MANUAL.md) 10.
+
+The **independent utilities** -- control panel, domain indicator,
+conductor menu (`qmenu` + `xbindkeys`), site menu, Syncthing, VLC
+(INSTALL_MANUAL.md 10.7-10.15) -- are **not** installed by the installer.
+Add them as needed, following the manual.
+
+### Knowing where you are
+
+Compartmentalization only works if you can tell the compartments
+apart. dropQbsd uses one consistent colour per domain across every
+surface -- terminals, `mc`, `xfe`, and the OSD indicator:
+
+| Domain | Colour |
+|--------|--------|
+| `conductor` | black |
+| `root` | dark red |
+| `userweb` | dark blue |
+| `usermail` | dark orchid |
+| `userdoc` | dark green |
+
+The colour is not decoration: in a system where every window looks
+alike, it is the fastest signal of which domain you are about to
+type into.
+
+The same colours drive the `qmenu` headers, so the conductor menu
+announces the domain at a glance.
+
+The per-domain colour is also applied to GTK2 pickers: each domain home
+gets a ~/.gtkrc-2.0 (installed from examples/apps/gtk/), so Xdialog
+dialogs in Qattach show the domain colour. The conductor (`conductor`) gets a
+black theme. Root has no picker theme. The file is **operator-owned**:
+it is installed only if absent and never overwritten by an update.
 
 ---
 
@@ -113,13 +279,30 @@ The `nnn` plugins are mandatory for `file_bridge`.
 
 | User       | Role                                                   | Network                         |
 | ---------- | ------------------------------------------------------ | ------------------------------- |
-| `user`     | Conductor -- orchestrates, imports/exports, administers | None (no direct network access) |
+| `conductor` | Conductor -- orchestrates, imports/exports, administers. Rename-proof: recognized by the `dropQbsd_conductor` GECOS marker, not by name. | None (no direct network access) |
 | `userweb`  | Web browser -- isolated from mail and LAN               | HTTP/HTTPS only                 |
 | `usermail` | Email client -- isolated from web                       | Mail servers only               |
 | `userdoc`  | Documents, sync, LAN storage -- no direct internet      | LAN + Syncthing                 |
 
-All belong to the `drop` group. Home directories are `chmod 700` -- no
-cross-domain snooping.
+All belong to the `drop` group, which is the shared channel for
+the drop zone. Home directories are `chmod 700`, owned by the
+user's own group (not `drop`): a home is private to its owner.
+
+Each domain is a dedicated user account carrying a dropQbsd GECOS role
+marker (`dropQbsd_conductor`, `dropQbsd_userweb`, `dropQbsd_usermail`,
+`dropQbsd_userdoc`). The marker identifies the role and lets the installer
+and updater refuse to merge a foreign account into a role.
+
+**The conductor is rename-proof.** The conductor account is identified by its
+GECOS marker (`dropQbsd_conductor`), not by its name. The default name is
+`conductor`; it can be changed via `CONDUCTOR_USER`. Installer, updater, and
+runtime scripts resolve the account from the marker, so renaming is safe.
+
+**Collision handling.** If an account named `conductor` already exists at
+install time (a foreign personal account, without the marker), the installer
+does not guess or prompt: it fails and asks you to set
+`CONDUCTOR_USER=<name>` and re-run. On an upgrade the name is read from the
+existing marker and is never asked.
 
 ### The Drop Zone (`/home/drop`)
 
@@ -134,6 +317,28 @@ No domain can modify files once placed. A cron job (`enforce_drop`) runs every
 60 seconds, correcting permissions, quarantining violations, and cleaning
 abandoned artifacts.
 
+**Drop zone risk model.** The drop zone root and the export directories are
+`2770` (write for the `drop` group), so any member of the group can remove
+or replace files in transit. This is accepted by design: the members of
+`drop` are the same operator in different compartments, and the real threat
+is a compromised domain, not a hostile one. The mitigations are:
+
+- **`qcp` copies, it does not move** -- the original stays in the sender's
+  home, so a file removed from the drop zone is not lost (only its transit
+  copy is).
+- **Files in transit are `440`** -- their content cannot be modified in
+  place. A compromised domain can delete and re-add a file, but cannot edit
+  one it did not place.
+- **Import is a deliberate, inspected act** -- inspect files before
+  importing with `Qinspect` (or `Qprompt qinspect` from a launcher).
+  A replaced file is only dangerous if imported without inspection.
+- **`_quarantine` is `750 root:wheel`** -- domains cannot read, write, or
+  touch it; it is operator-only.
+
+A stricter model (staging directories `570`, exports written by root) is
+planned -- see Roadmap. The current model trades that protection for
+simplicity and daily-use convenience.
+
 **Import workflow:**
 
 1. `qmv` moves a file into `/home/drop` via an atomic staging directory.
@@ -143,13 +348,13 @@ abandoned artifacts.
 
 ### The Conductor -- `run_app` Architecture
 
-`user` launches graphical apps inside any domain without switching users. The
-mechanism is a three-file split designed to eliminate the attack surface of
+The conductor launches graphical apps inside any domain without switching users.
+The mechanism is a three-file split designed to eliminate the attack surface of
 privilege escalation:
 
 | File                   | Type                          | Role                                                       |
 | ---------------------- | ----------------------------- | ---------------------------------------------------------- |
-| `bin/run_app`          | Compiled binary (setuid root) | Immutable gate -- 35 lines of C, no decision logic |
+| `bin/run_app`          | Compiled binary (setuid root) | Immutable gate -- 48 lines of C, no decision logic |
 | `libexec/wrapper`      | `sh` script                   | Sanitizes the environment, selects the shell               |
 | `libexec/run_app_impl` | `ksh`/`mksh` script           | All the logic -- domain selection, X11 cookie, tmpfs        |
 | `src/run_app.c`        | C source                      | Reference only; needed only if the ABI breaks              |
@@ -162,7 +367,17 @@ lives in `run_app_impl`, a plain script. Immutable after compilation: if you
 need to add a domain, change paths, or adjust cleanup behavior, you edit the
 script. No recompilation.
 
-**The wrapper is the environment-sanitization and shell-selection layer.** It runs with the privileges of its caller: root when invoked through `run_app` (which is setuid root), the domain user when invoked from a domain, root when invoked from cron. The wrapper sanitizes the environment before any script sees it:
+**Two classes of action.** The gate recognizes two kinds of first argument:
+a **domain** (`userweb`, `usermail`, `userdoc`) -- launch an app in that
+domain -- or a **conductor action** listed in `/etc/dropQbsd/conductor.conf`
+-- run a project script as root. Conductor actions are the gate's second
+authority: they are declared in a signed file, so the set of root-runnable
+scripts is auditable. Today there is one: `qattach`.
+
+**The wrapper is the environment-sanitization and shell-selection layer.**
+It runs with the privileges of its caller: root when invoked through `run_app`
+(which is setuid root), the domain user when invoked from a domain, root when
+invoked from cron. The wrapper sanitizes the environment before any script sees it:
 
 - `PATH` is hardcoded to system directories. A user-controlled `PATH` in a root
   context is privilege escalation -- a fake `awk` earlier in `PATH` means
@@ -172,9 +387,11 @@ script. No recompilation.
 - Only `DISPLAY`, `XAUTHORITY`, and `TERM` survive the crossing.
 - The wrapper then selects the shell: `/bin/ksh` on OpenBSD, `mksh` on FreeBSD.
 
-**`doas.conf` is one line:** `permit nopass root`. `user` has no `doas` access
-at all. The only path to root is the blind gate, and the blind gate can only
-launch domain applications.
+**`doas.conf` is one line:** `permit nopass root`. `$CONDUCTOR_USER` has no `doas` access
+at all. The only path to root is the blind gate. The gate can launch domain
+applications, and it can run **conductor actions** -- project scripts declared
+in a signed file (`conductor.conf`). No conductor action is added silently:
+the set is under `verify_integrity`.
 
 **Two modes.** Normal mode creates an isolated runtime directory under `/tmp`,
 cleaned on exit. Disposable mode mounts a tmpfs in RAM (500 MB default,
@@ -206,11 +423,18 @@ security posture:
 
 `gen_fwall` translates this policy into `pf.conf` for the target OS.
 
+**Firewall backup.** `gen_fwall` backs up the current `/etc/pf.conf` to
+`/etc/pf.conf.bak.<timestamp>` before replacing it -- but only if the
+current ruleset passes `pfctl -nf` (a corrupted ruleset is never preserved
+as a restore point). The backup lives next to `pf.conf`, not in the
+updater backup dir, because `pf.conf` is generated, not a project file:
+a connection problem right after `Gen` is fixable with a single `cp`.
+
 The policy is default-deny with explicit allowlists:
 
 | Domain     | Role       | Network access                                                        |
 | ---------- | ---------- | --------------------------------------------------------------------- |
-| `user`     | conductor  | None                                                                  |
+| `conductor` | conductor  | None                                                                  |
 | `userweb`  | browser    | Ports 80/443 to the internet, DNS. RFC 1918 and localhost blocked.    |
 | `usermail` | mail       | Mail server ports only, DNS. Internet blocked.                        |
 | `userdoc`  | documents  | LAN and Syncthing ports only, both directions. Internet blocked.      |
@@ -240,7 +464,7 @@ double start when more than one session file is read.
 
 Detection is a cascade:
 
-1. Window title -- exact match for `userweb`/`usermail`/`userdoc`/`user`/`root`
+1. Window title -- exact match for `$CONDUCTOR_USER`/`root`/`userweb`/`usermail`/`userdoc`
 2. Window title containing `[root@` -- the shell prompt betrays root
 3. `_NET_WM_PID` -- process owner via `ps`
 4. `WM_CLASS` -- fallback for `xfe`/`Thunar`
@@ -249,18 +473,22 @@ Color mapping is consistent across the project:
 
 | Domain             | Color         | Hex       |
 | ------------------ | ------------- | --------- |
-| `userweb`          | Bright blue   | `#3399FF` |
-| `usermail`         | Bright orchid | `#BB66EE` |
-| `userdoc`          | Bright green  | `#33CC33` |
-| `user` (conductor) | White         | `#FFFFFF` |
-| `root`             | Bright red    | `#FF3333` |
+| `conductor`        | Black         | `#000000` |
+| `root`             | Dark red      | `#8B0000` |
+| `userweb`          | Dark blue     | `#00008B` |
+| `usermail`         | Dark orchid   | `#9F32CC` |
+| `userdoc`          | Dark green    | `#006400` |
 
 The indicator's lock lives in `${XDG_RUNTIME_DIR:-/tmp}`, keyed by uid.
 It is deliberately **not** in `/var/run/`: the indicator runs as a domain
 user, and `/var/run` is root-only, so a lock there would fail to be
 created and the indicator would exit immediately on every start.
 
-For tiling window managers (`i3`, `dwm`, `spectrwm`), the OSD indicator is not used. The base window managers of the supported platforms -- `cwm` on OpenBSD, `twm` on FreeBSD -- are also not suited to it: in these environments, domain differentiation is provided by the color schemes of terminals, `mc`, and `xfe` launchers (`examples/apps/mc/skins`, `xterm_*`).
+For tiling window managers (`i3`, `dwm`, `spectrwm`), the OSD indicator is not used.
+The base window managers of the supported platforms -- `cwm` on OpenBSD, `twm` on
+FreeBSD -- are also not suited to it: in these environments, domain differentiation
+is provided by the color schemes of terminals, `mc`, and `xfe` launchers
+(`examples/apps/mc/skins`, `xterm_*`).
 
 Requires `dzen2`, `xdotool` and `xprop` (base X11).
 
@@ -268,14 +496,14 @@ Requires `dzen2`, `xdotool` and `xprop` (base X11).
 
 Compartmentalization only works if you can tell the compartments
 apart. dropQbsd uses a single, consistent color per domain across
-every surface: the terminals (`xterm_*`), `mc`, `xfe`, and the OSD
-indicator. `userweb` is always blue, `usermail` always orchid,
-`userdoc` always green, the conductor white, root red. The color is
+every surface: the terminals (`xterm_*`), `mc`, `xfe`, the `qmenu` headers
+and the OSD indicator. `userweb` is always blue, `usermail` always orchid,
+`userdoc` always green, the conductor black, root red. The color is
 not decoration -- in a system where every window looks alike, it is
 the fastest signal of which domain you are about to type into.
 
-The color schemes are installed by the bulk block in INSTALL.md
-10.1.
+The color schemes are installed by the bulk block in INSTALL_MANUAL.md
+ 10.1.
 
 ---
 
@@ -284,7 +512,9 @@ The color schemes are installed by the bulk block in INSTALL.md
 ### Aliases
 
 All commands are invoked through aliases defined in `/etc/dropQbsd/alias`,
-loaded by the shell chain. The naming rule: **every alias starts with a capital letter.** A single word when unambiguous; otherwise, the first letters of the significant words, capitalized and joined.
+loaded by the shell chain. The naming rule: **every alias starts with a
+capital letter.** A single word when unambiguous; otherwise, the first
+letters of the significant words, capitalized and joined.
 
 | Alias           | Command                            |
 | --------------- | ---------------------------------- |
@@ -296,24 +526,30 @@ loaded by the shell chain. The naming rule: **every alias starts with a capital 
 | `Upgrade`       | `admin/upgrade_tru_fwall`          |
 | `Run`           | `bin/run_app`                      |
 | `Endrop`        | `libexec/enforce_drop`             |
+| `Enhome`        | `libexec/enforce_home`             |
 | `Ensync`        | `libexec/enforce_sync`             |
 | `Enupdates`     | `libexec/ensure_updates_table`     |
 | `Exmail`        | `libexec/export_mail_to_drop`      |
 | `Exwww`         | `libexec/export_www_to_drop`       |
 | `Immail`        | `libexec/import_mail_from_drop`    |
 | `Imwww`         | `libexec/import_www_from_drop`     |
+| `Indicator`     | `libexec/indicator_de`             |
 | `Upmailserver`  | `libexec/update_mailserver_table`  |
 | `Upservices`    | `libexec/update_services_table`    |
 | `Verify`        | `libexec/verify_integrity`         |
-| `Control`       | `sbin/control_panel`               |
-| `File`          | `sbin/file_bridge`                 |
-| `Indicator`     | `sbin/indicator_de`                |
+| `Wrapper`       | `libexec/wrapper`                  |
+| `Qattach`       | `bin/run_app qattach`              |
 | `Qcp`           | `sbin/qcp`                         |
+| `Qcontrol`      | `sbin/qcontrol`                    |
+| `Qfile`         | `sbin/qfile`                       |
 | `Qimport`       | `sbin/qimport`                     |
+| `Qinspect`      | `sbin/qinspect`                    |
+| `Qmenu`         | `sbin/qmenu &`                     |
 | `Qmv`           | `sbin/qmv`                         |
-| `Site`          | `sbin/site_menu`                   |
+| `Qprompt`       | `sbin/qprompt`                     |
+| `Qsite`         | `sbin/qsite &`                     |
+| `Xtconductor`   | `sbin/xterm_conductor`             |
 | `Xtroot`        | `sbin/xterm_root`                  |
-| `Xtuser`        | `sbin/xterm_user`                  |
 | `Xtuserdoc`     | `sbin/xterm_userdoc`               |
 | `Xtusermail`    | `sbin/xterm_usermail`              |
 | `Xtuserweb`     | `sbin/xterm_userweb`               |
@@ -349,28 +585,94 @@ $ Qimport document.pdf ~/Documents
 
 `Qimport` handles directories directly.
 
-**Interactive transfer via file_bridge:**
+### Attaching a File to a Mail or Upload (qattach)
+
+`qattach` moves a file from a source domain into the Downloads of a
+destination domain, so it can be attached to a mail or uploaded to a
+website. It is a **GUI flow**, for the blocking case: you are composing
+a mail or filling an upload form, and the file must arrive *now*.
 
 ```
-$ File
+$ Qattach
 ```
 
-Four quadrants: `control_panel` top-left, and `nnn` instances for `userdoc`
+Three popups: pick a file (the picker runs **as the source domain**,
+confined to its home -- other domains' homes, mode 700, are invisible to it),
+then pick the destination, then confirm the file landing in the destination's
+`~/Downloads`. The file is staged in the drop zone, then imported.
+
+**Allowed directions** are declared in `/etc/dropQbsd/attach.conf`, one
+`SRC:DST` per line:
+
+```
+userdoc:usermail
+userdoc:userweb
+```
+
+The default matrix is deliberately minimal: **from the trusted source
+(`userdoc`) toward the exposed domains** (mail, web). The reverse
+directions carry untrusted data into the trusted archive and are handled
+with `qcp` + `qimport`, not with a shortcut.
+
+**Why not qattach everywhere?** `qcp` + `qimport` requires two
+deliberate acts, which is itself a defense. `qattach` is reserved for
+the blocking case, where two clicks are justified by urgency. Attrition
+proportional to urgency.
+
+**Requirements:** `Xdialog` (`Xdialog` on OpenBSD, `xdialog` on FreeBSD).
+
+### Conductor Menu (qmenu)
+
+```
+$ Qmenu
+```
+
+The conductor menu is a single YAD window listing the applications for
+every domain, grouped under coloured headers (conductor, root, userdoc,
+usermail, userweb). The entries are defined in the `[qmenu]` section of
+`local.conf`, in the format:
+
+```
+USERDOC
+/path/to/cmd args | Display name
+```
+
+The display name may be several words but must not contain `--` or
+`&` (both are interpreted as syntax by the entry's `eval`). See
+INSTALL_MANUAL 10.4.
+
+Header lines (`CONDUCTOR`, `ROOT`, `USERDOC`, `USERMAIL`, `USERWEB`) are not
+selectable -- they only start a coloured section. Display names must be
+**unique across all domains**: they are used to resolve the command, so
+`qmenu` warns and refuses to start on duplicates.
+
+The menu is bound to **`Mod4+q`** via `xbindkeys` in the
+conductor's `~/.xbindkeysrc` (operator-owned: installed once, never
+overwritten).
+
+**Requirements:** `yad`, `xbindkeys`.
+### Interactive transfer via Qfile
+
+```
+$ Qfile
+```
+
+Four quadrants: `qcontrol` top-left, and `nnn` instances for `userdoc`
 (green), `usermail` (orchid), `userweb` (blue). Press `;c` to copy, `;m` to
 move, or `;i` to import the current item.
 
 **Keys:**
 
-| Key   | Action                                            |
-| ----- | ------------------------------------------------- |
-| `F1`  | Jump to control_panel                             |
-| `F2`  | Jump to userdoc                                   |
-| `F3`  | Jump to usermail                                  |
-| `F4`  | Jump to userweb                                   |
-| `F5`  | Kill the session                                  |
-| `;c`  | Copy the current item to /home/drop via qcp       |
-| `;m`  | Move the current item to /home/drop via qmv       |
-| `;i`  | Import the current item from /home/drop via qimport |
+| Key | Action |
+| --- | ------ |
+| `F1` | Jump to qcontrol |
+| `F2` | Jump to userdoc |
+| `F3` | Jump to usermail |
+| `F4` | Jump to userweb |
+| `F5` | Kill the session |
+| `;c` | Copy the current item to /home/drop via qcp |
+| `;m` | Move the current item to /home/drop via qmv |
+| `;i` | Import the current item from /home/drop via qimport |
 
 **Note on multi-selection:** nnn passes plugins the current item and the
 containing directory. Copy, move, and import operate on **one item at a time**
@@ -379,14 +681,14 @@ repeat the action for each, or use `qcp`/`qmv`/`qimport` directly from a
 terminal with explicit paths.
 
 **Note on F1-F5:** these bindings are global to the tmux server
-(root key table), not scoped to the file_bridge session. While
-file_bridge is running, F1-F5 are captured in every tmux session
-on the machine. This is deliberate -- file_bridge is meant to be
+(root key table), not scoped to the Qfile session. While
+Qfile is running, F1-F5 are captured in every tmux session
+on the machine. This is deliberate -- Qfile is meant to be
 the only tmux session in use. If you run other tmux sessions,
-their F1-F5 will be overridden until file_bridge exits.
+their F1-F5 will be overridden until Qfile exits.
 
 The status bar and active pane border follow the active domain. On exit,
-`file_bridge` terminates orphaned `nnn` processes gracefully (SIGTERM, then
+Qfile terminates orphaned `nnn` processes gracefully (SIGTERM, then
 SIGKILL for survivors).
 
 ### Launching Apps in Domains
@@ -404,10 +706,10 @@ Browser flags for temporary profiles:
 - Librewolf: `--temp-profile --private-window`
 - Qutebrowser: `--temp-basedir`
 
-### Control Panel
+### Qcontrol
 
 ```
-$ Control
+$ Qcontrol
 ```
 
 An ncurses dashboard showing compartment status, drop zone contents, and system
@@ -416,8 +718,10 @@ health.
 **What you see:**
 
 - **Domains** -- which compartments are active and what process is running in each
-- **Drop zone** -- files awaiting import (newer than 60 minutes), with the file/quarantine totals in the section header, plus permissions and quarantine status
-- **System** -- PF state, load average, free space on /home, tmpfs usage, enforcement logs, integrity verification (requires root authentication)
+- **Drop zone** -- files awaiting import (newer than 60 minutes), with the file/quarantine
+  totals in the section header, plus permissions and quarantine status
+- **System** -- PF state, load average, free space on /home, tmpfs usage, enforcement logs,
+  integrity verification (requires root authentication)
 
 **Keys:**
 
@@ -433,9 +737,9 @@ minutes, and every refresh re-authenticates. The snapshot is written by
 0640`; the owner is verified before the panel trusts it, and the lines are
 sanitized (ESC stripped) before printing.
 
-### Site Menu
+### Qsite
 
-`site_menu` is a two-phase launcher for password-protected sites. It
+`qsite` is a two-phase launcher for password-protected sites. It
 reads a list of sites from `~/.config/dropQbsd/sites.conf`, copies
 credentials to the X11 clipboard via `pass(1)`, and opens the site in
 a disposable browser session.
@@ -445,12 +749,17 @@ wrong site):
 
 1. Select a site > **Copy ID** > the browser opens, the user ID is
    copied to the clipboard, and the window stays open.
-2. The same site is now the only entry shown > **Copy Password** > 
+2. The same site is now the only entry shown > **Copy Password** >
    the password is copied (with a 30-second clipboard clear timer),
    and the window closes.
 
 Because phase 2 shows only the site that is waiting for the password,
 there is no way to paste it into a different site.
+
+The browser is chosen by fallback at runtime: **ungoogled-chromium**
+first, then **librewolf**, then **qutebrowser** -- the first whose
+binary exists is used, always with a disposable temporary profile
+(`--temp-profile` / `--temp-basedir`).
 
 **Configuration** -- `~/.config/dropQbsd/sites.conf`, one site per line:
 
@@ -472,17 +781,18 @@ $ pass insert finance/bank_pw
 **Launch:**
 
 ```
-$ Site
+$ Qsite
 ```
 
-**Requirements:** `zenity`, `pass`, `xclip`, and a browser. See
+**Requirements:** `yad`, `pass`, `xclip`, and a browser. See
 INSTALL.md for the setup.
 
 ### System Updates
 
-System updates run through the scripts in `admin/`, using the
-restrictive firewall. Root has no permanent network access: the
-`<updates>` PF table is populated on demand by each script.
+System updates are performed through the scripts in `/opt/dropQbsd/admin/`, using the restrictive firewall.
+
+Root has no permanent network access. The `<updates>` PF table is populated every 15 minutes via cron (and again on entry of each update script), then **flushed on exit** when the operation completes — so the mirror IPs are reachable only while an update is running. Each update script also adds **temporary** DNS/HTTP rules for root (`grant_dns`), which are removed when the operation finishes (`revoke_dns`), restoring the strict ruleset. `<mailserver>` and `<services>` stay populated for daily use.
+
 
 | Alias     | Purpose                                                    |
 | --------- | ---------------------------------------------------------- |
@@ -562,6 +872,26 @@ $ cat /home/drop/_quarantine/*.txt
 $ Verify
 ```
 
+**After updating scripts:** if you modify any monitored file,
+`verify_integrity` will report a violation. This is expected. Re-sign the
+manifest:
+
+```sh
+Sign
+```
+
+This includes the **configuration files** under `/etc/dropQbsd/`
+(`conductor.conf`, `attach.conf`, `domains.conf`, `schema`, `filelist`):
+they are monitored like the scripts. Adding a conductor action to
+`conductor.conf` (see 10.9) or a direction to `attach.conf` requires a
+re-sign before `verify_integrity` will pass.
+
+**Testing the gate.** `run_app` is a compiled binary -- never run it with
+`ksh -x` (it is not a script). To test a conductor action, use the alias
+(`Qattach`) or the gate's full invocation. If `file /opt/dropQbsd/bin/run_app`
+does not report a statically linked ELF, rebuild it with
+`admin/build_run_app`.
+
 ---
 
 ## Scripts Reference
@@ -570,30 +900,38 @@ $ Verify
 
 | Script              | Run by                | Purpose                                                        |
 | ------------------- | --------------------- | -------------------------------------------------------------- |
-| `file_bridge`       | user (conductor only) | 4-quadrant tmux bridge across all domains                      |
-| `qimport`           | Any user              | Copy from drop zone to `~/Downloads`                           |
-| `qmv`               | Any user              | Move file/directory into `/home/drop` via atomic staging       |
-| `qcp`               | Any user              | Copy file/directory into `/home/drop` without deleting         |
-| `run_app`           | user (setuid root)    | Blind-gate binary. Escalates to root, execs `wrapper`          |
+| `qattach`           | conductor             | GUI: attach a file from a source domain into a destination's Downloads |
+| `qcp`               | any user              | Copy file/directory into `/home/drop` without deleting         |
+| `qfile`             | conductor             | 4-quadrant tmux bridge across all domains                      |
+| `qimport`           | any user              | Copy from drop zone to `~/Downloads`                           |
+| `qmv`               | any user              | Move file/directory into `/home/drop` via atomic staging       |
+| `run_app`           | conductor (via `$CONDUCTOR_USER`, setuid root)   | Blind-gate binary. Escalates to root, execs `wrapper`          |
 | `wrapper`           | root (via run_app)    | Sanitizes environment, selects the shell, execs the script     |
-| `run_app_impl`      | root (via wrapper)    | Launch logic -- X11 cookie, runtime dir, tmpfs, `su -l`         |
+| `run_app_impl`      | root (via wrapper)    | Launch logic -- X11 cookie, runtime dir, tmpfs, `su -l`        |
 
 ### Launchers and Utilities
 
-| Script           | Run by                | Purpose                                                              |
-| ---------------- | --------------------- | -------------------------------------------------------------------- |
-| `control_panel`  | user (conductor only) | ncurses dashboard -- domain status, drop zone, system health          |
-| `indicator_de`   | user (conductor only) | Domain indicator for XFCE/MATE via OSD popup                         |
-| `site_menu`      | user (conductor only) | Two-phase site launcher with `pass(1)` integration                   |
-| `xterm_root`     | user (conductor only) | Color-coded xterm, then `su -` to root                               |
-| `xterm_user`     | user (conductor only) | Color-coded xterm for the conductor domain (black)                   |
-| `xterm_userdoc`  | user (conductor only) | Color-coded xterm for userdoc domain (dark green)                    |
-| `xterm_usermail` | user (conductor only) | Color-coded xterm for usermail domain (dark orchid)                  |
-| `xterm_userweb`  | user (conductor only) | Color-coded xterm for userweb domain (dark blue)                     |
+| Script            | Run by    | Purpose                                                              |
+| ----------------- | --------- | -------------------------------------------------------------------- |
+| `indicator_de`    | conductor | Domain indicator for XFCE/MATE via OSD popup                         |
+| `qcontrol`        | conductor | ncurses dashboard -- domain status, drop zone, system health         |
+| `qsite`           | conductor | Two-phase site launcher with `pass(1)` integration                   |
+| `xterm_conductor` | conductor | Color-coded xterm for the conductor domain (black)                   |
+| `xterm_root`      | conductor | Color-coded xterm, then `su -` to root                               |
+| `xterm_userdoc`   | conductor | Color-coded xterm for userdoc domain (dark green)                    |
+| `xterm_usermail`  | conductor | Color-coded xterm for usermail domain (dark orchid)                  |
+| `xterm_userweb`   | conductor | Color-coded xterm for userweb domain (dark blue)                     |
 
 `indicator_de` is started automatically from the session file
 (`~/.xprofile`, `~/.xsession`, or `~/.xinitrc`) when the conductor
 logs in. See "Domain Indicators" above.
+
+### Installer and Updater
+
+| Script       | Run by | Purpose                                                       |
+| ------------ | ------ | ------------------------------------------------------------- |
+| `install.sh` | root   | Semi-automatic installer (fresh install)                      |
+| `update.sh`  | root   | Updater (existing installation, preserves config)             |
 
 ### Export/Import Pipeline
 
@@ -616,6 +954,7 @@ next run imports the complete archive.
 | Script          | Run by | Purpose                                                                                             |
 | --------------- | ------ | --------------------------------------------------------------------------------------------------- |
 | `enforce_drop`  | root   | Fix permissions, quarantine violations, clean abandoned files. Logs to `/var/log/dropQbsd/enforce_drop.log`. |
+| `enforce_home`  | root   | Fix owner/group/mode on the domain home directories and `/root`. |
 | `enforce_sync`  | root   | Fix owner/group/permissions in Sync directory. Logs to `/var/log/dropQbsd/enforce_sync.log`.        |
 
 ### Firewall Table Management (cron)
@@ -631,9 +970,13 @@ next run imports the complete archive.
 | Script                | Run by | Purpose                                                                       |
 | --------------------- | ------ | ----------------------------------------------------------------------------- |
 | `patch_tru_fwall`     | root   | Apply security patches through restrictive PF                                |
-| `pkg_tru_fwall`       | root   | Install/update packages through restrictive PF; flushes `<updates>` on exit  |
+| `pkg_tru_fwall`       | root   | Install/update packages through restrictive PF; repopulates `<updates>` after each `pfctl -f`  |
 | `upgrade_tru_fwall`   | root   | Upgrade to next BSD release through restrictive PF (reboots)                 |
 | `update_tru_fwall`    | root   | Full update: patch + firmware + pkg update + orphan cleanup                  |
+
+**`<updates>` lifecycle.** The table is populated every **15 minutes via cron** (`ensure_updates_table`), and again **on entry** of every update script (`Patch`, `Pkg`, `Update`, `Upgrade`) before the network window is opened. When an update finishes, the table is **flushed on exit** (`FLUSH_ON_EXIT=1`, the default): it is **empty at rest**, so the mirror IPs are only reachable during an actual update. This is least privilege -- there is no permanent network path to the mirrors. The `*/15` cron keeps the table warm as a fallback and for immediate use; a `pfctl -f` reload empties all tables, and the cron refills them within 15 minutes. `<mailserver>` and `<services>` are **not** flushed by updates -- they stay populated for daily use and are repopulated after any `pfctl -f`.
+
+**Note:** if you ever need the `<updates>` table to stay populated after an update, set `FLUSH_ON_EXIT=0` in the update scripts. The default (flush) is the secure setting.
 
 ### Integrity
 
@@ -646,29 +989,38 @@ The integrity keys are generated locally during setup, not distributed with the
 repository. Each installation verifies its own scripts against its own
 signature.
 
+The integrity **filelist** (the files `verify_integrity` checks)
+is verified for coherence during install and update: every file
+the project ships must be listed, and every listed file must
+exist. A shipped file missing from the list is a silent monitoring
+gap, so the installer/updater stops in that case.
+
 ### Recovery
 
 The entire system state is in a few places:
 
 - **Scripts** in `/opt/dropQbsd/`
 - **Users and groups** in `/etc/passwd`, `/etc/group`
-- **Policy** in `/etc/dropQbsd/` (`domains.conf`, `local.conf`, `schema`)
+- **Policy** in `/etc/dropQbsd/` (`domains.conf`, `local.conf`, `schema`,
+  `attach.conf`, `conductor.conf`, `filelist`)
 - **PF rules** generated in `/etc/pf.conf`
 - **Cron jobs** in `/var/cron/tabs/root`
+- **Firewall backup.** `gen_fwall` backs up the current `/etc/pf.conf` to
+  `/etc/pf.conf.bak.<timestamp>` before replacing it -- but only if the
+  current ruleset passes `pfctl -nf` (a corrupted ruleset is never preserved
+  as a restore point). The backup lives next to `pf.conf`, not in the
+  updater backup dir, because `pf.conf` is generated, not a project file:
+  a connection problem right after `Gen` is fixable with a single `cp`.
 
 **To rebuild from scratch:**
 
 1. Install OpenBSD (or FreeBSD)
-2. Copy the scripts to `/opt/dropQbsd/`
-3. Run the user/group creation commands
-4. Compile the `run_app` blind gate and set the setuid bit
-5. Copy `domains.conf`, `schema`, and `local.conf` to `/etc/dropQbsd/`
-6. Run `Gen openbsd` (or `Gen freebsd`) and reload
-7. Populate `local.conf` with your provider IPs
-8. Add cron jobs
+2. Copy the repository to the machine
+3. Run the installer: `doas ./installer/install.sh`
+4. Set passwords and edit `local.conf` (the installer prints the steps)
 
-Typically under 30 minutes, often less. No databases to restore. No daemon state
-to reconstruct.
+Typically under 15 minutes, often less. No databases to restore. No dropQbsd
+daemon state to reconstruct.
 
 ---
 
@@ -714,11 +1066,46 @@ BSDs -- it sits on top, using tools battle-tested for decades.
 The goal is not to add layers of abstraction but to remove them. If Unix users
 and permissions already provide isolation, why add a hypervisor? If `cron` and
 `find` can police a shared directory, why run a daemon? If `ksh` and `pfctl`
-can manage network access for updates, why build a package manager wrapper? If a 35-line setuid C binary can gate privilege escalation, why give `user` a
+can manage network access for updates, why build a package manager wrapper?
+If a 48-line setuid C binary can gate privilege escalation, why give `conductor` a
 `doas` ticket to the whole system?
 
 **Complexity is the enemy of security.** dropQbsd keeps it simple, auditable,
 and boring -- exactly what you want from a security tool.
+
+### Recount it
+
+Comments and blank lines excluded, in three parts:
+
+- **~3,600** of shell -- what runs: `sbin/`, `libexec/`, `admin/`.
+  Covered by the signed manifest that `verify_integrity` checks.
+- **~1,700** for the `installer/` and `update.sh` tree -- what builds the
+  system. Runs once, as root, before any firewall exists. Not copied to
+  `/opt`, so not covered by the manifest: it is read, or it is trusted.
+- **~380** of shell templates, **48** of C.
+
+Nothing up our sleeve -- the numbers are reproducible:
+
+```sh
+# shell: what runs
+cat sbin/* libexec/* admin/* \
+  | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' | wc -l
+
+# shell: what builds it
+cat installer/install.sh installer/update.sh installer/lib/* \
+  | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' | wc -l
+
+# shell templates
+cat templates/* templates/rc.d/* \
+  | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' | wc -l
+
+# C
+wc -l src/run_app.c
+```
+
+One caveat, so the number means what it says: heredocs count. The
+quarantine ticket in `enforce_drop` and the `--help` text in `install.sh`
+are real lines of real files, and they are included.
 
 ---
 
@@ -728,18 +1115,20 @@ and boring -- exactly what you want from a security tool.
 
 - ✅ Desktop standalone -- four domains, PF isolation, drop zone
 - ✅ Disposable browser sessions (tmpfs-backed)
-- ✅ Site menu with password manager integration
+- ✅ Site menu with password manager integration (`qsite`)
 - ✅ Archival pipeline (email + websites > userdoc)
 - ✅ Declarative firewall policy (`gen_fwall`, `domains.conf` + `local.conf`)
 - ✅ FreeBSD support (v0.3.0) -- same codebase, shebang selected by wrapper
-
-**In progress:**
-
-- 🚧 Install script (`install.sh`) -- the current manual install is the main
-  barrier to adoption
+- ✅ `qattach` -- GUI file attach between domains (Xdialog picker, v0.4.0)
+- ✅ Semi-automatic installer (`install.sh`, v0.4.0)
+- ✅ Updater (`update.sh`, v0.4.0) -- preserves config, replaces changed files
 
 **Planned:**
 
+- 📋 Stricter drop zone model -- staging directories `570` (so a compromised
+  domain cannot remove or replace files in transit) and export directories
+  written by root (`750 root:drop`) instead of by the exporting domain.
+  See "Drop zone risk model".
 - 📋 Ports tree submission (OpenBSD first, then FreeBSD)
 - 📋 dropQbsd-paired + server (WireGuard client-server, input isolation)
 - 📋 dropQlnx -- a separate Linux variant. Linux has no

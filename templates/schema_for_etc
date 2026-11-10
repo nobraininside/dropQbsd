@@ -23,7 +23,7 @@
 #  Permissions: chmod 644, root:wheel
 # ==========================================================
 
-user
-userweb
-usermail
-userdoc
+dropQbsd_conductor
+dropQbsd_userdoc
+dropQbsd_usermail
+dropQbsd_userweb

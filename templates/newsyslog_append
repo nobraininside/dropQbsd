@@ -25,12 +25,18 @@
 
 # dropQbsd logs
 /var/log/dropQbsd/enforce_drop.log             root:wheel   640  7     *     @T00  Z
+/var/log/dropQbsd/enforce_home.log             root:wheel   640  7     *     @T00  Z
 /var/log/dropQbsd/enforce_sync.log             root:wheel   640  7     *     @T00  Z
 /var/log/dropQbsd/ensure_updates_table.log     root:wheel   640  3     100   *     Z
 /var/log/dropQbsd/patch_tru_fwall.log          root:wheel   640  3     100   *     Z
 /var/log/dropQbsd/pkg_tru_fwall.log            root:wheel   640  3     100   *     Z
+/var/log/dropQbsd/qattach.log                  root:wheel   640  7     *     @T00  Z
+/var/log/dropQbsd/run_app_impl.log             root:wheel   640  7     *     @T00  Z
 /var/log/dropQbsd/update_mailserver_table.log  root:wheel   640  3     100   *     Z
 /var/log/dropQbsd/update_services_table.log    root:wheel   640  3     100   *     Z
 /var/log/dropQbsd/update_tru_fwall.log         root:wheel   640  3     100   *     Z
 /var/log/dropQbsd/upgrade_tru_fwall.log        root:wheel   640  3     100   *     Z
 /var/log/dropQbsd/verify_integrity.log         root:wheel   640  7     *     @T00  Z
+/var/log/dropQbsd/install.log                  root:wheel   640  3     100   *     Z
+/var/log/dropQbsd/update.log                   root:wheel   640  3     100   *     Z
+

@@ -12,24 +12,39 @@
 #  Path: /opt/dropQbsd/libexec/export_mail_to_drop
 #  Permissions: chmod 755, root:wheel
 #
-#  Usage: export_mail_to_drop [-v] (run as usermail)
-#    -v   Verbose output
-#
 #  Orphaned .tmp cleanup time is set in the CLEANUP section.
 #  Archive retention is handled by enforce_drop (cron).
 #
 #  IMPORTANT: This script MUST be executed via the dropQbsd
 #  wrapper or its alias. Do NOT run it directly.
-#  Usage (-v verbose output). Run as usermail:
+#  Usage (run as usermail):
 #    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/export_mail_to_drop [-v]
 #    OR
 #    Exmail [-v]
+#    -v   Verbose output
 # ==========================================================
 
 set -eu
 umask 002
 
-SRC="/home/usermail/.mail"
+# --- source directory from local.conf [sync] mail_src ---------
+SRC=$(awk '
+    $0 == "[sync]" { s=1; next }
+    /^[[]/         { s=0 }
+    s && /^mail_src[[:space:]]*=/ {
+        sub(/^mail_src[[:space:]]*=[[:space:]]*/, "")
+        print
+        exit
+    }
+' /etc/dropQbsd/local.conf)
+[ -n "$SRC" ] || SRC="/home/usermail/.mail"
+
+if [ ! -d "$SRC" ]; then
+    echo "[ERROR] Export source does not exist: $SRC" >&2
+    echo "[ERROR] Set [sync] mail_src in local.conf, or configure your mail client" >&2
+    exit 1
+fi
+
 DST="/home/drop/usermail_export"
 
 #-----------------------------------------------------------------------------

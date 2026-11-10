@@ -1,0 +1,515 @@
+# ==========================================================
+#  dropQbsd -- qattach
+#
+#  Attaches a file from a SOURCE domain into the Downloads
+#  directory of a DESTINATION domain, so it can be attached
+#  to a mail or uploaded to a website.
+#
+#  Invoked as:
+#    run_app qattach <source>
+#  run_app_impl resolves the X11 cookie and passes it here,
+#  along with the display, as arguments 2 and 3.
+#
+#  Flow:
+#    1. Hierarchical picker AS THE SOURCE (Xdialog), confined
+#       to the source's home. The user picks a file.
+#    2. Destination menu (Xdialog), from attach.conf.
+#    3. qimport AS THE DESTINATION: the staged file is known
+#       by name, so no third picker is needed.
+#
+#  The picker runs AS THE DOMAIN IT BELONGS TO, never as root.
+#  Xdialog is pure X11: it does not use MIT-SHM, so it renders
+#  correctly across user boundaries (unlike GTK/zenity).
+#
+#  The staged file carries a unique name:
+#    <basename>.<pid>.<timestamp>.qattach
+#  so concurrent or failed qattach runs never collide, and
+#  phase 3 knows exactly which file to import.
+#
+#  qattach does NOT implement transport. It orchestrates the
+#  existing qcp and qimport scripts, running each one AS the
+#  domain it acts on (via su -l).
+#
+#  Path: /opt/dropQbsd/sbin/qattach
+#  Permissions: chmod 755, root:wheel
+#
+#  Requirements: Xdialog (Xdialog on OpenBSD, xdialog on FreeBSD).
+#
+#  IMPORTANT: invoked through the run_app gate:
+#    /opt/dropQbsd/bin/run_app qattach <source>
+#    OR
+#    Qattach <source>
+#  Do NOT run it directly.
+#
+#  PORTABILITY: PD KSH (OpenBSD) + mksh (FreeBSD).
+#  Do NOT use: disown, bash arrays, [[ =~ ]], '\#*' in [[ ]].
+#  Use 'case' for glob matching. ASCII only in GUI strings.
+# ==========================================================
+
+set -eu
+
+WRAPPER="/opt/dropQbsd/libexec/wrapper"
+QCP="/opt/dropQbsd/sbin/qcp"
+QIMPORT="/opt/dropQbsd/sbin/qimport"
+
+ATTACH_CONF="/etc/dropQbsd/attach.conf"
+SCHEMA="/etc/dropQbsd/schema"
+
+LOG="/var/log/dropQbsd/qattach.log"
+DROP_DIR="/home/drop"
+
+#-----------------------------------------------------------------------------
+# LOGGING
+#-----------------------------------------------------------------------------
+log() {
+    printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$LOG"
+}
+
+#-----------------------------------------------------------------------------
+# ARGUMENTS: source, display, xauthority (from run_app_impl)
+#-----------------------------------------------------------------------------
+if [ $# -ne 3 ]; then
+    echo "Usage: qattach <source-domain> <display> <xauthority>" >&2
+    exit 1
+fi
+
+SRC_DOMAIN="$1"
+DISPLAY_ARG="$2"
+AUTH_SRC="$3"
+
+#-----------------------------------------------------------------------------
+# IDENTITY: the conductor. State lives in its cache.
+#-----------------------------------------------------------------------------
+# Derive the conductor account from its GECOS marker, so a renamed
+# account works without touching this script. Fallback guard for
+# direct invocation without the wrapper.
+CONDUCTOR=""
+if [ -n "${CONDUCTOR_USER:-}" ]; then
+    CONDUCTOR="$CONDUCTOR_USER"
+else
+    CONDUCTOR="$(getent passwd | awk -F: 'index($5, "dropQbsd_conductor") > 0 {print $1; exit}')"
+fi
+[ -n "$CONDUCTOR" ] || CONDUCTOR="conductor"
+COND_HOME=""
+COND_HOME="$(awk -F: -v u="$CONDUCTOR" '$1 == u {print $6; exit}' /etc/passwd)"
+if [ -z "$COND_HOME" ] || [ ! -d "$COND_HOME" ]; then
+    echo "Error: cannot resolve conductor home." >&2
+    exit 1
+fi
+#-----------------------------------------------------------------------------
+# RUNTIME DIRECTORY (state lives in the conductor's cache)
+#-----------------------------------------------------------------------------
+# MUST stay after COND_HOME is assigned above. Under `set -u` an earlier
+# reference aborts with "COND_HOME: parameter not set" -- which is exactly
+# the v0.4.0 crash this block was moved to fix. Do not hoist it.
+RUNDIR="$COND_HOME/.cache/dropQbsd"
+mkdir -p "$RUNDIR"
+chmod 700 "$RUNDIR"
+
+#-----------------------------------------------------------------------------
+# X ENVIRONMENT
+#-----------------------------------------------------------------------------
+if [ ! -s "$AUTH_SRC" ]; then
+    echo "Error: X11 cookie '$AUTH_SRC' is empty or missing." >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# RESOLVE THE XDIALOG BINARY (OpenBSD: Xdialog, FreeBSD: xdialog)
+#-----------------------------------------------------------------------------
+XDIALOG=""
+if command -v Xdialog >/dev/null 2>&1; then
+    XDIALOG="Xdialog"
+elif command -v xdialog >/dev/null 2>&1; then
+    XDIALOG="xdialog"
+else
+    echo "Error: Xdialog not found." >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# DEPENDENCY CHECK
+#-----------------------------------------------------------------------------
+if [ ! -f "$ATTACH_CONF" ]; then
+    echo "Error: $ATTACH_CONF not found." >&2
+    exit 1
+fi
+
+if [ ! -f "$SCHEMA" ]; then
+    echo "Error: $SCHEMA not found." >&2
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# VALIDATE A DOMAIN AGAINST schema
+#-----------------------------------------------------------------------------
+# schema lists the GECOS role markers ("dropQbsd_<role>"), not account
+# names. A domain is valid if its GECOS marker is listed AND an account
+# carries it. For the three fixed domains (userdoc, usermail, userweb)
+# the account name equals the role; the conductor is never a valid
+# qattach source/destination (it is not in attach.conf).
+is_valid_domain() {
+    _d="$1"
+    _marker="dropQbsd_${_d}"   # e.g. userdoc -> dropQbsd_userdoc
+    grep -v '^[[:space:]]*#' "$SCHEMA" \
+        | grep -v '^[[:space:]]*$' \
+        | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+        | grep -qx -- "$_marker" \
+    && getent passwd | awk -F: -v m="$_marker" \
+        'index($5, m) > 0 {print $1; exit}' | grep -qx -- "$_d"
+}
+
+#-----------------------------------------------------------------------------
+# RESOLVE A DOMAIN'S HOME
+#-----------------------------------------------------------------------------
+domain_home() {
+    awk -F: -v u="$1" '$1 == u {print $6; exit}' /etc/passwd
+}
+
+#-----------------------------------------------------------------------------
+# VALIDATE THE SOURCE AGAINST attach.conf
+#-----------------------------------------------------------------------------
+if ! is_valid_domain "$SRC_DOMAIN"; then
+    log "error: invalid source domain '$SRC_DOMAIN'"
+    exit 1
+fi
+
+if ! grep -v '^[[:space:]]*#' "$ATTACH_CONF" \
+     | grep -v '^[[:space:]]*$' \
+     | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+     | grep -q "^${SRC_DOMAIN}:"; then
+    log "error: source '$SRC_DOMAIN' not allowed in attach.conf"
+    exit 1
+fi
+
+SRC_HOME=$(domain_home "$SRC_DOMAIN")
+if [ -z "$SRC_HOME" ] || [ ! -d "$SRC_HOME" ]; then
+    log "error: cannot resolve home for '$SRC_DOMAIN'"
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# LOAD DESTINATIONS FOR THIS SOURCE
+#-----------------------------------------------------------------------------
+DEST_LIST="$RUNDIR/qattach_dests"
+: > "$DEST_LIST"
+
+while IFS= read -r _line; do
+    case "$_line" in
+        ''|\#*) continue ;;
+    esac
+    _line=$(printf '%s' "$_line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    case "$_line" in
+        ''|\#*) continue ;;
+    esac
+    _src=${_line%%:*}
+    _dst=${_line#*:}
+    [ "$_src" = "$_line" ] && continue
+    [ "$_src" = "$SRC_DOMAIN" ] || continue
+    is_valid_domain "$_dst" || continue
+    printf '%s\n' "$_dst" >> "$DEST_LIST"
+done < "$ATTACH_CONF"
+
+if [ ! -s "$DEST_LIST" ]; then
+    log "error: no destinations for source '$SRC_DOMAIN'"
+    exit 1
+fi
+
+#-----------------------------------------------------------------------------
+# TEMPORARY X COOKIES, ONE PER DOMAIN THAT RUNS A POPUP
+#-----------------------------------------------------------------------------
+# Each popup runs AS A DOMAIN (su -l). It needs a cookie it can
+# read. The conductor's cookie is copied to a temp file, owned by
+# that domain, mode 600, removed on exit. /tmp is sticky (1777).
+TMP_AUTH_1=$(mktemp /tmp/qattach_auth1.XXXXXX)
+TMP_AUTH_2=$(mktemp /tmp/qattach_auth2.XXXXXX)
+
+cleanup() {
+    rm -f "$TMP_AUTH_1" "$TMP_AUTH_2" 2>/dev/null
+    rm -f "$DEST_LIST" 2>/dev/null
+}
+trap cleanup EXIT
+trap 'cleanup; trap - EXIT; exit 129' HUP
+trap 'cleanup; trap - EXIT; exit 130' INT
+trap 'cleanup; trap - EXIT; exit 143' TERM
+
+make_cookie_for() {
+    _dom="$1"
+    _dst="$2"
+    cp "$AUTH_SRC" "$_dst"
+    chown "$_dom" "$_dst"
+    chmod 600 "$_dst"
+}
+
+#-----------------------------------------------------------------------------
+# HIERARCHICAL PICKER
+#-----------------------------------------------------------------------------
+# Runs AS THE GIVEN DOMAIN, confined to the given root directory.
+# The domain cannot navigate above the root: the parent case
+# refuses to go past it.
+#
+# Tags carry an explicit type prefix:
+#   P:  parent
+#   D:  directory
+#   F:  file
+# The item (what the user sees) is the plain name.
+#
+# Prints the selected absolute path on stdout, or nothing on cancel.
+# Return: 0 = selected, 1 = cancelled, 2 = error.
+#
+# Arguments: <domain> <cookie> <root> <title> <filter> <xdialog>
+picker() {
+    _dom="$1"
+    _cookie="$2"
+    _root="$3"
+    _title="$4"
+    _filter="$5"
+    _xd="$6"
+
+    su -l "$_dom" -c '
+        COOKIE="$1"; ROOT="$2"; TITLE="$3"; FILTER="$4"; XD="$5"
+        export DISPLAY="'"$DISPLAY_ARG"'"
+        export XAUTHORITY="$COOKIE"
+
+        cur="$ROOT"
+        selected=""
+
+        while :; do
+            # Build the argument list with set --, so each tag and
+            # each item is a separate argument. The shell does not
+            # word-split them, so items may contain spaces.
+            set -- "P:" ".."
+            case "$cur" in
+                "$ROOT"|"$ROOT"/) : ;;
+                *) set -- "$@" "S:" "[ select this folder ]" ;;
+            esac
+
+            for e in "$cur"/*; do
+                [ -e "$e" ] || continue
+                name=$(basename "$e")
+                case "$name" in
+                    .*) continue ;;
+                esac
+                if [ -d "$e" ]; then
+                    set -- "$@" "D:$name" "$name"
+                else
+                    case "$FILTER" in
+                        qattach)
+                            case "$name" in
+                                *.qattach) set -- "$@" "F:$name" "$name" ;;
+                            esac
+                            ;;
+                        *)
+                            case "$name" in
+                                *.qattach) ;;
+                                *) set -- "$@" "F:$name" "$name" ;;
+                            esac
+                            ;;
+                    esac
+                fi
+            done
+
+            # --no-tags: show only the item, not the tag.
+            choice=$($XD --stdout --no-tags --title "$TITLE" \
+                        --menubox "Dir: $cur" 40 120 30 "$@" 2>/dev/null) || exit 1
+
+            case "$choice" in
+                "")
+                    exit 1
+                    ;;
+                P:*)
+                    case "$cur" in
+                        "$ROOT"|"$ROOT"/) : ;;
+                        *) cur=$(dirname "$cur") ;;
+                    esac
+                    ;;
+                S:*)
+                    selected="$cur"
+                    break
+                    ;;
+                D:*)
+                    cur="$cur/${choice#D:}"
+                    ;;
+                F:*)
+                    selected="$cur/${choice#F:}"
+                    break
+                    ;;
+                *)
+                    exit 2
+                    ;;
+            esac
+        done
+
+        printf "%s" "$selected"
+    ' -- "$_cookie" "$_root" "$_title" "$_filter" "$_xd"
+}
+
+#-----------------------------------------------------------------------------
+# PHASE 1: PICK A FILE FROM THE SOURCE
+#-----------------------------------------------------------------------------
+make_cookie_for "$SRC_DOMAIN" "$TMP_AUTH_1"
+
+log "phase 1: picker as $SRC_DOMAIN, root=$SRC_HOME"
+
+SELECTED=$(picker "$SRC_DOMAIN" "$TMP_AUTH_1" "$SRC_HOME" \
+    "dropQbsd - qattach: pick a file ($SRC_DOMAIN)" "file" "$XDIALOG") || {
+    rc=$?
+    if [ "$rc" -eq 1 ]; then
+        log "cancelled at phase 1"
+        exit 0
+    fi
+    log "error: picker failed in phase 1 (rc=$rc)"
+    exit 1
+}
+
+if [ -z "$SELECTED" ]; then
+    log "cancelled at phase 1 (empty)"
+    exit 0
+fi
+
+# Validate: inside the source's home, a regular file.
+case "$SELECTED" in
+    "$SRC_HOME"/*) ;;
+    *)
+        log "error: selected '$SELECTED' is outside $SRC_HOME"
+        exit 1
+        ;;
+esac
+if [ ! -f "$SELECTED" ] && [ ! -d "$SELECTED" ]; then
+    log "error: selected '$SELECTED' is neither a file nor a directory"
+    exit 1
+fi
+
+BASENAME=$(basename "$SELECTED")
+
+log "selected: $BASENAME"
+
+#-----------------------------------------------------------------------------
+# STAGE INTO THE DROP ZONE, AS THE SOURCE, WITH A UNIQUE NAME
+#-----------------------------------------------------------------------------
+# The staged name is unique per run:
+#   <basename>.<pid>.<timestamp>.qattach
+# so concurrent or failed runs never collide, and phase 3 knows
+# exactly which file to import.
+#
+# qcp takes a path and stages the file under its basename. To get
+# the unique name, copy the file to a temp name inside the source's
+# home, qcp that, then rename it in the drop zone.
+STAMP=$(date +%s)
+STAGED="${BASENAME}.$$.${STAMP}.qattach"
+TMP_STAGE="$SRC_HOME/.qattach_stage.$$"
+
+cp -R "$SELECTED" "$TMP_STAGE"
+chown "$SRC_DOMAIN" "$TMP_STAGE"
+
+if ! su -l "$SRC_DOMAIN" -c "$WRAPPER $QCP \"$TMP_STAGE\""; then
+    rm -rf "$TMP_STAGE"
+    log "error: qcp failed for $BASENAME as $SRC_DOMAIN"
+    exit 1
+fi
+rm -rf "$TMP_STAGE"
+
+# qcp placed the file in the drop zone under its temp basename.
+DROP_TMP="$DROP_DIR/.qattach_stage.$$"
+DROP_FINAL="$DROP_DIR/$STAGED"
+
+if [ ! -e "$DROP_TMP" ]; then
+    log "error: qcp did not stage the file as expected"
+    exit 1
+fi
+
+mv "$DROP_TMP" "$DROP_FINAL"
+chgrp -R drop "$DROP_FINAL"
+if [ -d "$DROP_FINAL" ]; then
+    find "$DROP_FINAL" -type d -exec chmod 570 {} +
+    find "$DROP_FINAL" -type f -exec chmod 440 {} +
+else
+    chmod 440 "$DROP_FINAL"
+fi
+
+log "staged: $STAGED"
+
+#-----------------------------------------------------------------------------
+# PHASE 2: PICK THE DESTINATION (from attach.conf)
+#-----------------------------------------------------------------------------
+make_cookie_for "$SRC_DOMAIN" "$TMP_AUTH_2"
+
+DEST_MENU=""
+while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    DEST_MENU="$DEST_MENU $d $d"
+done < "$DEST_LIST"
+
+log "phase 2: destination menu"
+
+# shellcheck disable=SC2086
+DST_DOMAIN=$(su -l "$SRC_DOMAIN" -c "
+    export DISPLAY='$DISPLAY_ARG'
+    export XAUTHORITY='$TMP_AUTH_2'
+    $XDIALOG --stdout --no-tags --title 'dropQbsd - qattach' \
+        --menubox 'Attach \"$BASENAME\" to:' 40 100 10 $DEST_MENU 2>/dev/null
+") || DST_DOMAIN=""
+
+if [ -z "$DST_DOMAIN" ]; then
+    log "cancelled at phase 2"
+    rm -f "$DROP_FINAL"
+    exit 0
+fi
+
+if ! grep -qx "$DST_DOMAIN" "$DEST_LIST"; then
+    log "error: refused destination '$DST_DOMAIN' (not in matrix)"
+    rm -f "$DROP_FINAL"
+    exit 1
+fi
+
+log "destination: $DST_DOMAIN"
+
+#-----------------------------------------------------------------------------
+# PHASE 3: TRANSPORT AS THE DESTINATION (no picker: the file is known)
+#-----------------------------------------------------------------------------
+DST_HOME=$(domain_home "$DST_DOMAIN")
+DL="$DST_HOME/Downloads"
+
+# Refuse to overwrite an existing file in Downloads.
+if [ -e "$DL/$BASENAME" ]; then
+    log "error: '$BASENAME' already exists in $DL"
+    rm -f "$DROP_FINAL"
+    exit 1
+fi
+
+log "qimport as $DST_DOMAIN: $STAGED"
+
+if ! su -l "$DST_DOMAIN" -c "$WRAPPER $QIMPORT \"$STAGED\""; then
+    log "error: qimport failed for $STAGED as $DST_DOMAIN"
+    exit 1
+fi
+
+# qimport placed the file in the destination's ~/Downloads under
+# the staged name. Strip the unique suffix.
+if [ ! -e "$DL/$STAGED" ]; then
+    log "error: qimport did not place '$STAGED' in $DL"
+    exit 1
+fi
+
+mv "$DL/$STAGED" "$DL/$BASENAME"
+chown "$DST_DOMAIN" "$DL/$BASENAME"
+
+# Remove the staged file from the drop zone: qimport copies, it
+# does not move, so the artifact would otherwise linger until
+# enforce_drop reclaims it.
+rm -rf "$DROP_FINAL"
+
+log "done: $BASENAME $SRC_DOMAIN->$DST_DOMAIN"
+
+#-----------------------------------------------------------------------------
+# DONE
+#-----------------------------------------------------------------------------
+su -l "$SRC_DOMAIN" -c "
+    export DISPLAY='$DISPLAY_ARG'
+    export XAUTHORITY='$TMP_AUTH_1'
+    $XDIALOG --stdout --title 'dropQbsd - qattach' \
+        --msgbox 'Attached:\n\n  $BASENAME\n\nfrom $SRC_DOMAIN to $DST_DOMAIN/Downloads' 0 0
+" 2>/dev/null || true
+
+exit 0
+

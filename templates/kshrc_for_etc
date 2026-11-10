@@ -28,9 +28,14 @@
 
 # ------------------------------------------------------------------
 # 0. Interactive child shells load this file automatically
+#    Guarded by $- : ENV must be set ONLY in interactive shells.
 # ------------------------------------------------------------------
-ENV=/etc/dropQbsd/kshrc
-export ENV
+case "$-" in
+    *i*)
+        ENV=/etc/dropQbsd/kshrc
+        export ENV
+        ;;
+esac
 
 # ------------------------------------------------------------------
 # 1. Environment variables
@@ -38,6 +43,13 @@ export ENV
 if [ -f /etc/dropQbsd/profile ]; then
     . /etc/dropQbsd/profile
 fi
+
+# ---- Conductor account (derived from GECOS, single source of truth) ----
+# The conductor is the account whose GECOS field is "dropQbsd_conductor".
+# It can be renamed; the marker stays, so this resolves the current name.
+CONDUCTOR_USER=""
+CONDUCTOR_USER=$(getent passwd | awk -F: 'index($5, "dropQbsd_conductor") > 0 {print $1; exit}')
+export CONDUCTOR_USER
 
 # ------------------------------------------------------------------
 # 2. Aliases
@@ -64,12 +76,12 @@ case "$-" in
         _dq_host=$(hostname -s)
         case "$(id -un)" in
             root)     PS1="root@${_dq_host}# " ;;
-            user)     PS1="user@${_dq_host}$ " ;;
+            "$CONDUCTOR_USER") PS1="conductor@${_dq_host}$ " ;;
             userdoc)  PS1="userdoc@${_dq_host}$ " ;;
             usermail) PS1="usermail@${_dq_host}$ " ;;
             userweb)  PS1="userweb@${_dq_host}$ " ;;
             *)        PS1="$ " ;;
-        esac
+        esac 
         export PS1
         unset _dq_host
         ;;

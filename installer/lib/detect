@@ -1,0 +1,94 @@
+# ==========================================================
+#  dropQbsd installer -- detect
+#
+#  Environment checks and OS-specific variable setup.
+#
+#  NetBSD is rejected here, not later: gen_fwall refuses to
+#  emit a partial ruleset (npf(7) has no per-user filtering),
+#  so accepting NetBSD would only fail halfway through.
+#
+#  FreeBSD requires mksh: every dropQbsd script runs through
+#  libexec/wrapper, which selects /bin/ksh on OpenBSD and
+#  /usr/local/bin/mksh on FreeBSD. Without mksh, the wrapper
+#  exits with an error and no script runs at all -- including
+#  gen_fwall, which would leave the system without a firewall.
+#  Checking here means the install stops before touching pf.
+#
+#  Sourced by install.sh. No shebang, no extension.
+# ==========================================================
+
+# Resolved by check_os; used by firewall and compile steps.
+OS=""
+FW_BACKEND=""
+
+# Resolved by resolve_repo_root; the SOURCE tree. INSTALL_DIR
+# (defined in common) is the DESTINATION. They are distinct:
+# the installer copies from REPO_ROOT into INSTALL_DIR.
+REPO_ROOT=""
+
+check_root() {
+    [ "$(id -u)" -eq 0 ] || \
+        fail "must run as root: doas ./install.sh"
+}
+
+check_os() {
+    OS="$(uname -s)"
+    case "$OS" in
+        OpenBSD)
+            FW_BACKEND="openbsd"
+            ;;
+        FreeBSD)
+            FW_BACKEND="freebsd"
+            check_mksh
+            ;;
+        NetBSD)
+            fail "NetBSD is not supported: npf(7) does not filter per user. See the roadmap."
+            ;;
+        *)
+            fail "unsupported OS: $OS (OpenBSD and FreeBSD only)"
+            ;;
+    esac
+    info "detected OS: $OS (firewall backend: $FW_BACKEND)"
+}
+
+# check_mksh: the wrapper needs a Korn shell. On FreeBSD the base
+# system does not provide one; mksh must be installed explicitly.
+# Do not auto-install: pkg(8) needs network access, which the
+# installer has not configured yet, and silently installing
+# packages during a security install is not acceptable.
+check_mksh() {
+    if [ -x /usr/local/bin/mksh ]; then
+        info "mksh found at /usr/local/bin/mksh"
+        return 0
+    fi
+    if command -v mksh >/dev/null 2>&1; then
+        info "mksh found in PATH"
+        return 0
+    fi
+    fail "mksh is required on FreeBSD. Install it first: pkg install mksh"
+}
+
+# login_shell: the Korn shell path for the target OS. Used by the
+# users module when creating domain users. On FreeBSD the base
+# system has no /bin/ksh; mksh (checked above) lives under
+# /usr/local/bin. On OpenBSD, /bin/ksh is in the base system.
+login_shell() {
+    case "$OS" in
+        OpenBSD) echo "/bin/ksh" ;;
+        FreeBSD) echo "/usr/local/bin/mksh" ;;
+        *)       fail "login_shell: unsupported OS: $OS" ;;
+    esac
+}
+
+# resolve_repo_root: the installer lives in <repo>/installer/, so the
+# repository root is one level up. realpath(1) is not in the OpenBSD
+# base system; use cd + pwd instead.
+#
+# REPO_ROOT is the SOURCE tree; INSTALL_DIR (/opt/dropQbsd) is the
+# destination the installer copies into. Do not conflate them.
+resolve_repo_root() {
+    REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+    [ -d "${REPO_ROOT}/templates" ] || \
+        fail "templates/ not found under $REPO_ROOT (wrong layout?)"
+    info "repository root: $REPO_ROOT (source); install dir: ${INSTALL_DIR} (destination)"
+}
