@@ -2,13 +2,16 @@
 #  dropQbsd -- patch_tru_fwall
 #
 #  Applies security patches through the restrictive PF
-#  ruleset. Populates the <updates> table, runs the patch
-#  tool, flushes the table on exit to restore default-deny
-#  for root.
+#  ruleset. The <updates> table is populated by the cron
+#  job and re-populated on entry and after any `pfctl -f`
+#  (which empties all persistent tables). It is flushed on
+#  exit (`FLUSH_ON_EXIT=1`): the mirror IPs are reachable
+#  only while the update actually runs (least privilege).
 #
 #  OpenBSD:               syspatch
-#  FreeBSD (traditional): freebsd-update --not-tty fetch install
+#  FreeBSD (traditional): freebsd-update fetch install
 #  FreeBSD (PkgBase):     pkg upgrade (base is packaged)
+#                         -- equivalent to Pkg -u on PkgBase
 #
 #  Path: /opt/dropQbsd/admin/patch_tru_fwall
 #  Permissions: chmod 700, root:wheel
@@ -19,6 +22,10 @@
 #    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/patch_tru_fwall
 #    OR
 #    Patch
+#
+#  Note: on PkgBase, base is packaged, so Patch is
+#  equivalent to Pkg -u. Patch exists for parity and for
+#  the traditional base.
 # ==========================================================
 
 ENSURE_SCRIPT="/opt/dropQbsd/libexec/ensure_updates_table"
@@ -70,7 +77,10 @@ if [ "$OS" = "FreeBSD" ]; then
         PATCH_NOTE="(PkgBase: base + ports via pkg)"
         LOCK_PROC="pkg"
     else
-        # Traditional base. --not-tty: no tty inside $(), prompts would fail.
+    # Traditional base. --not-tty is not in freebsd-update(8) but is
+    # accepted by the tool, and is required here: the command runs
+    # inside $(), where there is no tty and any prompt would fail.
+    # Verified on FreeBSD 14.x -- do not "clean it up" as unknown.
         PATCH_CMD="freebsd-update"
         PATCH_ARGS="--not-tty fetch install"
         PATCH_NOTE="(traditional base)"
@@ -84,7 +94,7 @@ else
 fi
 
 #-----------------------------------------------------------------------------
-# CONCURRENCY CHECK — one patch operation at a time.
+# CONCURRENCY CHECK -- one patch operation at a time.
 # Run BEFORE touching pf: never open the network window for a doomed run.
 #-----------------------------------------------------------------------------
 BUSY=$(pgrep -x "$LOCK_PROC")
@@ -155,7 +165,7 @@ revoke_dns() {
 }
 
 #-----------------------------------------------------------------------------
-# CLEANUP — idempotent, runs on signals AND on exit
+# CLEANUP -- idempotent, runs on signals AND on exit
 #-----------------------------------------------------------------------------
 cleanup() {
     [ "$CLEANED" -eq 1 ] && return

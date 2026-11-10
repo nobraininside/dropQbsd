@@ -1,0 +1,107 @@
+# ==========================================================
+#  dropQbsd installer -- dirs
+#
+#  Creates the directory tree and applies the permission
+#  model documented in INSTALL_MANUAL.md:
+#
+#    /home/drop            2770 root:drop   (SGID drop zone)
+#    /etc/dropQbsd         755  root:wheel
+#    /opt/dropQbsd         755  root:wheel
+#    /var/log/dropQbsd     750  root:wheel
+#    each domain home      700 user:<own group>   (NOT drop:
+#    that is the drop-zone group only; a 700 home is private
+#    to its owner)
+#
+#  The SGID bit on /home/drop is what makes the drop zone
+#  policed by construction: every file placed there inherits
+#  the drop group, so enforce_drop can act on it reliably.
+#
+#  Constants (INSTALL_DIR, ETC_DIR, HOME_DROP, LOG_DIR, GROUP,
+#  USER_LIST) are defined in common, which is sourced first.
+#  This module defines no variables at the top level.
+#
+#  Sourced by install.sh. No shebang, no extension.
+# ==========================================================
+
+create_directories() {
+    for d in "$HOME_DROP" "$INSTALL_DIR" "$ETC_DIR" "$LOG_DIR"; do
+        if [ -d "$d" ]; then
+            info "directory $d already exists"
+        else
+            run mkdir -p "$d"
+            success "created $d"
+        fi
+    done
+
+    # Subdirectories of /opt/dropQbsd (matches INSTALL_MANUAL.md 3).
+    for d in admin bin keys libexec sbin src templates examples; do
+        run mkdir -p "${INSTALL_DIR}/${d}"
+    done
+
+    # Drop zone: SGID so the drop group is forced on all entries.
+    run chown root:"$GROUP" "$HOME_DROP"
+    run chmod 2770 "$HOME_DROP"
+
+    # Configuration and state directories.
+    run chown root:wheel "$ETC_DIR"
+    run chmod 755 "$ETC_DIR"
+
+    run chown root:wheel "$INSTALL_DIR"
+    run chmod 755 "$INSTALL_DIR"
+
+    run chown root:wheel "$LOG_DIR"
+    run chmod 750 "$LOG_DIR"
+
+    # Domain home directories: private to each user.
+    # Owner/group is the user's OWN group (not drop): the drop group
+    # is the shared channel for the drop zone only.
+    for u in $USER_LIST; do
+        h="$(home_of "$u")"
+        [ -n "$h" ] && [ -d "$h" ] || continue
+        run chown "$u":"$u" "$h"
+        run chmod 700 "$h"
+    done
+
+    # Per-domain working directories.
+    #
+    # userweb/www: the default export source. The export_www_to_drop
+    # script reads from here (or from [sync] www_src in local.conf).
+    # Without it, the default export fails.
+    #
+    # userdoc/Sync: the default import destination, and Syncthing's
+    # sync folder. The import scripts create it if missing, but
+    # creating it here means the first import lands in the right
+    # place without a surprise.
+    create_working_dirs
+
+    success "directory tree and permissions applied"
+}
+
+# create_working_dirs: the per-domain directories the export and
+# import scripts use by default. Both are overridable in
+# local.conf ([sync] www_src, [sync] dst); these are the defaults.
+create_working_dirs() {
+    # userweb/www
+    h="$(home_of userweb)"
+    if [ -n "$h" ] && [ -d "$h" ]; then
+        run mkdir -p "${h}/www"
+        run chown userweb:userweb "${h}/www"
+        run chmod 700 "${h}/www"
+    else
+        warn "userweb home not found; skipping ${h}/www"
+    fi
+
+    # userdoc/Sync
+    h="$(home_of userdoc)"
+    if [ -n "$h" ] && [ -d "$h" ]; then
+        run mkdir -p "${h}/Sync"
+        run chown userdoc:userdoc "${h}/Sync"
+        # 2770 matches enforce_sync, which enforces this mode on every
+        # directory in the sync tree -- including this one.
+        run chmod 2700 "${h}/Sync"
+    else
+        warn "userdoc home not found; skipping ${h}/Sync"
+    fi
+}
+
+

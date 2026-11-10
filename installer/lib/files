@@ -1,0 +1,313 @@
+# ==========================================================
+#  dropQbsd installer -- files
+#
+#  Copies configuration, scripts, and per-home dotfiles.
+#
+#  Critical rule: dropQbsd configuration lives under
+#  /etc/dropQbsd/. The installer must NEVER write to
+#  /etc/profile, /etc/kshrc or /etc/xsession. run_app_impl
+#  reads /etc/dropQbsd/kshrc via ENV_FILE; gen_fwall reads
+#  /etc/dropQbsd/{domains.conf,local.conf,schema}. Those are
+#  the real paths, and they are the only ones that matter.
+#
+#  The only system files the installer writes outside
+#  /etc/dropQbsd/ are /etc/doas.conf (its canonical location)
+#  and an idempotent append to /etc/newsyslog.conf.
+#
+#  SOURCE vs DESTINATION: REPO_ROOT is the source tree;
+#  INSTALL_DIR is the destination. The installer/ directory
+#  itself is NOT copied -- the installer is a source-tree-only
+#  tool, run from the repository, not from /opt/dropQbsd.
+#
+#  Per-home dotfiles follow INSTALL_MANUAL.md 5.3 and differ between
+#  OpenBSD and FreeBSD. See install_user_dotfiles below.
+#
+#  Sourced by install.sh. No shebang, no extension.
+# ==========================================================
+
+TEMPLATES_DIR=""
+EXAMPLES_DIR=""
+
+files_init() {
+    TEMPLATES_DIR="${REPO_ROOT}/templates"
+    EXAMPLES_DIR="${REPO_ROOT}/examples/system"
+}
+
+install_files() {
+    files_init
+
+    [ -d "$TEMPLATES_DIR" ] || fail "templates dir missing: $TEMPLATES_DIR"
+
+    # --- policy files read by gen_fwall (project-owned) ---
+    run cp "${TEMPLATES_DIR}/conductor.conf_for_etc" "${ETC_DIR}/conductor.conf"
+    run cp "${TEMPLATES_DIR}/domains.conf_for_etc" "${ETC_DIR}/domains.conf"
+    run cp "${TEMPLATES_DIR}/schema_for_etc" "${ETC_DIR}/schema"
+
+    # --- project-owned (templates/): copied every run ---
+    run cp "${TEMPLATES_DIR}/conductor.conf_for_etc" "${ETC_DIR}/conductor.conf"
+    run cp "${TEMPLATES_DIR}/domains.conf_for_etc" "${ETC_DIR}/domains.conf"
+    run cp "${TEMPLATES_DIR}/schema_for_etc" "${ETC_DIR}/schema"
+    run cp "${TEMPLATES_DIR}/attach.conf_for_etc" "${ETC_DIR}/attach.conf"
+
+    # --- operator-owned (examples/): seeded once, never overwritten ---
+    seed_once "${EXAMPLES_DIR}/local.conf.example" "${ETC_DIR}/local.conf" 
+
+    # --- shell chain read by run_app_impl (ENV_FILE) and profiles ---
+    run cp "${TEMPLATES_DIR}/kshrc_for_etc"   "${ETC_DIR}/kshrc"
+    run cp "${TEMPLATES_DIR}/profile_for_etc" "${ETC_DIR}/profile"
+    run cp "${TEMPLATES_DIR}/alias_for_etc"   "${ETC_DIR}/alias"
+
+    # --- integrity file list read by verify_integrity ---
+    run cp "${TEMPLATES_DIR}/filelist_for_etc" "${ETC_DIR}/filelist"
+
+    # --- doas: canonical location outside /etc/dropQbsd/ ---
+    run cp "${TEMPLATES_DIR}/doas.conf_for_etc" /etc/doas.conf
+
+    # --- newsyslog: idempotent append, never overwrite ---
+    append_once "${TEMPLATES_DIR}/newsyslog_append" /etc/newsyslog.conf
+
+    # --- rc.d for syncthing_userdoc ---
+    install_rcd
+
+    # --- copy the scripts themselves ---
+    copy_scripts
+
+    # --- ownership of /etc/dropQbsd ---
+    run chown -R root:wheel "$ETC_DIR"
+    run chmod 644 "${ETC_DIR}/domains.conf" "${ETC_DIR}/schema" \
+                  "${ETC_DIR}/local.conf" "${ETC_DIR}/kshrc" \
+                  "${ETC_DIR}/profile" "${ETC_DIR}/alias" \
+                  "${ETC_DIR}/filelist" \
+                  "${ETC_DIR}/conductor.conf" "${ETC_DIR}/attach.conf"
+
+    success "configuration and scripts installed"
+}
+
+copy_scripts() {
+    for d in admin bin libexec sbin src; do
+        [ -d "${REPO_ROOT}/${d}" ] || continue
+        run cp -R "${REPO_ROOT}/${d}/." "${INSTALL_DIR}/${d}/"
+    done
+    # examples/ (apps configs, crontab, local.conf example)
+    if [ -d "${REPO_ROOT}/examples" ]; then
+        run cp -R "${REPO_ROOT}/examples/." "${INSTALL_DIR}/examples/"
+    fi
+    # templates/ copied for reference; the live copies live in
+    # /etc/dropQbsd/.
+    if [ -d "${REPO_ROOT}/templates" ]; then
+        run cp -R "${REPO_ROOT}/templates/." "${INSTALL_DIR}/templates/"
+    fi
+}
+
+install_rcd() {
+    [ -d "${TEMPLATES_DIR}/rc.d" ] || return 0
+    case "$OS" in
+        OpenBSD)
+            run cp "${TEMPLATES_DIR}/rc.d/syncthing_userdoc.openbsd" \
+                   /etc/rc.d/syncthing_userdoc
+            run chmod 555 /etc/rc.d/syncthing_userdoc
+            ;;
+        FreeBSD)
+            run cp "${TEMPLATES_DIR}/rc.d/syncthing_userdoc.freebsd" \
+                   /usr/local/etc/rc.d/syncthing_userdoc
+            run chmod 555 /usr/local/etc/rc.d/syncthing_userdoc
+            ;;
+        *)
+            fail "install_rcd: unsupported OS: $OS"
+            ;;
+    esac
+}
+
+# append_once: append a file's contents to a target only if a marker
+# string is not already present. Makes re-runs idempotent.
+append_once() {
+    src="$1"; dst="$2"
+    [ -f "$src" ] || return 0
+    marker="dropQbsd"
+    if [ -f "$dst" ] && grep -q "$marker" "$dst" 2>/dev/null; then
+        info "$dst already contains dropQbsd entries, skipping"
+        return 0
+    fi
+    run sh -c "cat '$src' >> '$dst'"
+    success "appended $(basename "$src") to $dst"
+}
+
+# seed_once: install a file only if it does not exist yet.
+#
+# For the OPERATOR-OWNED file inside /etc/dropQbsd/: local.conf, which
+# holds the LAN subnet, mail servers, [sync] directories and [extra.*]
+# rules. It comes from examples/, not templates/ -- that is what marks
+# it operator-owned (see lib/ownership).
+#
+# Project-owned files (domains.conf, schema, kshrC, profile, alias,
+# filelist, conductor.conf, attach.conf) are copied unconditionally:
+# they come from templates/ and the updater replaces them when they
+# change.
+seed_once() {
+    src="$1"; dst="$2"
+    [ -f "$src" ] || { warn "template missing: $src"; return 0; }
+    if [ -e "$dst" ]; then
+        info "exists, not overwriting (operator-owned): $dst"
+        return 0
+    fi
+    run cp "$src" "$dst"
+    success "seeded $dst from $(basename "$src")"
+}
+
+# set_script_perms: matches INSTALL_MANUAL.md §3.
+#   bin/, sbin/, libexec/  -> 755 root:wheel
+#   admin/                 -> 700 root:wheel
+#   run_app_impl           -> 755 root:wheel (declared in its header)
+set_script_perms() {
+    run chown -R root:wheel "$INSTALL_DIR"
+
+    for d in bin sbin libexec; do
+        [ -d "${INSTALL_DIR}/${d}" ] || continue
+        # Guard: an empty directory would leave the glob literal
+        # and make chmod fail. Skip if there is nothing to chmod.
+        if [ -n "$(ls -A "${INSTALL_DIR}/${d}" 2>/dev/null)" ]; then
+            run sh -c "chmod 755 '${INSTALL_DIR}/${d}'/*"
+        fi
+    done
+
+    if [ -d "${INSTALL_DIR}/admin" ] && \
+       [ -n "$(ls -A "${INSTALL_DIR}/admin" 2>/dev/null)" ]; then
+        run sh -c "chmod 700 '${INSTALL_DIR}/admin'/*"
+    fi
+
+    if [ -f "${INSTALL_DIR}/libexec/run_app_impl" ]; then
+        run chmod 755 "${INSTALL_DIR}/libexec/run_app_impl"
+    fi
+
+    success "script permissions applied"
+}
+
+# ---------------------------------------------------------------------
+#  Per-home dotfiles (INSTALL_MANUAL.md 5.3) + conductor menu binding
+# ---------------------------------------------------------------------
+
+# install_user_dotfiles: install the shell-chain stubs into each
+# domain user's home, and into root's home, plus the conductor's
+# xbindkeys binding (via install_conductor_xbindkeys).
+#
+# The stubs are one-line pointers to /etc/dropQbsd/kshrc, except
+# .xsession / .xinitrc which also carry the window-manager launch
+# line. Coverage differs by platform (INSTALL_MANUAL.md §5.3):
+#
+#   .profile   always, both platforms.
+#   .xprofile  always, both platforms (SDDM / LightDM).
+#   .xsession  OpenBSD only (xenodm). NEVER on FreeBSD.
+#   .xinitrc   both platforms (startx). On OpenBSD it is
+#              harmless when xenodm is used: xenodm ignores it.
+#
+# CRITICAL: never install .xsession on FreeBSD. SDDM reads it and
+# waits for it to exit; the `exec wm` line never returns, so the
+# graphical session freezes at login. INSTALL_MANUAL.md warns about
+# this explicitly. This is not a stylistic choice -- it is a bug
+# that bricks the login.
+#
+# GROUP: root's dotfiles are root:wheel (BSD convention); the
+# domain users' dotfiles are user:<own group>. This matches the
+# bulk-install block in INSTALL_MANUAL.md 10.1, which uses wheel
+# for root and the user's own group for the domains. Do NOT put
+# root's dotfiles in the drop group.
+#
+# The conductor menu binding (.xbindkeysrc) is DIFFERENT from the
+# stubs above: it is a real config file (not a shell-chain pointer),
+# applies to both platforms, and is operator-owned -- installed
+# only if absent, never overwritten, and not part of the integrity
+# filelist. It is handled separately in install_conductor_xbindkeys.
+install_user_dotfiles() {
+    # Domain users: group is the user's own group.
+    for u in $USER_LIST; do
+        h="$(home_of "$u")"
+        if [ -z "$h" ] || [ ! -d "$h" ]; then
+            warn "home directory not found for $u, skipping dotfiles"
+            continue
+        fi
+        install_dotfiles_for "$u" "$h" "$u"
+    done
+
+    # root: home is /root, group is wheel.
+    install_dotfiles_for root /root wheel
+
+    # Conductor menu binding: operator-owned, install once.
+    install_conductor_xbindkeys
+
+    success "per-home dotfiles installed"
+}
+
+# install_conductor_xbindkeys: the Mod4+q binding for the
+# conductor menu. Operator-owned: installed only if absent,
+# never overwritten by an update. Not part of the integrity
+# filelist.
+install_conductor_xbindkeys() {
+    src="${TEMPLATES_DIR}/xbindkeys_for_conductor"
+    h="$(home_of "$CONDUCTOR_USER")"
+    [ -n "$h" ] || { warn "conductor home not found; skipping xbindkeysrc"; return 0; }
+    dst="${h}/.xbindkeysrc"
+    if [ ! -f "$src" ]; then
+        warn "template missing: xbindkeys_for_conductor, skipping"
+        return 0
+    fi
+    if [ -e "$dst" ]; then
+        info "$dst exists, not overwriting (operator-owned)"
+    else
+        run cp "$src" "$dst"
+        # The conductor is RENAME-PROOF: never hardcode the account
+        # name here. $CONDUCTOR_USER is resolved from the GECOS
+        # marker by resolve_conductor_name, or from the operator's
+        # CONDUCTOR_USER override. A literal 'conductor' would fail
+        # (chown: no such user) on every renamed installation and
+        # abort the install at the last step.
+        run chown "$CONDUCTOR_USER:$CONDUCTOR_USER" "$dst"
+        run chmod 644 "$dst"
+    fi
+    # --- dependency check: xbindkeys must be installed ---------
+    if ! command -v xbindkeys >/dev/null 2>&1; then
+        warn "xbindkeys is NOT installed -- the Super+q shortcut will not work."
+        warn " Install it: pkg_add xbindkeys (OpenBSD) / pkg install xbindkeys (FreeBSD)"
+        warn " The qmenu config was still copied to $dst; it activates once xbindkeys is present."
+    fi
+}
+
+# install_dotfiles_for: apply the platform-appropriate set for one
+# user. u = user name, h = home directory, grp = owning group.
+install_dotfiles_for() {
+    u="$1"; h="$2"; grp="$3"
+
+    install_dotfile "$u" "$h" "$grp" "profile_for_home"  ".profile"
+    install_dotfile "$u" "$h" "$grp" "xprofile_for_home" ".xprofile"
+
+    case "$OS" in
+        OpenBSD)
+            install_dotfile "$u" "$h" "$grp" "xsession_for_home" ".xsession"
+            install_dotfile "$u" "$h" "$grp" "xinitrc_for_home"  ".xinitrc"
+            ;;
+        FreeBSD)
+            # Never .xsession on FreeBSD: SDDM would freeze at login.
+            install_dotfile "$u" "$h" "$grp" "xinitrc_for_home"  ".xinitrc"
+            ;;
+        *)
+            fail "install_dotfiles_for: unsupported OS: $OS"
+            ;;
+    esac
+}
+
+# install_dotfile: copy one template into a home, set owner, group
+# and mode. Missing templates are skipped with a warning rather than
+# aborting: a missing optional stub should not fail the install.
+install_dotfile() {
+    u="$1"; h="$2"; grp="$3"; tmpl="$4"; dest="$5"
+
+    src="${TEMPLATES_DIR}/${tmpl}"
+    if [ ! -f "$src" ]; then
+        warn "template missing: $tmpl, skipping ${h}/${dest}"
+        return 0
+    fi
+
+    run cp "$src" "${h}/${dest}"
+    run chown "$u":"$grp" "${h}/${dest}"
+    run chmod 644 "${h}/${dest}"
+}
+

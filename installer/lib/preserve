@@ -1,0 +1,56 @@
+# ==========================================================
+#  dropQbsd updater -- preserve
+#
+#  Backs up the operator-owned and merged files before anything
+#  else runs. The backup lives in a single, versioned directory
+#  (BACKUP_DIR) so every file touched by the update can be found
+#  with one ls and restored with one cp.
+#
+#  backup_before_overwrite and flat_name live in common, because
+#  the installer uses them too. This module sets BACKUP_DIR and
+#  fills it with the operator-owned and merged files; the
+#  replace, examples and checklist modules call
+#  backup_before_overwrite for every file they overwrite, and it
+#  writes into the same BACKUP_DIR.
+#
+#  There is no automatic restore: the updater runs on a working
+#  system, and a destructive auto-restore is more dangerous than
+#  the error it tries to undo.
+#
+#  Sourced by update.sh. No shebang, no extension.
+# ==========================================================
+
+preserve_all() {
+    ts="$(date +%Y%m%d-%H%M%S)"
+    BACKUP_DIR="/var/backups/dropQbsd_update_${ts}"
+    run mkdir -p "$BACKUP_DIR"
+
+    # Operator-owned files: backed up here because they must
+    # survive the update untouched, and the backup is the safety
+    # net if they are later edited by mistake.
+    for f in $OPERATOR_FILES; do
+        if [ -e "$f" ]; then
+            run cp -p "$f" "${BACKUP_DIR}/$(flat_name "$f")"
+            success "preserved $f"
+        fi
+    done
+
+    # Operator-owned directories (recursive).
+    for d in $OPERATOR_DIRS; do
+        if [ -d "$d" ]; then
+            run cp -Rp "$d" "${BACKUP_DIR}/$(flat_name "$d")"
+            success "preserved $d"
+        fi
+    done
+
+    # Merged files: backed up before the merge, because a bad
+    # merge is the hardest thing to reverse.
+    for f in $MERGED_FILES; do
+        if [ -f "$f" ]; then
+            run cp -p "$f" "${BACKUP_DIR}/$(flat_name "$f")"
+            success "preserved $f"
+        fi
+    done
+
+    success "preserve complete: $BACKUP_DIR"
+}

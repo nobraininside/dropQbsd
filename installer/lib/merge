@@ -1,0 +1,115 @@
+# ==========================================================
+#  dropQbsd updater -- merge
+#
+#  Handles the MERGED files: new content is appended, existing
+#  content is kept. The append is marker-based and idempotent,
+#  so re-running does not duplicate entries.
+#
+#  Two merged files exist, with DIFFERENT shapes:
+#
+#    newsyslog_append   -- every line of the block contains the
+#                          string "dropQbsd" (the comment header
+#                          and the log paths). This makes the
+#                          block safely replaceable: removing the
+#                          dropQbsd lines cannot harm the file,
+#                          because no other line contains it.
+#
+#    login.conf_append   -- the resource classes do NOT carry
+#                          "dropQbsd" on every line (only the
+#                          comment headers do). Replacing with a
+#                          "grep -v dropQbsd" would delete the
+#                          class body. This file is APPEND-ONLY:
+#                          if the marker is present, nothing
+#                          happens; class changes are left for the
+#                          operator to review by hand.
+#
+#  This is why merge_all dispatches to TWO different functions
+#  instead of one.
+#
+#  Sourced by update.sh. No shebang, no extension.
+# ==========================================================
+
+merge_all() {
+    # newsyslog: replaceable (every block line contains "dropQbsd").
+    merge_replace "${REPO_ROOT}/templates/newsyslog_append" /etc/newsyslog.conf
+
+    # login.conf: append-only (the class body has no "dropQbsd").
+    append_only "${REPO_ROOT}/templates/login.conf_append" /etc/login.conf
+}
+
+# merge_replace: for a merged file whose block is entirely composed
+# of lines containing the marker (newsyslog).
+#
+# Bullet after the marker block:
+#   if ____no_marker_present__: append the template wholesale.
+#   elif ____block_matches__:  nothing happens.
+#   else (block changed):      the old dropQbsd lines are removed
+#                              and the new template is appended.
+#
+# The function removes EVERY line containing "dropQbsd". It is safe
+# ONLY for files where the whole block carries that string (see the
+# header). A backup of the target is taken before rewriting.
+merge_replace() {
+    src="$1"; dst="$2"
+    [ -f "$src" ] || { info "no template for $dst; skipping"; return 0; }
+    [ -f "$dst" ] || { warn "missing target, cannot merge: $dst"; return 0; }
+
+    # No block anywhere: append the template wholesale.
+    if ! grep -q "dropQbsd" "$dst" 2>/dev/null; then
+        run sh -c "cat '$src' >> '$dst'"
+        success "appended $(basename "$src") to $dst"
+        return 0
+    fi
+
+    # A block exists. Compare the current dropQbsd lines with the
+    # template. For newsyslog these are the SAME set: a comment
+    # header plus one line per log, all containing "dropQbsd".
+    cur_block=$(grep "dropQbsd" "$dst" 2>/dev/null)
+    new_block=$(cat "$src")
+
+    if [ "$cur_block" = "$new_block" ]; then
+        info "$dst already has the current dropQbsd block"
+        return 0
+    fi
+
+    # The block changed between versions: replace it.
+    warn "$dst: dropQbsd block changed; replacing"
+    backup_before_overwrite "$dst"
+
+    # Rebuild: keep every line that does NOT contain "dropQbsd",
+    # then re-append the new template. A blank line before keeps
+    # the block visually distinct.
+    {
+        grep -v "dropQbsd" "$dst"
+        printf '\n'
+        cat "$src"
+    } > "${dst}.tmp" 2>/dev/null || {
+        warn "failed to rebuild $dst; leaving original intact"
+        return 0
+    }
+
+    run mv "${dst}.tmp" "$dst"
+    success "replaced dropQbsd block in $dst"
+}
+
+# append_only: for a merged file whose block body does NOT carry
+# the marker (login.conf resource classes).
+#
+# If the marker is absent, append the template. If it is present,
+# do nothing: replacing is unsafe because the class body has no
+# "dropQbsd" to key on. The operator reviews class changes by hand.
+append_only() {
+    src="$1"; dst="$2"
+    [ -f "$src" ] || { info "no template for $dst; skipping"; return 0; }
+    [ -f "$dst" ] || { warn "missing target, cannot merge: $dst"; return 0; }
+
+    if grep -q "dropQbsd" "$dst" 2>/dev/null; then
+        info "$dst already contains dropQbsd entries; not re-appending"
+        info "  review class changes in the template by hand: $src"
+        return 0
+    fi
+
+    run sh -c "cat '$src' >> '$dst'"
+    success "appended $(basename "$src") to $dst"
+}
+

@@ -1,0 +1,84 @@
+# ==========================================================
+#  dropQbsd installer -- backup
+#
+#  Backs up ONLY the files the installer will actually touch.
+#  It does not touch /etc/profile, /etc/kshrc or /etc/xsession:
+#  dropQbsd keeps its configuration under /etc/dropQbsd/ and
+#  INSTALL_MANUAL.md explicitly forbids modifying those system files.
+#
+#  The backup is passive: it is a safety net for the operator,
+#  not an automatic rollback. There is no restore function that
+#  deletes users or directories -- a destructive rollback is
+#  more dangerous than the error it tries to undo.
+#
+#  Names use flat_name (common): path with / replaced by _, so
+#  two files with the same basename cannot collide.
+#
+#  Sourced by install.sh. No shebang, no extension.
+# ==========================================================
+
+backup_all() {
+    if [ "$SKIP_BACKUP" = true ]; then
+        warn "backup skipped by request. Ensure you have backed up manually:"
+        for f in $BACKUP_FILES; do warn "  - $f"; done
+        return 0
+    fi
+
+    ts="$(date +%Y%m%d-%H%M%S)"
+    BACKUP_DIR="/var/backups/dropQbsd_${ts}"
+    run mkdir -p "$BACKUP_DIR"
+
+    # System files the installer will modify.
+    for f in $BACKUP_FILES; do
+        if [ -f "$f" ]; then
+            run cp -p "$f" "${BACKUP_DIR}/$(flat_name "$f")"
+            success "backed up $f"
+        else
+            info "$f does not exist, skipping"
+        fi
+    done
+
+    # Existing dotfiles and desktop-integration config of the
+    # domain users, if present. Directories use cp -Rp.
+    for u in $USER_LIST; do
+        h="$(home_of "$u")"
+        [ -n "$h" ] && [ -d "$h" ] || continue
+        for f in .profile .xprofile .xsession .xinitrc .kshrc \
+                 .exrc .gtkrc-2.0 \
+                 .config/mc/ini .config/mc/menu \
+                 .config/nnn/plugins \
+                 .config/menus/xfce-applications.menu; do
+            [ -e "${h}/${f}" ] || continue
+            run cp -Rp "${h}/${f}" "${BACKUP_DIR}/$(flat_name "${h}/${f}")"
+        done
+    done
+
+    # root's dotfiles and desktop-integration config.
+    for f in .profile .xprofile .xsession .xinitrc .kshrc \
+             .exrc .config/mc/ini .config/nnn/plugins; do
+        [ -e "/root/${f}" ] || continue
+        run cp -Rp "/root/${f}" "${BACKUP_DIR}/$(flat_name "/root/${f}")"
+    done
+
+    verify_backup
+    success "backup complete: $BACKUP_DIR"
+}
+
+verify_backup() {
+    # In dry-run nothing was created: the mkdir and the cp were
+    # printed, not executed. Checking the directory here would
+    # always fail. Skip the verification in dry-run.
+    if [ "$DRY_RUN" = true ]; then
+        info "[dry-run] skipping backup verification"
+        return 0
+    fi
+
+    [ -d "$BACKUP_DIR" ] || fail "backup directory missing: $BACKUP_DIR"
+    n=0
+    for f in "${BACKUP_DIR}"/*; do
+        [ -e "$f" ] || continue
+        check_sh "test -e '$f'"
+        n=$((n+1))
+    done
+    [ "$n" -gt 0 ] || warn "no files were backed up (nothing to back up?)"
+}

@@ -58,8 +58,8 @@ if [ "$(id -u)" -eq 0 ]; then
     export PATH
 fi
 
-# --- Conductor reminder (login only, user only) ---
-if [ "$(id -un)" = "user" ] && [ -z "${_DQ_REMINDER_SHOWN:-}" ]; then
+# --- Conductor reminder (login only, conductor only) ---
+if [ "$(id -un)" = "$CONDUCTOR_USER" ] && [ -z "${_DQ_REMINDER_SHOWN:-}" ]; then
     case "$-" in
         *i*)
             echo "=== dropQbsd conductor ==="
@@ -82,7 +82,7 @@ export EDITOR="${EDITOR:-vi}"
 
 # --- nnn standalone ---
 # NNN_COLORS=7777 (light gray) for all users: the Xt* terminals
-# already carry the domain color. Plugins/bookmarks as file_bridge.
+# already carry the domain color. Plugins/bookmarks as qfile.
 export NNN_COLORS=7777
 export NNN_PLUG='c:nnnqcp;m:nnnqmv;i:nnnqimport'
 

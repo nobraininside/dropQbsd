@@ -1,0 +1,18 @@
+# dropQbsd -- Xfe template (user conductor domain)
+#
+# Partial xferc: ONLY the keys dropQbsd overrides. Every key not
+# listed here falls back to Xfe built-in defaults and the
+# system-wide xferc (/usr/local/share/xfe/xferc).
+# Xfe rewrites the full file on exit; keep this template as the
+# installation seed, not as a live file.
+
+[PROGS]
+pdfviewer=evince
+xterm="xterm -bg black -fg white -fa monospace -fs 12"
+videoplayer=vlc
+
+[SETTINGS]
+# Domain color scheme (see INSTALL_MANUAL.md, color scheme convention)
+listforecolor=Gray100
+highlightcolor=Black
+listbackcolor=Black

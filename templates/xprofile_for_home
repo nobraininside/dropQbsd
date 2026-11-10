@@ -28,6 +28,15 @@ if [ -f /etc/dropQbsd/kshrc ]; then
     . /etc/dropQbsd/kshrc
 fi
 
+export XAUTHORITY="$HOME/.Xauthority"
+export DISPLAY="${DISPLAY:-:0.0}"
+
+# Start xbindkeys (global hotkey -> qmenu) ONLY for the conductor.
+# Domains run no xbindkeys and cannot launch the conductor menu.
+if [ "$(id -un)" = "$CONDUCTOR_USER" ]; then
+ ( sleep 1; xbindkeys ) &
+fi
+
 # --- Start the domain indicator ----------------------------------
 # Detached subshell: survives whatever execs the session next.
 # It polls _NET_ACTIVE_WINDOW until a REAL window id appears.
@@ -37,12 +46,13 @@ fi
     i=0
     while [ $i -lt 240 ]; do
         atom=$(xprop -root _NET_ACTIVE_WINDOW 2>/dev/null)
-        active=$(echo "$atom" | sed 's/.*window id # //' | cut -d',' -f1 | tr -d ' ')
+        active=$(echo "$atom" | sed 's/.*window id # //' | cut -d',' -f1 | tr -d ' \n')
         if [ -n "$active" ] && [ "$active" != "0x0" ]; then
             break
         fi
         sleep 0.5
         i=$(( i + 1 ))
     done
-    exec /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/indicator_de
+    exec /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/indicator_de
 ) >/dev/null 2>&1 &
+

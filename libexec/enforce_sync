@@ -16,6 +16,9 @@
 #  races with this script are unlikely; the grace period is a
 #  second line of defense for anything not using that pattern.
 #
+#  Takes an atomic mkdir lock (with a 5-minute TTL) so runs
+#  that overlap do not act on the same files concurrently.
+#
 #  Path: /opt/dropQbsd/libexec/enforce_sync
 #  Permissions: chmod 755, root:wheel
 #  Cron: * * * * * /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/enforce_sync
@@ -68,47 +71,32 @@ log_write() {
 #-----------------------------------------------------------------------------
 # EXISTENCE CHECK
 #-----------------------------------------------------------------------------
-[[ -d "$TARGET" ]] || exit 0
+[ -d "$TARGET" ] || exit 0
 
 #-----------------------------------------------------------------------------
 # 1. COUNT NON-CONFORMING FILES/DIRS BEFORE FIXING
 #    "Old enough" uniformly means: strictly older than GRACE_MIN minutes.
 #-----------------------------------------------------------------------------
-FILES_WRONG=$(find "$TARGET" -type f \
-    ! -perm 660 \
-    -mmin +$GRACE_MIN \
-    | wc -l | tr -d ' ')
-DIRS_WRONG=$(find "$TARGET" -type d \
-    ! -perm 2770 \
-    -mmin +$GRACE_MIN \
-    | wc -l | tr -d ' ')
-OWNER_WRONG=$(find "$TARGET" \
-    $ ! -user userdoc -o ! -group userdoc $ \
-    -mmin +$GRACE_MIN \
-    | wc -l | tr -d ' ')
+FILES_WRONG=$(find "$TARGET" -type f ! -perm 660 -mmin +$GRACE_MIN | wc -l | tr -d ' ')
+DIRS_WRONG=$(find "$TARGET" -type d ! -perm 2770 -mmin +$GRACE_MIN | wc -l | tr -d ' ')
+OWNER_WRONG=$(find "$TARGET" \( ! -user userdoc -o ! -group userdoc \) -mmin +$GRACE_MIN | wc -l | tr -d ' ')
 
 #-----------------------------------------------------------------------------
 # 2. FIX OWNER/GROUP (batch for efficiency)
 #    Same age filter as the counters above: count and fix see
 #    the exact same set, so every fix is reflected in the log.
 #-----------------------------------------------------------------------------
-find "$TARGET" $ ! -user userdoc -o ! -group userdoc $ \
-    -mmin +$GRACE_MIN \
-    -exec chown userdoc:userdoc {} +
+find "$TARGET" \( ! -user userdoc -o ! -group userdoc \) -mmin +$GRACE_MIN -exec chown userdoc:userdoc {} +
 
 #-----------------------------------------------------------------------------
 # 3. FIX DIRECTORY PERMISSIONS (2770)
 #-----------------------------------------------------------------------------
-find "$TARGET" -type d ! -perm 2770 \
-    -mmin +$GRACE_MIN \
-    -exec chmod 2770 {} +
+find "$TARGET" -type d ! -perm 2770 -mmin +$GRACE_MIN -exec chmod 2770 {} +
 
 #-----------------------------------------------------------------------------
 # 4. FIX FILE PERMISSIONS (660)
 #-----------------------------------------------------------------------------
-find "$TARGET" -type f ! -perm 660 \
-    -mmin +$GRACE_MIN \
-    -exec chmod 660 {} +
+find "$TARGET" -type f ! -perm 660 -mmin +$GRACE_MIN -exec chmod 660 {} +
 
 #-----------------------------------------------------------------------------
 # 5. LOG ONLY IF SOMETHING WAS FIXED

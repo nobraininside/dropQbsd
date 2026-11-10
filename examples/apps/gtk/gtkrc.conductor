@@ -1,0 +1,7 @@
+style "conductor" {
+    bg[NORMAL] = "#212121"
+    fg[NORMAL] = "#ffffff"
+    base[NORMAL] = "#000000"
+    text[NORMAL] = "#ffffff"
+}
+widget_class "*" style "conductor"

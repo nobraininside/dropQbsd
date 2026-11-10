@@ -1,0 +1,35 @@
+# ==========================================================
+#  dropQbsd -- optional_packages_list
+#
+#  Optional packages checked by lib/checklist (check_optional_
+#  packages). One entry per line: "<platform> <package>".
+#
+#  platform: all | openbsd | freebsd
+#    all       -- checked on every install
+#    openbsd   -- checked only on OpenBSD
+#    freebsd   -- checked only on FreeBSD
+#
+#  The package name doubles as the binary probed with command -v.
+#  A future need for a distinct binary name is a third column.
+#
+#  This file is part of the shipped tree and is covered by the
+#  installer/updater coherence check (every shipped file must be
+#  in the integrity filelist).
+#
+#  Keep this list in sync with the optional-packages table in
+#  README.md, INSTALL.md and INSTALL_MANUAL.md.
+# ==========================================================
+
+# platform  package
+all        dzen2
+all        nnn
+all        pass
+all        signify
+all        syncthing
+all        tmux
+all        xbindkeys
+all        xclip
+all        xdotool
+freebsd    xdialog
+openbsd    Xdialog
+all        yad

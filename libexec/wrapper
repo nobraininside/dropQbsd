@@ -5,27 +5,52 @@
 #  Shell selector for dropQbsd scripts.
 #  Detects the OS and executes the target script with the
 #  appropriate Korn Shell variant:
-#    - OpenBSD: /bin/ksh (PD KSH, base system)
-#    - FreeBSD: /usr/local/bin/mksh (install with: pkg install mksh)
+#  - OpenBSD: /bin/ksh (PD KSH, base system)
+#  - FreeBSD: /usr/local/bin/mksh (install with: pkg install mksh)
 #
 #  The wrapper runs with the privileges of its CALLER:
-#    - invoked from cron (root)      -> runs as root
-#    - invoked from a domain user    -> runs as that user
+#  - invoked from cron (root) -> runs as root
+#  - invoked from a domain user -> runs as that user
 #  It does NOT elevate privileges. Environment sanitization
 #  is defensive: it matters when the caller is root.
 #
+#  Environment sanitization: PATH is hardcoded to system
+#  directories (a user-controlled PATH in a root context is
+#  privilege escalation). IFS, LD_LIBRARY_PATH, LD_PRELOAD,
+#  PERL5LIB, PYTHONPATH, CDPATH, SHELL, HOME, LOGNAME, USER
+#  are unset. Only DISPLAY, XAUTHORITY, TERM survive.
+#
+#  HOME IS UNSET BY DESIGN -- read this before adding a script.
+#  No dropQbsd script may rely on $HOME being set: an environment-
+#  supplied HOME is untrusted (in a root context it could point
+#  anywhere, and a script that used it would act on the wrong
+#  files). A script that needs a home directory rebuilds it from
+#  the passwd database using the REAL uid -- the kernel's identity,
+#  never the environment:
+#
+#      UID_R=$(id -ru)
+#      HOME=$(awk -F: -v u="$UID_R" '$3 == u {print $6; exit}' /etc/passwd)
+#      export HOME
+#
+#  This pattern is already used by indicator_de, qimport, qsite,
+#  xterm_conductor and xterm_root. Follow it in any new script
+#  that touches home-relative paths. Scripts run as a domain user
+#  find their home via the same lookup (id -ru returns the domain's
+#  uid); scripts run as root (enforcers, table scripts, admin) get
+#  /root from it.
+#
 #  ENV is NOT set here: the Korn shell reads $ENV only in
 #  INTERACTIVE mode, and these scripts are non-interactive.
-#  Interactive shells (xterm) get ENV from xterm_user /
+#  Interactive shells (xterm) get ENV from xterm_conductor /
 #  xterm_userdoc.
 #
 #  Path: /opt/dropQbsd/libexec/wrapper
 #  Permissions: chmod 755, root:wheel
 #
 #  Usage:
-#    /opt/dropQbsd/libexec/wrapper /path/to/script [args...]
-#    OR
-#    Wrapper /path/to/script [args...]
+#  /opt/dropQbsd/libexec/wrapper /path/to/script [args...]
+#  OR
+#  Wrapper /path/to/script [args...]
 # ==========================================================
 
 # --- Validate arguments ---
@@ -45,14 +70,21 @@ W_DISPLAY=""; W_XAUTHORITY=""; W_TERM=""
 [ -n "$XAUTHORITY" ]  && W_XAUTHORITY="$XAUTHORITY"
 [ -n "$TERM" ]        && W_TERM="$TERM"
 
-# --- Sanitize: NOTHING of the caller's environment may cross.
-# PATH is hardcoded: a user-controlled PATH in a root context is
-# privilege escalation (fake 'awk', 'find', 'mount' earlier in PATH).
+# --- Sanitize: NOTHING of the caller's environment may cross. ---
 PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/X11R6/bin:/usr/local/bin:/usr/local/sbin
 export PATH
 unset IFS LD_LIBRARY_PATH LD_PRELOAD LDDLFLAGS \
       PERL5LIB PYTHONPATH CDPATH SHELL HOME LOGNAME USER
 umask 022
+
+# ---- Conductor account (derived from GECOS, single source of truth) ----
+# The conductor is the account whose GECOS field is "dropQbsd_conductor".
+# It can be renamed; the marker stays, so this resolves the current name.
+# Fallback to "conductor" if no account carries the marker (pre-GECOS).
+CONDUCTOR_USER=""
+CONDUCTOR_USER=$(getent passwd | awk -F: 'index($5, "dropQbsd_conductor") > 0 {print $1; exit}')
+CONDUCTOR_USER="${CONDUCTOR_USER:-conductor}"
+export CONDUCTOR_USER
 
 # Restore the whitelisted session variables.
 DISPLAY="$W_DISPLAY"; XAUTHORITY="$W_XAUTHORITY"; TERM="$W_TERM"

@@ -1,6 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=KeepassXC
-Exec=/opt/dropQbsd/bin/run_app userdoc keepassxc
-Icon=dropq-userdoc.svg
-Categories=System;

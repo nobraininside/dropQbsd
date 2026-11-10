@@ -1,0 +1,259 @@
+# ==========================================================
+#  dropQbsd installer -- users
+#
+#  Creates the drop group and the five members that need it:
+#  the four domain users and root.
+#
+#  Passwords are NOT set here. Automating password creation
+#  is fragile (chpasswd is not native on the BSDs, temp files
+#  leak credentials) and unnecessary: the operator sets them
+#  interactively with passwd(1) after the script finishes.
+#
+#  The "set passwords" reminder lives in the installer's manual
+#  steps (lib/checklist), NOT here. This module is shared by
+#  install.sh and update.sh; on an update the passwords already
+#  exist, so a reminder printed here would be wrong.
+#
+#  Domain users match the allowlist in run_app_impl:
+#    userweb, usermail, userdoc  (launch targets)
+#    user                        (conductor, orchestrates)
+#
+#  root is added to the drop group because qcp/qmv/qimport
+#  are documented as usable by "Any user" and the drop zone
+#  quarantines files whose group is not 'drop'. Files root
+#  stages into the drop zone must carry the drop group.
+#
+#  GECOS markers. Each domain account carries a GECOS field that
+#  identifies it as a dropQbsd role: "dropQbsd_conductor",
+#  "dropQbsd_userdoc", etc. The installer and updater verify this
+#  marker before granting drop-group membership, and REFUSE to
+#  merge a pre-existing personal account into a domain role.
+#  Without the marker, an account named e.g. 'user' that already
+#  exists would silently be granted drop-zone and domain access.
+#
+#  Platform notes (from INSTALL_MANUAL.md and the dropQbsd scripts):
+#    - OpenBSD useradd(8) has NO -G flag. The group is set with
+#      -g (primary); secondary membership is added afterwards
+#      with usermod -G. -c sets the GECOS field.
+#    - FreeBSD pw useradd(8) takes -G for the secondary group
+#      and -c for the GECOS field. The base system has no
+#      /bin/ksh; the login shell is mksh at /usr/local/bin/mksh
+#      (see detect.login_shell).
+#
+#  Sourced by install.sh and update.sh. No shebang, no extension.
+# ==========================================================
+
+# ------------------------------------------------------------------
+# gecos_for: the marker to WRITE for a role name. Used by
+# create_one_user at creation time. This is NOT a verifier -- for
+# that, see verify_domain_marker.
+# ------------------------------------------------------------------
+gecos_for() {
+    # Return the dropQbsd GECOS marker for the given account, or
+    # nothing (exit 1) if the account is not a dropQbsd domain.
+    #
+    # Rename-proof: the conductor is recognized by its GECOS marker,
+    # not by its name (it may be renamed via CONDUCTOR_USER). The
+    # three fixed domains are matched by name.
+    case "$1" in
+        userdoc|usermail|userweb)
+            echo "dropQbsd_$1"
+            ;;
+        *)
+            # Conductor: if this IS the configured conductor account, return the
+            # marker even when the account does not exist yet (creation time --
+            # getent cannot find an account that is not in /etc/passwd yet).
+            if [ "$1" = "$CONDUCTOR_USER" ]; then
+                echo "dropQbsd_conductor"
+                return 0
+            fi
+            # Existing account renamed via GECOS marker match (rename-proof).
+            getent passwd "$1" | awk -F: 'index($5, "dropQbsd_conductor") > 0 { print $5; exit }'
+            ;;
+    esac
+}
+
+# Expected GECOS marker for each role. Used by verify_domain_marker
+# to compare against the actual marker. The conductor is rename-proof:
+# its marker is dropQbsd_conductor regardless of the account name.
+expected_marker() {
+    case "$1" in
+        "$CONDUCTOR_USER") echo "dropQbsd_conductor" ;;
+        userdoc)           echo "dropQbsd_userdoc" ;;
+        usermail)          echo "dropQbsd_usermail" ;;
+        userweb)           echo "dropQbsd_userweb" ;;
+        *)                 return 1 ;;
+    esac
+}
+
+# verify_domain_marker: true only if the account EXISTS and its actual
+# GECOS field carries the marker for its role.
+#
+# Do NOT route this through gecos_for(). That function is a PRODUCER:
+# it returns the marker to WRITE at creation time, and returns one for
+# any known role name without reading /etc/passwd. Used as a verifier
+# it always succeeds, which made the whole marker gate decorative --
+# the updater would proceed on an unmarked system and, on a 0.3.0
+# install whose conductor is named e.g. 'user', could create a stray
+# 'conductor' account.
+verify_domain_marker() {
+    u="$1"
+    want="$(expected_marker "$u")" || return 1
+    have="$(getent passwd "$u" 2>/dev/null | awk -F: '{print $5; exit}')"
+    [ -n "$have" ] || return 1
+    case "$have" in
+        *"$want"*) return 0 ;;
+    esac
+    return 1
+}
+
+create_group() {
+    if getent group "$GROUP" >/dev/null 2>&1; then
+        info "group $GROUP already exists"
+        return 0
+    fi
+    run groupadd "$GROUP"
+    success "group $GROUP created"
+}
+
+create_users() {
+    sh="$(login_shell)"
+
+    for u in $USER_LIST; do
+        if id "$u" >/dev/null 2>&1; then
+            # Existing account: it must carry the dropQbsd GECOS
+            # marker. Never merge a pre-existing personal account
+            # into a domain role -- that would grant it drop-zone
+            # and domain access, and break the model (e.g. a
+            # conductor with personal files).
+            if ! verify_domain_marker "$u"; then
+                echo "ERROR: account '$u' exists without the dropQbsd GECOS marker." >&2
+                echo "" >&2
+                echo "If this is an existing dropQbsd system (upgrading from <= 0.3.0)," >&2
+                echo "mark the accounts first, then re-run the updater:" >&2
+                gecos_mark_commands >&2
+                echo "" >&2
+                echo "If this is a personal account, rename or empty it, or install on" >&2
+                echo "a dedicated system." >&2
+                echo "" >&2
+                echo "If you set CONDUCTOR_USER=<name> and that name collides with an" >&2
+                echo "existing account, pick a name that is not in use." >&2
+                exit 1
+            fi
+            info "user $u exists, ensuring membership in $GROUP"
+            add_to_group_safe "$u" "$GROUP"
+        else
+            create_one_user "$u" "$sh"
+        fi
+    done
+
+    # root uses qcp/qmv/qimport too. Without membership in $GROUP,
+    # files root stages into the drop zone can carry the wrong
+    # group and be quarantined by enforce_drop on its next cycle.
+    add_to_group_safe root "$GROUP"
+}
+
+gecos_mark_commands() {
+    # Printed when a marker is missing. Copy-paste ready: no column
+    # alignment depends on the length of CONDUCTOR_USER, and the tool
+    # name is the right one per platform (FreeBSD has no usermod).
+    case "$OS" in
+    OpenBSD)
+        printf '  usermod -c %-22s %s\n' '"dropQbsd_conductor"' "$CONDUCTOR_USER"
+        printf '  usermod -c %-22s %s\n' '"dropQbsd_userdoc"'    userdoc
+        printf '  usermod -c %-22s %s\n' '"dropQbsd_usermail"'   usermail
+        printf '  usermod -c %-22s %s\n' '"dropQbsd_userweb"'    userweb
+        ;;
+    FreeBSD)
+        printf '  pw usermod %-14s -c %s\n' "$CONDUCTOR_USER" '"dropQbsd_conductor"'
+        printf '  pw usermod %-14s -c %s\n' userdoc           '"dropQbsd_userdoc"'
+        printf '  pw usermod %-14s -c %s\n' usermail          '"dropQbsd_usermail"'
+        printf '  pw usermod %-14s -c %s\n' userweb           '"dropQbsd_userweb"'
+        ;;
+    esac
+}
+
+# verify_all_markers: pre-flight gate for the updater. Refuses BEFORE
+# any file is replaced when an account exists without its dropQbsd
+# marker -- a pre-marker installation, or a foreign account.
+#
+# This cannot live in create_users (step 6): by then replace_all has
+# already rewritten /etc/dropQbsd and /opt/dropQbsd, and the run
+# aborts with a half-updated tree.
+verify_all_markers() {
+    bad=0
+    for u in $USER_LIST; do
+        if ! id "$u" >/dev/null 2>&1; then
+            warn "account '$u' does not exist (CONDUCTOR_USER=${CONDUCTOR_USER}?)"
+            bad=$((bad + 1))
+        elif ! verify_domain_marker "$u"; then
+            warn "account '$u' exists without its dropQbsd GECOS marker"
+            bad=$((bad + 1))
+        fi
+    done
+    if [ "$bad" -gt 0 ]; then
+        echo "" >&2
+        echo "Mark the accounts first (INSTALL_MANUAL.md 1," >&2
+        echo "\"Marking an existing dropQbsd system\"), then re-run:" >&2
+        gecos_mark_commands >&2
+        fail "$bad account(s) are not dropQbsd domain accounts"
+    fi
+}
+
+create_one_user() {
+    u="$1"; sh="$2"
+    info "creating user $u (no password)"
+    marker="$(gecos_for "$u")"
+
+    case "$OS" in
+        FreeBSD)
+            # -G sets the secondary group directly; -c sets GECOS.
+            run pw useradd "$u" -m -G "$GROUP" -s "$sh" -c "$marker"
+            ;;
+        OpenBSD)
+            # useradd(8) has no -G. Create the user (with the
+            # GECOS marker via -c), then add the secondary group
+            # with usermod -G (via the safe helper, which
+            # preserves any existing membership).
+            run useradd -m -s "$sh" -c "$marker" "$u"
+            add_to_group_safe "$u" "$GROUP"
+            ;;
+        *)
+            fail "create_one_user: unsupported OS: $OS"
+            ;;
+    esac
+    success "user $u created"
+}
+
+# add_to_group_safe: append a secondary group WITHOUT replacing the
+# existing list.
+#
+# Both OpenBSD usermod -G and FreeBSD pw usermod -G REPLACE the
+# secondary group list; they do not append. Reading the current
+# groups first is mandatory, not optional: on a system where root
+# or a domain user already belongs to other secondary groups,
+# calling usermod -G drop would silently drop those memberships.
+#
+# id -Gn returns the group NAMES (not GIDs), space-separated.
+# Normalize to a comma-separated list, check for the target, and
+# only then rebuild the list with the new group appended.
+add_to_group_safe() {
+    u="$1"; g="$2"
+
+    current="$(id -Gn "$u" 2>/dev/null | tr ' ' ',')"
+    case ",${current}," in
+        *",${g},"*)
+            info "$u is already in $g"
+            return 0
+            ;;
+    esac
+
+    new="${current:+${current},}${g}"
+    case "$OS" in
+        FreeBSD) run pw usermod "$u" -G "$new" ;;
+        OpenBSD) run usermod -G "$new" "$u" ;;
+        *)       fail "add_to_group_safe: unsupported OS: $OS" ;;
+    esac
+    success "$u added to $g"
+}
+

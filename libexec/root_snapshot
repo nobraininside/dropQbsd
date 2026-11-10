@@ -2,7 +2,9 @@
 #  dropQbsd -- root_snapshot
 #
 #  Generates a system-status snapshot for the control panel.
-#  Must be run as root; read by control_panel via su auth.
+#  Must be run as root; read by the control panel via the
+#  drop group (root:drop 0640). su auth is required only
+#  for the privileged lines (PF state, logs).
 #  Reports PF status/states/rules, load average, free space on
 #  /home, tmpfs usage, snapshot time, and the last line of each
 #  enforcer/integrity log.
@@ -21,8 +23,8 @@
 #  Permissions: chmod 755, root:wheel
 #
 #  IMPORTANT: This script MUST be executed via
-#    - /opt/dropQbsd/sbin/control_panel OR Control
-#    - /opt/dropQbsd/sbin/file_bridge OR Bridge
+#  - /opt/dropQbsd/sbin/qcontrol OR Qcontrol
+#  - /opt/dropQbsd/sbin/qfile OR Qfile
 #  Do NOT run it directly.
 # ==========================================================
 
@@ -31,7 +33,7 @@
 
 # --- File paths (never /tmp: no symlink attacks, no spoofing) ---
 SNAPSHOT_DIR="/var/run/dropQbsd"
-SNAPSHOT_FILE="$SNAPSHOT_DIR/control_panel_snapshot"
+SNAPSHOT_FILE="$SNAPSHOT_DIR/qcontrol_snapshot"
 SNAPSHOT_TMP="$SNAPSHOT_DIR/.snapshot.$$"
 SNAPSHOT_MAX_AGE=300
 LOG_DIR="/var/log/dropQbsd"

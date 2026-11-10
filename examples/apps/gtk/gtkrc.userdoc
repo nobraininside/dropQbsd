@@ -1,0 +1,7 @@
+style "userdoc" {
+    bg[NORMAL] = "#2E7D32"
+    fg[NORMAL] = "#ffffff"
+    base[NORMAL] = "#1B5E20"
+    text[NORMAL] = "#ffffff"
+}
+widget_class "*" style "userdoc"

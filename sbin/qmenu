@@ -1,0 +1,113 @@
+# ==========================================================
+#  dropQbsd -- qmenu (single window, coloured headers)
+#
+#  Reads the [qmenu] section from /etc/dropQbsd/local.conf.
+#  Shows a single YAD list with coloured domain headers
+#  (--- CONDUCTOR ---, --- USERDOC ---, ...) and the app names.
+#
+#  Display names must be UNIQUE across all domains. If a name
+#  appears more than once, qmenu warns and refuses to start.
+#
+#  Domain headers are NOT selectable actions -- they carry no
+#  command in the lookup, so selecting one exits cleanly.
+#
+#  Executed via the wrapper (no shebang).
+#
+#  Format of [qmenu] in local.conf:
+#    ROOT|CONDUCTOR|USERDOC|USERMAIL|USERWEB   (section header)
+#    /path/cmd args | Display name   (command | shown name)
+#
+# Display name: several words allowed, but NO '--' or '&'
+# (both are parsed by the entry's eval, not as text).
+# ==========================================================
+
+CONF="/etc/dropQbsd/local.conf"
+DISP=$(mktemp /tmp/qmenu.disp.XXXXXX) || { echo "qmenu: temp fail" >&2; exit 1; }
+LOOKUP=$(mktemp /tmp/qmenu.lookup.XXXXXX) || { echo "qmenu: temp fail" >&2; exit 1; }
+trap 'rm -f "$DISP" "$LOOKUP"' EXIT HUP INT TERM
+
+[ -z "$DISPLAY" ] && { echo "qmenu: no DISPLAY" >&2; exit 1; }
+[ -f "$CONF" ]    || { echo "qmenu: $CONF not found" >&2; exit 1; }
+
+# =========================================================
+# PARSE [qmenu] INTO name -> command, with coloured headers
+# =========================================================
+# DISP     : display lines. Headers are coloured <span>, app
+#            names are plain. One line per entry.
+# LOOKUP   : "name|command" for apps, "--- header ---|" for
+#            headers (no command -> not selectable).
+# =========================================================
+awk -v disp="$DISP" -v lookup="$LOOKUP" '
+    function header_colour(d) {
+        if (d == "ROOT")     return "#8B0000"
+        if (d == "CONDUCTOR")     return "#000000"
+        if (d == "USERDOC")  return "#006400"
+        if (d == "USERMAIL") return "#9932CC"
+        if (d == "USERWEB")  return "#00008B"
+        return "#333333"
+    }
+    /^\[/ { inq = ($0 == "[qmenu]") ? 1 : 0; next }
+    inq && /^(ROOT|CONDUCTOR|USERDOC|USERMAIL|USERWEB)$/ {
+        domain = tolower($0)
+        # coloured header line (not an action)
+        printf "<span foreground=\"%s\"><b>--- %s ---</b></span>\n", \
+               header_colour(toupper($0)), toupper($0) > disp
+        printf "--- %s ---|\n", toupper($0) > lookup   # no command
+        next
+    }
+    inq && NF && $0 !~ /^#/ {
+        n = split($0, a, "|")
+        cmd = a[1]
+        name = (n > 1 ? a[2] : a[1])
+        gsub(/^[ \t]+|[ \t]+$/, "", cmd)
+        gsub(/^[ \t]+|[ \t]+$/, "", name)
+        if (name != "" && domain != "") {
+            print name > disp
+            print name "|" cmd > lookup
+        }
+    }
+' "$CONF"
+
+[ -s "$LOOKUP" ] || { echo "qmenu: no [qmenu] entries in $CONF" >&2; exit 1; }
+
+# =========================================================
+# VALIDATE: NO DUPLICATE DISPLAY NAMES
+# =========================================================
+# Check only the app names (not the headers, which are in
+# "--- ... ---" form and unique by construction).
+DUPS=$(awk -F'|' '$1 !~ /^--- / {print $1}' "$LOOKUP" | sort | uniq -d)
+
+if [ -n "$DUPS" ]; then
+    DUP_LIST=$(printf '%s\n' "$DUPS" | tr '\n' '\n')
+    yad --warning \
+        --title="dropQbsd -- qmenu: duplicate names" \
+        --text="qmenu will not start.\n\nThe following display names appear more\nthan once in [qmenu] of $CONF:\n\n$DUP_LIST\n\nMake each display name unique (they are\nused to resolve the command) and retry." \
+        --button="OK:0" \
+        --width=450 2>/dev/null
+    exit 1
+fi
+
+# =========================================================
+# SHOW THE LIST VIA YAD (single window, coloured headers)
+# =========================================================
+SEL=$(cat "$DISP" \
+    | yad --list --column="Action" --no-headers \
+        --separator="|" --print-column=1 \
+        --height=600 --width=420 \
+        --title="dropQbsd -- conductor" \
+        --text="<span foreground='#333333'><b>Select an action</b></span>" 2>/dev/null)
+
+[ -z "$SEL" ] && exit 0
+
+# =========================================================
+# RESOLVE THE COMMAND (by unique name)
+# =========================================================
+# SEL may be a header ("--- CONDUCTOR ---") or an app name. Headers
+# have no command in the lookup (empty), so they resolve to
+# empty CMD -> exit cleanly.
+SEL=$(printf '%s' "$SEL" | sed 's/|$//' | sed 's/<[^>]*>//g')
+CMD=$(awk -F'|' -v n="$SEL" '$1 == n {print $2; exit}' "$LOOKUP")
+
+[ -z "$CMD" ] && exit 0
+eval "$CMD"
+exit 0

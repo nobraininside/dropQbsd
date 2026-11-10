@@ -8,8 +8,16 @@
 #           via userweb DNS each run (IPs vary by location
 #           and change over time).
 #
+#  The table is PERSISTENT. It is populated here every
+#  15 minutes via cron and read (never emptied) by the
+#  update scripts (patch_tru_fwall, pkg_tru_fwall,
+#  update_tru_fwall, upgrade_tru_fwall). A pfctl -f
+#  reload empties all persistent tables, so the cron must
+#  run after any firewall regeneration.
+#
 #  Path: /opt/dropQbsd/libexec/ensure_updates_table
 #  Permissions: chmod 755, root:wheel
+#  Cron: */15 * * * * /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/ensure_updates_table
 #
 #  IMPORTANT: This script MUST be executed via the dropQbsd
 #  wrapper or its alias. Do NOT run it directly.

@@ -1,0 +1,102 @@
+# ==========================================================
+#  dropQbsd installer -- cron
+#
+#  Merges the dropQbsd cron entries into root's crontab.
+#
+#  crontab(1) REPLACES the whole table; it does not append.
+#  The merge therefore strips any pre-existing dropQbsd lines
+#  (identified by the marker string) before appending the
+#  template, so repeated runs do not duplicate entries.
+#
+#  All dropQbsd jobs run as root. Jobs that act on behalf of
+#  a domain user use `su -l <user> -c`; there are no per-user
+#  crontabs.
+#
+#  ORDER: this step runs AFTER setup_integrity (Sign) and
+#  verify_integrity_setup (Verify). INSTALL_MANUAL.md §10.8: "Sign
+#  must run before the verify_integrity cron job is added."
+#
+#  The verify_integrity entry is CONDITIONAL on the signature
+#  actually existing. If the operator skipped integrity setup,
+#  no signature exists, and installing the job would make cron
+#  log SETUP INCOMPLETE every 5 minutes forever. The condition
+#  is on the signature's presence, not on the operator's answer.
+#
+#  Exclusions asserted below (INSTALL_MANUAL.md 8):
+#  - root_snapshot is on demand from qcontrol, NOT cron.
+#
+#  ensure_updates_table IS in cron (*/15), and the check below asserts
+#  it: the update scripts repopulate <updates> on entry, but the cron
+#  keeps the table warm after any pfctl -f reload.
+#
+#  Sourced by install.sh. No shebang, no extension.
+# ==========================================================
+
+install_cron() {
+    example="${INSTALL_DIR}/examples/system/crontab.example"
+    [ -f "$example" ] || fail "crontab example missing: $example"
+
+    tmp="$(mktemp)" || fail "mktemp failed"
+    trap 'rm -f "$tmp"' EXIT
+
+    # Preserve existing entries that are not ours.
+    crontab -l 2>/dev/null | grep -v dropQbsd > "$tmp" || true
+
+    # Condition the verify_integrity entry on the signature
+    # existing. All other jobs are always installed.
+    sig="${INSTALL_DIR}/keys/dropQbsd_scripts.sha256.sig"
+    if [ -f "$sig" ]; then
+        info "integrity signature present: installing verify_integrity job"
+        cat "$example" >> "$tmp"
+    else
+        info "no integrity signature: installing cron WITHOUT verify_integrity"
+        grep -v 'verify_integrity' "$example" >> "$tmp"
+    fi
+
+    run crontab "$tmp"
+    rm -f "$tmp"
+    trap - EXIT
+
+    # In dry-run the crontab was not modified: the run above was
+    # printed, not executed. Verifying now would test the OLD
+    # crontab and report a false result.
+    if [ "$DRY_RUN" = true ]; then
+        info "[dry-run] skipping cron verification"
+        return 0
+    fi
+
+    check_sh "crontab -l | grep -q dropQbsd"
+
+    # Assert the schedule shape. root_snapshot must NOT be in cron
+    # (it runs unasked); ensure_updates_table must be (it keeps the
+    # <updates> table warm after a pfctl -f reload). 
+    check_sh "crontab -l | grep -q ensure_updates_table"
+    check_sh "! crontab -l | grep -q root_snapshot"
+
+    # Every job must reference a script that exists and is
+    # executable, or cron fails silently every cycle.
+    check_cron_scripts
+
+    success "cron jobs installed"
+}
+
+# check_cron_scripts: extract the script paths from the installed
+# crontab and verify each is executable. A missing script would
+# otherwise fail silently, once per schedule, forever.
+check_cron_scripts() {
+    missing=0
+    for s in $(crontab -l 2>/dev/null \
+               | grep dropQbsd \
+               | grep -o '/opt/dropQbsd/[^ ]*'); do
+        case "$s" in
+            */wrapper) continue ;;   # the wrapper itself
+        esac
+        if [ ! -x "$s" ]; then
+            warn "cron references a non-executable script: $s"
+            missing=$((missing + 1))
+        fi
+    done
+    [ "$missing" -eq 0 ] || warn "$missing cron script(s) missing or not executable"
+}
+
+

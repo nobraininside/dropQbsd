@@ -1,0 +1,3 @@
+# Open the dropQbsd conductor menu with Super+q
+"/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qmenu"
+    Mod4+q

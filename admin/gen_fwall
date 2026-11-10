@@ -27,8 +27,11 @@
 #    - FreeBSD does NOT support "egress"; the physical
 #      interface name (e.g. bge0) is detected automatically
 #      via "route get default".
-#    - NetBSD npf(7) lacks per-user filtering; backend
-#      refuses to generate a partial ruleset.
+#    - NetBSD is NOT supported: npf(7) lacks per-user
+#      filtering. The "netbsd" backend accepts the argument
+#      but refuses to generate a partial ruleset rather
+#      than emit a firewall that silently drops per-user
+#      isolation.
 #
 #  Path: /opt/dropQbsd/admin/gen_fwall
 #  Permissions: chmod 700, root:wheel
@@ -42,17 +45,16 @@
 #  IMPORTANT: This script MUST be executed via the dropQbsd
 #  wrapper or its alias. Do NOT run it directly.
 #  Usage:
-#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/gen_fwall {openbsd|freebsd|netbsd}
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/gen_fwall {openbsd|freebsd}
 #    OR
-#    Gen {openbsd|freebsd|netbsd}
+#    Gen {openbsd|freebsd}
 #
-#    Output:
-#     openbsd   -> /etc/pf.conf  (pf, OpenBSD)
-#     freebsd   -> /etc/pf.conf  (pf, FreeBSD)
-#     netbsd    -> honest refusal (npf lacks
-#                               per-user filtering)
-#
+#  Note: "netbsd" is accepted but always refused (npf
+#  limitation). The supported backends are openbsd and
+#  freebsd only.
 # ==========================================================
+
+
 
 POLICY_DIR="/etc/dropQbsd"
 DOMAINS_CONF="$POLICY_DIR/domains.conf"
@@ -61,8 +63,44 @@ SCHEMA_FILE="$POLICY_DIR/schema"
 OUTPUT_PF="/etc/pf.conf"
 TMP_OUTPUT=$(mktemp /tmp/pf.dropQbsd.XXXXXX) || exit 1
 
-VALID_DOMAINS=""
 network_lan=""
+POLICY_KEYS=""
+KEY_ACCOUNT=""
+
+# ------------------------------------------------------------------
+#  GECOS -> role -> account resolution (Fase 2)
+#
+#  schema contains GECOS markers ("dropQbsd_<role>"). The role is
+#  the domains.conf section name; the account is the real Unix
+#  user that carries the marker (single source of truth: /etc/passwd).
+#  No local.conf key: the mapping lives entirely in the GECOS.
+# ------------------------------------------------------------------
+
+# user_for_gecos: find the account whose GECOS field contains the
+# marker (literal match via index()). /etc/passwd maps role -> name.
+user_for_gecos() {
+    typeset marker="$1"
+    getent passwd | awk -F: -v m="$marker" 'index($5, m) > 0 {print $1; exit}'
+}
+
+# role_from_gecos: derive the policy key (domains.conf section name)
+# from the GECOS marker. Convention: "dropQbsd_<role>".
+role_from_gecos() {
+    typeset marker="$1"
+    printf '%s' "${marker#dropQbsd_}"
+}
+
+# account_for_key: resolve the account name for a policy key.
+# Reads the KEY_ACCOUNT list built by load_schema ("key:account").
+account_for_key() {
+    typeset key="$1" pair
+    for pair in $KEY_ACCOUNT; do
+        case "$pair" in
+            "${key}:"*) printf '%s' "${pair#${key}:}"; return 0 ;;
+        esac
+    done
+    return 1
+}
 
 die() {
     echo "ERROR: $*" >&2
@@ -73,20 +111,47 @@ usage() {
     echo "Usage: Gen openbsd|freebsd|netbsd" >&2
 }
 
+# user_for_gecos: find the account whose GECOS field contains the
+# given marker (literal match via index). /etc/passwd is the single
+# source of truth mapping role -> account name.
+user_for_gecos() {
+    typeset marker="$1"
+    getent passwd | awk -F: -v m="$marker" 'index($5, m) > 0 {print $1; exit}'
+}
+
+# role_from_gecos: derive the policy key (domains.conf section name)
+# from the GECOS marker. Convention: "dropQbsd_<role>".
+role_from_gecos() {
+    typeset marker="$1"
+    printf '%s' "${marker#dropQbsd_}"
+}
+
 load_schema() {
-    typeset line
+    typeset line marker key account
     [ -f "$SCHEMA_FILE" ] || die "schema file not found: $SCHEMA_FILE"
 
-    VALID_DOMAINS=""
+    # POLICY_KEYS: domains.conf section names (for reading rules).
+    # KEY_ACCOUNT: "key:account" pairs (key for rules, account for PF).
+    POLICY_KEYS=""
+    KEY_ACCOUNT=""
     while IFS= read -r line; do
         line="${line%%#*}"
         line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
         [ -z "$line" ] && continue
-        VALID_DOMAINS="$VALID_DOMAINS $line"
+
+        # line is a GECOS marker, e.g. "dropQbsd_userdoc".
+        marker="$line"
+        key="$(role_from_gecos "$marker")"
+        account="$(user_for_gecos "$marker")"
+        [ -z "$account" ] && \
+            die "no account carries the role marker '$marker' (run the installer?)"
+
+        POLICY_KEYS="$POLICY_KEYS $key"
+        KEY_ACCOUNT="$KEY_ACCOUNT ${key}:${account}"
     done < "$SCHEMA_FILE"
 
-    [ -n "$VALID_DOMAINS" ] || die "schema is empty: $SCHEMA_FILE"
-    VALID_DOMAINS=$(echo "$VALID_DOMAINS" | sed 's/^ //')
+    [ -n "$POLICY_KEYS" ] || die "schema is empty: $SCHEMA_FILE"
+    POLICY_KEYS=$(echo "$POLICY_KEYS" | sed 's/^ //')
 }
 
 parse_ini() {
@@ -110,12 +175,26 @@ parse_ini() {
                 SECTION="${line#?}"
                 SECTION="${SECTION%?}"
                 SECTION=$(echo "$SECTION" | tr '.' '_')
+                # gen_fwall parses both domains.conf and local.conf through
+                # parse_ini. Rather than whitelist every known section (which
+                # breaks when a domain is added), ignore only the sections
+                # that belong to another consumer. [qmenu] lives in local.conf
+                # and is read by qmenu, not by the firewall: skip its body.
+                case "$SECTION" in
+                    qmenu)
+                        SECTION="__SKIP__" ;;
+                    *)
+                        : ;;
+                esac
                 continue
                 ;;
-        esac
+        esac 
 
         # key = value
         if [ "${line%%=*}" != "$line" ]; then
+            # Inside a skipped section: ignore, don't store.
+            [ "$SECTION" = "__SKIP__" ] && continue
+
             KEY="${line%%=*}"
             VALUE="${line#*=}"
             KEY=$(echo "$KEY" | sed 's/[[:space:]]*$//')
@@ -132,13 +211,18 @@ parse_ini() {
             continue
         fi
 
+        # Drawer: a line that is neither a section header nor key=value.
+        # Inside a skipped section (e.g. the body of [qmenu]: ROOT,
+        # /path | desc): ignore. Inside a known section: this is a real
+        # malformed line and gen_fwall cannot continue -- die.
+        [ "$SECTION" = "__SKIP__" ] && continue
         die "$FILE:$LINENO: syntax error: $line"
     done < "$FILE"
 }
 
 validate() {
     typeset DOMAIN KEY VAL RULE
-    for DOMAIN in $VALID_DOMAINS default; do
+    for DOMAIN in $POLICY_KEYS default; do
         for KEY in allow allow_in deny network role policy; do
             eval "VAL=\${${DOMAIN}_${KEY}:-}"
             [ -z "$VAL" ] && continue
@@ -147,7 +231,10 @@ validate() {
                 allow|allow_in)
                     for RULE in $VAL; do
                         case "$RULE" in
-                            tcp:*@*|udp:*@*|icmp:*@*|any:*@*) : ;;
+                            tcp:*@internet|tcp:*@lan|tcp:*@any|tcp:*@table:*|\
+                            udp:*@internet|udp:*@lan|udp:*@any|udp:*@table:*|\
+                            icmp:*@internet|icmp:*@lan|icmp:*@any|icmp:*@table:*|\
+                            any:*@internet|any:*@lan|any:*@any|any:*@table:*) : ;;
                             *) die "$DOMAIN: bad allow rule '$RULE' (expected proto:port@target)" ;;
                         esac
                     done
@@ -176,7 +263,7 @@ validate() {
 
 merge_local() {
     typeset DOMAIN EXTRA KEY BAD BASE
-    for DOMAIN in $VALID_DOMAINS; do
+    for DOMAIN in $POLICY_KEYS; do
         eval "EXTRA=\${extra_${DOMAIN}_allow:-}"
         [ -z "$EXTRA" ] && continue
 
@@ -212,7 +299,7 @@ resolve_rule() {
 
 normalize() {
     typeset DOMAIN NET DENY ALLOW ALLOW_IN NEWALLOW RESOLVED RESOLVED_IN RULE
-    for DOMAIN in $VALID_DOMAINS; do
+    for DOMAIN in $POLICY_KEYS; do
         eval "NET=\${${DOMAIN}_network:-}"
         eval "DENY=\${${DOMAIN}_deny:-}"
         eval "ALLOW=\${${DOMAIN}_allow:-}"
@@ -278,40 +365,54 @@ expand_ports() {
     done
 }
 
-emit_domain() {
-    typeset DOMAIN IFACE DENY ALLOW ALLOW_IN RULE
-    DOMAIN="$1"
-    IFACE="$2"
+# account_for_key: resolve the account name for a policy key.
+# Populated by load_schema (KEY_ACCOUNT = "key:account ...").
+account_for_key() {
+    typeset key="$1" pair
+    for pair in $KEY_ACCOUNT; do
+        case "$pair" in
+            "${key}:"*) printf '%s' "${pair#${key}:}"; return 0 ;;
+        esac
+    done
+    return 1
+}
 
-    eval "DENY=\${${DOMAIN}_deny:-}"
-    eval "ALLOW=\${${DOMAIN}_allow:-}"
-    eval "ALLOW_IN=\${${DOMAIN}_allow_in:-}"
+emit_domain() {
+    typeset KEY ACCOUNT IFACE DENY ALLOW ALLOW_IN RULE
+    KEY="$1"                 # policy key (rules: ${KEY}_allow, etc.)
+    ACCOUNT="$2"             # account name (PF: "user $ACCOUNT")
+    IFACE="$3"
+
+    eval "DENY=\${${KEY}_deny:-}"
+    eval "ALLOW=\${${KEY}_allow:-}"
+    eval "ALLOW_IN=\${${KEY}_allow_in:-}"
 
     # 1. deny -> explicit block rules (ALWAYS first)
     for RULE in $DENY; do
         case "$RULE" in
             rfc1918)
-                echo "block out quick log on $IFACE proto tcp from any to <rfc1918> port { 80 443 } user $DOMAIN"
+                echo "block out quick log on $IFACE proto tcp from any to <rfc1918> port { 80 443 } user $ACCOUNT"
                 ;;
             localhost)
-                echo "block out quick on $IFACE proto tcp from any to 127.0.0.0/8 user $DOMAIN"
+                echo "block out quick on $IFACE proto tcp from any to 127.0.0.0/8 user $ACCOUNT"
                 ;;
         esac
     done
 
     # 2. outgoing allows (pass out)
-    emit_rules "$DOMAIN" "$ALLOW" "out" "$IFACE"
+    emit_rules "$KEY" "$ACCOUNT" "$ALLOW" "out" "$IFACE"
 
     # 3. incoming allows (pass in)
-    emit_rules "$DOMAIN" "$ALLOW_IN" "in" "$IFACE"
+    emit_rules "$KEY" "$ACCOUNT" "$ALLOW_IN" "in" "$IFACE"
 }
 
 emit_rules() {
-    typeset DOMAIN RULES DIRECTION IFACE RULE PROTO REST PORTSPEC TARGET KEYS K PORTS RPROTO RPORT RTARGET FOUND EX FROM_CLAUSE USER_CLAUSE PORT_CLAUSE FLAGS
-    DOMAIN="$1"
-    RULES="$2"
-    DIRECTION="$3"
-    IFACE="$4"
+    typeset KEY ACCOUNT RULES DIRECTION IFACE RULE PROTO REST PORTSPEC TARGET KEYS K PORTS RPROTO RPORT RTARGET FOUND EX FROM_CLAUSE USER_CLAUSE PORT_CLAUSE FLAGS
+    KEY="$1"          # policy key (unused here except if needed; kept for clarity)
+    ACCOUNT="$2"      # account name for "user $ACCOUNT"
+    RULES="$3"
+    DIRECTION="$4"
+    IFACE="$5" 
 
     [ -z "$RULES" ] && return
 
@@ -348,7 +449,7 @@ emit_rules() {
         # build clauses based on direction
         if [ "$DIRECTION" = "out" ]; then
             FROM_CLAUSE="from any to $TARGET"
-            USER_CLAUSE="user $DOMAIN"
+            USER_CLAUSE="user $ACCOUNT"
         else
             # incoming: policy target becomes the source (peer)
             FROM_CLAUSE="from $TARGET to any"
@@ -399,9 +500,11 @@ emit_pf() {
         echo "pass out quick on $IFACE proto udp from any to any port 123"
         echo ""
 
-        for DOMAIN in $VALID_DOMAINS; do
-            emit_domain "$DOMAIN" "$IFACE"
-        done
+        for DOMAIN in $POLICY_KEYS; do
+            ACCOUNT="$(account_for_key "$DOMAIN")"
+            [ -n "$ACCOUNT" ] || die "no account for policy key '$DOMAIN'"
+            emit_domain "$DOMAIN" "$ACCOUNT" "$IFACE"
+        done  
 
         echo "pass out quick on $IFACE proto tcp from any to <updates> port { 80 443 } flags S/SA"
         echo ""
@@ -450,6 +553,23 @@ main() {
     normalize
 
     emit_pf "$OS" "$IFACE"
+
+    # Before replacing /etc/pf.conf, back up the current ruleset -- but
+    # ONLY if it is valid (pfctl -nf passes). A corrupted or incomplete
+    # ruleset (e.g. a previous buggy generation) must never be preserved
+    # as a "known good" restore point. The backup lives next to pf.conf,
+    # not in the updater backup dir, because pf.conf is GENERATED, not a
+    # project file: a connection problem right after Gen must be fixable
+    # without digging through update backups.
+    if [ -f "$OUTPUT_PF" ]; then
+        if pfctl -nf "$OUTPUT_PF" 2>/dev/null; then
+            backup="${OUTPUT_PF}.bak.$(date +%Y%m%d-%H%M%S)"
+            cp "$OUTPUT_PF" "$backup"
+            echo "Backed up valid $OUTPUT_PF to $backup" >&2
+        else
+            echo "WARN: not backing up $OUTPUT_PF (current ruleset is invalid)" >&2
+        fi
+    fi 
 
     mv "$TMP_OUTPUT" "$OUTPUT_PF"
     echo "Wrote $OUTPUT_PF ($OS backend, interface: $IFACE)"

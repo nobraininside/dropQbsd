@@ -1,0 +1,30 @@
+# ==========================================================
+#  dropQbsd -- attach.conf_for_etc
+#
+#  Direction matrix for qattach.
+#  Format: one direction per line, SRC:DST
+#  Blank lines and comments (#) are ignored.
+#
+#  Editing this file requires re-signing:
+#    Sign
+#
+#  Installation:
+#      cp /opt/dropQbsd/templates/attach.conf_for_etc /etc/dropQbsd/attach.conf
+#      chown root:wheel /etc/dropQbsd/attach.conf
+#      chmod 644 /etc/dropQbsd/attach.conf
+#
+#  Path: /etc/dropQbsd/attach.conf
+#  Permissions: chmod 644, root:wheel
+# ==========================================================
+
+# userdoc is the trusted source domain: your own documents,
+# LAN archive, synchronized. From here, files may be
+# "attached" toward the exposed domains (mail, web).
+#
+# The reverse direction (web/mail -> userdoc) is NOT here:
+# it carries untrusted data into the trusted archive, and
+# must be handled deliberately with qcp + qimport, not with
+# a shortcut.
+
+userdoc:usermail
+userdoc:userweb

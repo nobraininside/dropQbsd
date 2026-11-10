@@ -1,0 +1,98 @@
+# ==========================================================
+#  dropQbsd updater -- ownership
+#
+#  Classifies every path the updater might touch into three
+#  categories. This classification is the core of the updater:
+#  getting it wrong destroys either the operator's config or
+#  the project's integrity.
+#
+#    OPERATOR-OWNED  never written. The operator's data.
+#    PROJECT-OWNED   replaced when the version changes.
+#    MERGED          new content appended; existing kept.
+#
+#  The classification is explicit, not inferred. An updater
+#  that guesses which file is whose will eventually guess
+#  wrong, and the cost is asymmetric: a bad update destroys a
+#  working system, while a bad fresh install only affects a
+#  new one.
+#
+#  Sourced by update.sh. No shebang, no extension.
+# ==========================================================
+
+# WHERE A FILE LIVES DECIDES WHO OWNS IT:
+#   templates/  -> PROJECT-owned. Copied from the repo, replaced on
+#                  update when the content changes.
+#   examples/   -> OPERATOR-owned. Seeded once, never overwritten.
+#
+# local.conf comes from examples/system/local.conf.example and is
+# therefore the single operator-owned configuration file.
+#
+# attach.conf and conductor.conf come from templates/ and are
+# project-owned BY DESIGN: both are deliberately narrow. attach.conf
+# keeps qattach on the trusted-to-exposed direction only; conductor.conf
+# is the allowlist of root-runnable actions. The operator may edit them
+# locally (and must re-sign), but the next update restores the shipped
+# version. A security allowlist must not drift silently.
+OPERATOR_FILES="
+${ETC_DIR}/local.conf
+${INSTALL_DIR}/keys/dropQbsd.pub
+${INSTALL_DIR}/keys/dropQbsd_scripts.sha256.sig
+/root/dropQbsd.sec
+"
+
+# OPERATOR-OWNED directories: the drop zone and the operator's
+# per-user data. Nothing under these is replaced.
+OPERATOR_DIRS="
+/home/drop
+"
+
+# PROJECT-OWNED: files the project ships and the updater
+# replaces when they change.
+PROJECT_FILES="
+${ETC_DIR}/domains.conf
+${ETC_DIR}/schema
+${ETC_DIR}/kshrc
+${ETC_DIR}/profile
+${ETC_DIR}/alias
+${ETC_DIR}/filelist
+${ETC_DIR}/conductor.conf
+/etc/doas.conf
+"
+# /etc/doas.conf is project-owned and lives outside ETC_DIR because
+# that is its canonical location. It is replaced (with a backup) like
+# the other project files: the shipped policy is 'permit nopass root'
+# and nothing else. If you need doas rules of your own, keep them
+# outside this file or re-add them from the backup after an update.
+
+# PROJECT-OWNED directories: whole trees copied from the repo.
+PROJECT_DIRS="
+${INSTALL_DIR}/admin
+${INSTALL_DIR}/bin
+${INSTALL_DIR}/libexec
+${INSTALL_DIR}/sbin
+${INSTALL_DIR}/src
+${INSTALL_DIR}/templates
+${INSTALL_DIR}/examples
+"
+
+# MERGED: files where new content is appended and existing
+# content is preserved. The append is marker-based (the
+# installer's append_once), so it is idempotent.
+MERGED_FILES="
+/etc/login.conf
+/etc/newsyslog.conf
+"
+
+# is_operator_owned: true if the path must never be written.
+is_operator_owned() {
+    p="$1"
+    for f in $OPERATOR_FILES; do
+        [ "$p" = "$f" ] && return 0
+    done
+    for d in $OPERATOR_DIRS; do
+        case "$p" in "$d"/*) return 0 ;; esac
+    done
+    return 1
+}
+
+

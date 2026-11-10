@@ -9,7 +9,7 @@
 #
 #  Why this exists: sign and verify MUST use the same filter and
 #  the same order, or the signature will never match. Duplicating
-#  the logic in INSTALL.md invites drift; this helper is the
+#  the logic in INSTALL_MANUAL.md invites drift; this helper is the
 #  single source of truth for both. Comments (#) and blank lines
 #  are skipped, exactly as verify_integrity skips them -- trim
 #  happens BEFORE the comment check, so an indented comment is
@@ -24,7 +24,7 @@
 #    - encrypted on disk (/root/dropQbsd.sec): passphrase asked
 #      at signing time; the cron job never needs it
 #    - offline key: restore it, sign, then move it back offline
-#      (see INSTALL.md)
+#      (see INSTALL_MANUAL.md)
 #
 #  Path: /opt/dropQbsd/admin/sign_filelist
 #  Permissions: chmod 700, root:wheel
@@ -44,7 +44,6 @@
 #    0  signature written
 #    1  setup or signing error
 # ==========================================================
-
 
 FILELIST="/etc/dropQbsd/filelist"
 PRIVKEY="/root/dropQbsd.sec"

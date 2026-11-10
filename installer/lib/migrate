@@ -1,0 +1,41 @@
+# ==========================================================
+#  dropQbsd updater -- migrate
+#
+#  Handles format changes between versions: things that cannot
+#  be expressed as "replace" or "append". Each migration is
+#  keyed on the source version, and runs only when updating
+#  FROM that version (or an earlier one).
+#
+#  Migrations are idempotent: running the same migration twice
+#  has no additional effect. They never destroy operator data.
+#
+#  This file starts empty (no migrations between 0.3.0 and
+#  0.4.0). Add one function per migration and call it from
+#  migrate_all, guarded by the version check.
+#
+#  Sourced by update.sh. No shebang, no extension.
+# ==========================================================
+
+migrate_all() {
+    # Example (disabled): if [ "$INSTALLED_VERSION" = "0.3.0" ]; then
+    #     migrate_0_3_0_to_0_4_0
+    # fi
+
+    info "no migrations apply for this version range"
+}
+
+version_le() {
+    # true if $1 <= $2, field by field.
+    #
+    # Do NOT use `sort -V`: it is GNU-only and absent from OpenBSD's
+    # sort, so a migration would silently never fire.
+    awk -v a="$1" -v b="$2" 'BEGIN {
+        n = split(a, x, "."); m = split(b, y, ".")
+        k = (n > m) ? n : m
+        for (i = 1; i <= k; i++) {
+            if ((x[i] + 0) < (y[i] + 0)) { print "le"; exit }
+            if ((x[i] + 0) > (y[i] + 0)) { print "gt"; exit }
+        }
+        print "le"
+    }' | grep -q le
+}

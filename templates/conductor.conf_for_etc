@@ -1,0 +1,27 @@
+# ==========================================================
+#  dropQbsd -- conductor.conf_for_etc
+#
+#  Conductor-level actions the blind gate is allowed to run
+#  as root. Each entry names a script under /opt/dropQbsd/sbin/
+#  that the gate execs via the wrapper. The script performs
+#  its own domain switching (su -l); the gate does not.
+#
+#  Format: one action name per line. Blank lines and comments
+#  (#) are ignored. The name must match a file in sbin/.
+#
+#  Adding an entry expands the gate's authority: this file is
+#  part of the security posture and MUST be signed.
+#
+#  Installation:
+#      cp /opt/dropQbsd/templates/conductor.conf_for_etc /etc/dropQbsd/conductor.conf
+#      chown root:wheel /etc/dropQbsd/conductor.conf
+#      chmod 644 /etc/dropQbsd/conductor.conf
+#
+#  Path: /etc/dropQbsd/conductor.conf
+#  Permissions: chmod 644, root:wheel
+# ==========================================================
+
+# qattach <source>: attach a file from a source domain into the
+# Downloads of a destination domain, running qcp and qimport as
+# the respective domains. Allowed directions are in attach.conf.
+qattach

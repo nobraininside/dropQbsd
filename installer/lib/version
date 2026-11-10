@@ -1,0 +1,80 @@
+# ==========================================================
+#  dropQbsd updater -- version
+#
+#  Reads the installed version and the repository version, and
+#  decides whether an update is needed.
+#
+#  The installed version lives in /opt/dropQbsd/VERSION, written
+#  by the installer and by this updater. The repository version
+#  lives in VERSION at the repo root. Both are a single line,
+#  e.g. "0.4.0".
+#
+#  If /opt/dropQbsd/VERSION is missing (an installation from a
+#  version that predates this file), the updater cannot know the
+#  source version. It refuses to guess: it stops and asks the
+#  operator to confirm it with --from <version>.
+#
+#  Sourced by update.sh. No shebang, no extension.
+# ==========================================================
+
+INSTALLED_VERSION=""
+REPO_VERSION=""
+FROM_VERSION=""
+
+read_versions() {
+    vf="${INSTALL_DIR}/VERSION"
+    if [ -f "$vf" ]; then
+        INSTALLED_VERSION="$(head -1 "$vf" | tr -d '[:space:]')"
+    else
+        INSTALLED_VERSION=""
+    fi
+
+    rf="${REPO_ROOT}/VERSION"
+    if [ -f "$rf" ]; then
+        REPO_VERSION="$(head -1 "$rf" | tr -d '[:space:]')"
+    else
+        fail "repository VERSION file missing: $rf"
+    fi
+
+    info "installed version: ${INSTALLED_VERSION:-unknown}"
+    info "repository version: ${REPO_VERSION}"
+}
+
+check_version() {
+    if [ -z "$INSTALLED_VERSION" ]; then
+        if [ -n "$FROM_VERSION" ]; then
+            warn "no installed VERSION file; using --from $FROM_VERSION"
+            INSTALLED_VERSION="$FROM_VERSION"
+        else
+            fail "no installed VERSION file at ${INSTALL_DIR}/VERSION; \
+pass --from <version> if you know the source version"
+        fi
+    fi
+
+    if [ "$INSTALLED_VERSION" = "$REPO_VERSION" ]; then
+        info "already at version $REPO_VERSION; nothing to do"
+        exit 0
+    fi
+
+    info "updating from $INSTALLED_VERSION to $REPO_VERSION"
+}
+
+write_version() {
+    # One implementation for both entry points. install.sh does not
+    # call read_versions, so REPO_VERSION may be empty there: fall
+    # back to reading the repo's VERSION file directly.
+    v="${REPO_VERSION:-}"
+    if [ -z "$v" ]; then
+        rf="${REPO_ROOT}/VERSION"
+        if [ -f "$rf" ]; then
+            v="$(head -1 "$rf" | tr -d '[:space:]')"
+        else
+            warn "no VERSION file in the repo; skipping version record"
+            return 0
+        fi
+    fi
+    run sh -c "printf '%s\n' '$v' > '${INSTALL_DIR}/VERSION'"
+    success "version recorded: $v"
+}
+
+

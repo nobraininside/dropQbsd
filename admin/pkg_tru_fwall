@@ -2,9 +2,11 @@
 #  dropQbsd -- pkg_tru_fwall
 #
 #  Installs or updates packages through the restrictive PF
-#  ruleset. Populates the <updates> table with mirror IPs,
-#  runs the package manager, and leaves the table populated
-#  (harmless on an isolated system).
+#  ruleset. The <updates> table is populated by the cron
+#  job and re-populated on entry and after any `pfctl -f`
+#  (which empties all persistent tables). It is flushed on
+#  exit (`FLUSH_ON_EXIT=1`): the mirror IPs are reachable
+#  only while the update actually runs (least privilege).
 #
 #  OpenBSD: pkg_add / pkg_add -u
 #  FreeBSD: pkg install -y / pkg upgrade -y
@@ -30,6 +32,7 @@ ENSURE_SCRIPT="/opt/dropQbsd/libexec/ensure_updates_table"
 UPD_MAILSERV="/opt/dropQbsd/libexec/update_mailserver_table"
 UPD_SERVICES="/opt/dropQbsd/libexec/update_services_table"
 LOGFILE="/var/log/dropQbsd/pkg_tru_fwall.log"
+FLUSH_ON_EXIT=1   # Set to 0 to keep the <updates> table populated after run
 DNS_RULES_ADDED=0
 CLEANED=0
 
@@ -90,7 +93,7 @@ else
 fi
 
 #-----------------------------------------------------------------------------
-# CONCURRENCY CHECK — one package operation at a time.
+# CONCURRENCY CHECK -- one package operation at a time.
 # FreeBSD: pkg refuses to run (DB lock) if another instance is active.
 # OpenBSD: per-package locks fail if two pkg_add collide.
 # Run BEFORE touching pf: never open the network window for a doomed run.
@@ -163,7 +166,7 @@ revoke_dns() {
 }
 
 #-----------------------------------------------------------------------------
-# CLEANUP — idempotent, runs on signals AND on exit
+# CLEANUP -- idempotent, runs on signals AND on exit
 #-----------------------------------------------------------------------------
 cleanup() {
     [ "$CLEANED" -eq 1 ] && return
@@ -174,6 +177,13 @@ cleanup() {
         log "The <updates> table is still populated; this is safe."
         log "To flush it manually: pfctl -t updates -T flush"
     fi
+    if [ "$FLUSH_ON_EXIT" -eq 1 ]; then
+        pfctl -t updates -T flush 2>/dev/null
+        log "<updates> table flushed."
+    else
+        log "<updates> table left populated (FLUSH_ON_EXIT=0)."
+        log "To flush manually: pfctl -t updates -T flush"
+    fi 
 }
 trap 'cleanup signal; exit 130' 2 15
 trap 'cleanup' 0

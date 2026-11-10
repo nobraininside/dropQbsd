@@ -2,25 +2,47 @@
 #  dropQbsd -- run_app_impl
 #
 #  Launches graphical applications as a domain user with
-#  X11 forwarding. The main user (conductor) invokes this
-#  through a setuid wrapper (run_app) that escalates to root,
-#  keeping the conductor's doas.conf clean of any privilege.
+#  X11 forwarding, and dispatches named conductor actions
+#  (scripts in sbin/ invoked as root, e.g. qattach).
 #
-#  Two modes:
-#    Normal:    isolated runtime directory under /tmp,
-#               cleaned on exit.
-#    Disposable: dedicated tmpfs mounted in RAM, destroyed
-#               on exit. Nothing survives. Ideal for browsers
-#               and untrusted files.
+#  The main user (conductor) invokes this through a setuid
+#  wrapper (run_app) that escalates to root, keeping the
+#  conductor's doas.conf clean of any privilege.
+#
+#  Three modes:
+#    Domain launch:   launch an application as a domain user,
+#                     with an isolated runtime directory under
+#                     /tmp, cleaned on exit.
+#    Disposable:      dedicated tmpfs mounted in RAM, destroyed
+#                     on exit. Nothing survives. Ideal for
+#                     browsers and untrusted files.
+#    Conductor action: run a named action (from
+#                     /etc/dropQbsd/conductor.conf) as root,
+#                     e.g. qattach (attach a file between
+#                     domains). The action receives its
+#                     argument plus the resolved display and
+#                     X11 cookie.
 #
 #  Portable across OpenBSD and FreeBSD:
 #    - X11 cookie: $XAUTHORITY -> ~/.Xauthority -> xenodm
 #    - tmpfs: mfs (OpenBSD) vs tmpfs (FreeBSD)
 #
+#  v0.4.0 changes:
+#    - Conductor actions: a named action in sbin/ (allowlisted
+#      in /etc/dropQbsd/conductor.conf) can be invoked as
+#      `run_app <action> <argument>`. The action runs as root,
+#      WITH the conductor actions resolved X11 cookie and the
+#      display, so it can launch pickers (Xdialog) as a domain.
+#      The dispatch runs BEFORE the --disposable parsing and the
+#      domain allowlist, because an action is neither.
+#    - AUTH_SRC is now resolved at the top, before dispatch, so
+#      conductor actions receive the cookie without a second
+#      resolution.
+#
 #  v0.3.0 changes:
 #    - /tmp xauth_* fallback now filtered by INVOKING uid
-#      (real uid preserved by the setuid wrapper), never
-#      by target user; symlinks excluded by -type f.
+#      (real uid preserved by the setuid wrapper), never by
+#      target user; symlinks excluded by -type f.
 #    - xenodm cookie selection picks the NEWEST A:0-* file
 #      (head -1 could pick another concurrent session's cookie).
 #    - eval echo ~user replaced by an /etc/passwd lookup.
@@ -47,7 +69,11 @@
 #  IMPORTANT: This script is invoked by the run_app gate:
 #    /opt/dropQbsd/bin/run_app <target_user> <command> [args...]
 #    OR
+#    /opt/dropQbsd/bin/run_app <action> <argument>
+#    OR
 #    Run <target_user> <command> [args...]
+#    OR
+#    Qattach <source-domain>
 #  Do NOT run it directly.
 # ==========================================================
 
@@ -73,6 +99,140 @@ shift
 case "$INVOKE_UID" in
     ''|*[!0-9]*)
         echo "Error: invalid INVOKE_UID '$INVOKE_UID'" >&2
+        exit 1
+        ;;
+esac
+
+#-----------------------------------------------------------------------------
+# LOCATE X11 AUTHENTICATION COOKIE (portable across display managers)
+#-----------------------------------------------------------------------------
+# Precedence:
+#   1. $XAUTHORITY -- preserved by the setuid wrapper's whitelist
+#      (set by sddm, gdm, lightdm)
+#   2. xenodm auth dir -- OpenBSD-specific (A:0-<random>), NEWEST
+#      non-empty file; run_app_impl reads it as root
+#   3. ~/.Xauthority of the INVOKING user (non-empty)
+#   4. /tmp/xauth_* owned by the INVOKING user (FreeBSD sddm/gdm
+#      when XAUTHORITY was not preserved). Never by the target
+#      user: a compromised domain must not choose its own cookie.
+#
+# Every candidate must be non-empty (-s): an empty cookie file
+# produces "Authorization required, but no authorization protocol
+# specified" in every X client.
+find_xauth() {
+    typeset xa="" invoker_home
+
+    # 1. $XAUTHORITY -- only if the wrapper preserves it (whitelist).
+    #    Must be non-empty: an empty file means "no cookie here".
+    if [[ -n "$XAUTHORITY" && -s "$XAUTHORITY" ]]; then
+        xa="$XAUTHORITY"
+    fi
+
+    # 2. xenodm auth dir -- root-readable (run_app_impl is root),
+    #    user-inaccessible. Newest A:0-* file; non-empty required.
+    #    Preferred over the invoker's home file: xenodm keeps the
+    #    LIVE session cookie here, while ~/.Xauthority may be
+    #    empty or stale depending on the DM configuration.
+    if [[ -z "$xa" && -d "$AUTH_DIR" ]]; then
+        typeset cand
+        cand=$(find "$AUTH_DIR" -maxdepth 1 -name 'A:0-*' -type f \
+             -exec stat -f '%m %N' {} + 2>/dev/null \
+             | sort -rn | head -1 | cut -d' ' -f2-)
+        [[ -n "$cand" && -s "$cand" ]] && xa="$cand"
+    fi
+
+    # 3. ~/.Xauthority of the INVOKING user (real uid), non-empty.
+    #    Fallback: some DMs keep the live cookie here.
+    if [[ -z "$xa" ]]; then
+        invoker_home=$(awk -F: -v u="$INVOKE_UID" \
+            '$3 == u {print $6; exit}' /etc/passwd 2>/dev/null)
+        if [[ -n "$invoker_home" && -s "$invoker_home/.Xauthority" ]]; then
+            xa="$invoker_home/.Xauthority"
+        fi
+    fi
+
+    # 4. FreeBSD sddm/gdm fallback: cookie in /tmp/xauth_*
+    #    Filtered by INVOKING uid, non-empty required.
+    #    Never trust another user's file.
+    if [[ -z "$xa" ]]; then
+        typeset cand
+        cand=$(find /tmp -maxdepth 1 -name 'xauth_*' -type f \
+            -uid "$INVOKE_UID" \
+            -exec stat -f '%m %N' {} + 2>/dev/null \
+            | sort -rn | head -1 | cut -d' ' -f2-)
+        [[ -n "$cand" && -s "$cand" ]] && xa="$cand"
+    fi
+
+    printf '%s' "$xa"
+}
+
+AUTH_SRC=$(find_xauth)
+
+#-----------------------------------------------------------------------------
+# CONDUCTOR ACTION DISPATCH
+#-----------------------------------------------------------------------------
+# A conductor action is invoked as:
+#   run_app <action> <argument>
+# The second argument is the action's own input (for qattach:
+# the source domain). The gate's arity check (argc >= 3) is
+# satisfied organically -- no filler argument is needed.
+#
+# This runs BEFORE --disposable parsing and BEFORE the domain
+# allowlist: conductor actions take no flags, no overrides, no
+# target user. They receive the resolved X11 cookie (AUTH_SRC)
+# and the display, so the action can launch a picker as a domain.
+CONDUCTOR_CONF="/etc/dropQbsd/conductor.conf"
+SBIN_DIR="/opt/dropQbsd/sbin"
+WRAPPER="/opt/dropQbsd/libexec/wrapper"
+
+case "$1" in
+    userweb|usermail|userdoc)
+        ;;   # domain launch -- fall through to existing logic
+    --*)
+        ;;   # a domain flag -- fall through to existing logic
+    '')
+        echo "Error: no target user or action specified." >&2
+        exit 1
+        ;;
+    *)
+        if [ -f "$CONDUCTOR_CONF" ] \
+           && grep -v '^[[:space:]]*#' "$CONDUCTOR_CONF" \
+              | grep -v '^[[:space:]]*$' \
+              | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+              | grep -qx -- "$1"; then
+
+            ACTION="$1"
+            shift
+
+            if [ $# -ne 1 ]; then
+                echo "Error: conductor action '$ACTION' requires exactly one argument." >&2
+                exit 1
+            fi
+
+            SCRIPT="$SBIN_DIR/$ACTION"
+            if [ ! -f "$SCRIPT" ]; then
+                echo "Error: conductor action '$ACTION' has no script." >&2
+                exit 1
+            fi
+
+            case "$SCRIPT" in
+                "$SBIN_DIR"/*) ;;
+                *) echo "Error: refusing action path '$SCRIPT'." >&2; exit 1 ;;
+            esac
+
+            if [ -z "$AUTH_SRC" ]; then
+                echo "Error: No X11 authentication file found." >&2
+                exit 1
+            fi
+
+            printf '%s conductor action: %s (arg %s, invoker uid %s)\n' \
+                "$(date '+%Y-%m-%d %H:%M:%S')" "$ACTION" "$1" "$INVOKE_UID" \
+                >> /var/log/dropQbsd/run_app_impl.log 2>/dev/null || true
+
+            exec "$WRAPPER" "$SCRIPT" "$1" "${DISPLAY:-:0.0}" "$AUTH_SRC"
+        fi
+
+        echo "Error: '$1' is not a valid domain user." >&2
         exit 1
         ;;
 esac
@@ -112,7 +272,7 @@ shift
 #-----------------------------------------------------------------------------
 # PARSE ENVIRONMENT OVERRIDES (passed as arguments)
 #-----------------------------------------------------------------------------
-# file_bridge passes NNN_COLORS, NNN_PLUG, NNN_BMS as arguments because
+# qfile passes NNN_COLORS, NNN_PLUG, NNN_BMS as arguments because
 # the setuid wrapper clears the environment. Parse them here and export
 # them into the target user's login shell.
 NNN_COLORS=""
@@ -192,71 +352,9 @@ orphan_gc() {
 
 orphan_gc
 
-#-----------------------------------------------------------------------------
-# LOCATE X11 AUTHENTICATION COOKIE (portable across display managers)
-#-----------------------------------------------------------------------------
-# Precedence:
-#   1. $XAUTHORITY -- preserved by the setuid wrapper's whitelist
-#      (set by sddm, gdm, lightdm)
-#   2. xenodm auth dir -- OpenBSD-specific (A:0-<random>), NEWEST
-#      non-empty file; run_app_impl reads it as root
-#   3. ~/.Xauthority of the INVOKING user (non-empty)
-#   4. /tmp/xauth_* owned by the INVOKING user (FreeBSD sddm/gdm
-#      when XAUTHORITY was not preserved). Never by the target
-#      user: a compromised domain must not choose its own cookie.
-#
-# Every candidate must be non-empty (-s): an empty cookie file
-# produces "Authorization required, but no authorization protocol
-# specified" in every X client.
-find_xauth() {
-    typeset xa="" invoker_home
-
-    # 1. $XAUTHORITY -- only if the wrapper preserves it (whitelist).
-    #    Must be non-empty: an empty file means "no cookie here".
-    if [[ -n "$XAUTHORITY" && -s "$XAUTHORITY" ]]; then
-        xa="$XAUTHORITY"
-    fi
-
-    # 2. xenodm auth dir -- root-readable (run_app_impl is root),
-    #    user-inaccessible. Newest A:0-* file; non-empty required.
-    #    Preferred over the invoker's home file: xenodm keeps the
-    #    LIVE session cookie here, while ~/.Xauthority may be
-    #    empty or stale depending on the DM configuration.
-    if [[ -z "$xa" && -d "$AUTH_DIR" ]]; then
-        typeset cand
-        cand=$(find "$AUTH_DIR" -maxdepth 1 -name 'A:0-*' -type f \
-             -exec stat -f '%m %N' {} + 2>/dev/null \
-             | sort -rn | head -1 | cut -d' ' -f2-)
-        [[ -n "$cand" && -s "$cand" ]] && xa="$cand"
-    fi
-
-    # 3. ~/.Xauthority of the INVOKING user (real uid), non-empty.
-    #    Fallback: some DMs keep the live cookie here.
-    if [[ -z "$xa" ]]; then
-        invoker_home=$(awk -F: -v u="$INVOKE_UID" \
-            '$3 == u {print $6; exit}' /etc/passwd 2>/dev/null)
-        if [[ -n "$invoker_home" && -s "$invoker_home/.Xauthority" ]]; then
-            xa="$invoker_home/.Xauthority"
-        fi
-    fi
-
-    # 4. FreeBSD sddm/gdm fallback: cookie in /tmp/xauth_*
-    #    Filtered by INVOKING uid, non-empty required.
-    #    Never trust another user's file.
-    if [[ -z "$xa" ]]; then
-        typeset cand
-        cand=$(find /tmp -maxdepth 1 -name 'xauth_*' -type f \
-            -uid "$INVOKE_UID" \
-            -exec stat -f '%m %N' {} + 2>/dev/null \
-            | sort -rn | head -1 | cut -d' ' -f2-)
-        [[ -n "$cand" && -s "$cand" ]] && xa="$cand"
-    fi
-
-    printf '%s' "$xa"
-}
-
-AUTH_SRC=$(find_xauth)
-
+# AUTH_SRC was resolved near the top (before the conductor dispatch),
+# so conductor actions could receive it. This check applies to the
+# domain path: a domain launch with no usable cookie cannot proceed.
 if [[ -z "$AUTH_SRC" ]]; then
     echo "Error: No X11 authentication file found." >&2
     echo "       Checked: \$XAUTHORITY, invoking user's ~/.Xauthority," >&2

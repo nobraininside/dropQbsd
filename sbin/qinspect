@@ -1,0 +1,269 @@
+# ==========================================================
+#  dropQbsd -- qinspect
+#
+#  Inspect a file in the drop zone WITHOUT importing it.
+#
+#  Safe by construction: it reads metadata, type, hash and
+#  (for text) a truncated preview; for archives it lists the
+#  contents. It NEVER executes, extracts, or opens the file
+#  in an application that could run code.
+#
+#  It gives a plain-language risk verdict (LOW / MEDIUM / HIGH)
+#  so that even a non-technical operator can decide whether
+#  to import. The verdict is based on file type and contents
+#  (executables, scripts, and archives score higher).
+#
+#  Path: /opt/dropQbsd/sbin/qinspect
+#  Permissions: chmod 755, root:wheel
+#
+#  IMPORTANT: This script MUST be executed via the dropQbsd
+#  wrapper or its alias. Do NOT run it directly.
+#  Usage:
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qinspect <file>
+#    OR
+#    Qinspect <file>
+#
+#  The file may be a bare name (looked up in /home/drop, like
+#  qcp/qmv/qimport) or a path inside the drop zone
+#  (/home/drop/...). Nothing outside the drop zone is inspected.
+#
+#  Exit code: 0 = LOW, 1 = MEDIUM, 2 = HIGH (scriptable).
+# ==========================================================
+
+set -u
+
+DROP_ROOT="/home/drop"
+
+[ $# -eq 1 ] || { echo "Usage: Qinspect <file>" >&2; exit 1; }
+FILE="$1"
+
+# --- Resolve the path. A bare name is looked up in the drop zone root;
+#     a path must be inside the drop zone. No readlink -f (not available
+#     on OpenBSD): plain path logic.
+case "$FILE" in
+    /*)
+        ABSFILE="$FILE"
+        case "$ABSFILE" in
+            "$DROP_ROOT"/*) : ;;
+            *)
+                echo "ERROR: file is outside the drop zone: $ABSFILE" >&2
+                exit 1
+                ;;
+        esac
+        ;;
+    *)
+        ABSFILE="$DROP_ROOT/$FILE"
+        ;;
+esac
+
+[ -f "$ABSFILE" ] || { echo "ERROR: not a regular file: $ABSFILE" >&2; exit 1; }
+
+# ----------------------------------------------------------------------
+# RISK: LOW (green) / MEDIUM (yellow) / HIGH (red)
+# ----------------------------------------------------------------------
+RISK="LOW"
+RISK_NOTES=""
+
+note_risk() {
+    case "$RISK:$1" in
+        LOW:MEDIUM) RISK="MEDIUM"; RISK_NOTES="$2" ;;
+        LOW:HIGH|MEDIUM:HIGH) RISK="HIGH"; RISK_NOTES="$2" ;;
+    esac
+}
+
+# --- Metadata ---
+OWNER="$(stat -f '%Su' "$ABSFILE")"
+GROUP="$(stat -f '%Sg' "$ABSFILE")"
+MODE="$(stat -f '%Mp%Lp' "$ABSFILE")"
+SIZE="$(stat -f '%z' "$ABSFILE")"
+FTYPE="$(file -b "$ABSFILE")"
+HASH="$(sha256 -q "$ABSFILE" 2>/dev/null || sha256sum "$ABSFILE" 2>/dev/null | cut -d' ' -f1)"
+
+# Human-readable size
+if [ "$SIZE" -ge 1048576 ]; then
+    HSIZE="$((SIZE / 1048576)) MB"
+elif [ "$SIZE" -ge 1024 ]; then
+    HSIZE="$((SIZE / 1024)) KB"
+else
+    HSIZE="$SIZE bytes"
+fi
+
+# --- Risk signals ---
+
+# 1. Executable / script / ELF -> HIGH
+case "$FTYPE" in
+    *executable*|*ELF*|*shell\ script*|*script\ text*|*Java\ archive*|*shared\ object*)
+        note_risk HIGH "The file is executable code (type: $FTYPE). Importing and running it can compromise the destination domain."
+        ;;
+esac
+
+# 2. Archive -> MEDIUM (must list contents)
+case "$FTYPE" in
+    *gzip*|*tar\ archive*|*Zip\ archive*|*bzip2*|*xz*|*7-zip*)
+        note_risk MEDIUM "The file is an archive. Inspect its contents (listed below) for executables before importing."
+        ;;
+esac
+
+# 3. Documents with macros -> HIGH
+case "$FTYPE" in
+    *Microsoft\ Word*|*Microsoft\ Excel*|*Composite\ Document*|*OLE*)
+        note_risk HIGH "This is a document type that can carry macros (type: $FTYPE). Macros can execute code. Import only if you trust the source completely."
+        ;;
+esac
+
+# 4. Double extension (masking) -> HIGH
+BNAME="$(basename "$ABSFILE")"
+case "$BNAME" in
+    *.pdf.exe|*.exe.pdf|*.txt.exe|*.doc.exe|*.pdf.sh|*.txt.sh|*.png.exe|*.jpg.exe|*.docx.exe|*.xls.exe|*.tar.gz.exe|*.zip.exe)
+        note_risk HIGH "The filename has a double extension ($BNAME) -- a common trick to hide executables behind a document-looking name."
+        ;;
+esac
+
+# 5. Extension/type mismatch (anti-masking) -> HIGH
+ext="${BNAME##*.}"
+case "$ext:$FTYPE" in
+    pdf:*executable*|pdf:*script*|pdf:*ELF*|png:*executable*|png:*script*|jpg:*executable*|jpg:*script*|txt:*executable*|txt:*ELF*|doc:*executable*|doc:*script*|docx:*executable*|xls:*executable*|zip:*executable*)
+        note_risk HIGH "The filename says .$ext but the real type is '$FTYPE'. This is a strong sign of a disguised file. Do not import."
+        ;;
+esac
+
+# 6. Non-text content (binary) when a text file was expected -> MEDIUM
+case "$FTYPE" in
+    *data*|*binary*)
+        note_risk MEDIUM "The file is binary data (type: $FTYPE). It is not a simple text file; inspect carefully."
+        ;;
+esac
+
+# --- Output ---
+echo "=== Inspect: $ABSFILE ==="
+echo ""
+echo "Owner:      $OWNER:$GROUP"
+echo "Mode:       $MODE (read-only if in transit)"
+echo "Size:       $HSIZE"
+echo "Type:       $FTYPE"
+echo "SHA256:     $HASH"
+echo ""
+
+# For archives: list contents (never extract)
+case "$FTYPE" in
+    *gzip*|*tar\ archive*)
+        echo "Archive contents (list only, not extracted):"
+        if command -v tar >/dev/null 2>&1; then
+            tar -tzf "$ABSFILE" 2>/dev/null | head -30 \
+                | sed 's/^/  /'
+            echo "  (list truncated to 30 entries)"
+        else
+            echo "  (tar not available; cannot list)"
+        fi
+        echo ""
+        ;;
+esac
+
+# For text: truncated preview
+case "$FTYPE" in
+    *text*)
+        echo "Text preview (first 40 lines):"
+        head -40 "$ABSFILE" 2>/dev/null | sed 's/^/  /'
+        echo ""
+        ;;
+esac
+
+# --- Verdict ---
+echo "=== Verdict ==="
+case "$RISK" in
+    LOW)
+        echo "LOW -- This file looks safe to import."
+        echo "       It is not executable, not an archive, and its type matches its name."
+        ;;
+    MEDIUM)
+        echo "MEDIUM -- Inspect carefully before importing."
+        echo "       $RISK_NOTES"
+        ;;
+    HIGH)
+        echo "HIGH -- DANGER. Do not import unless you are certain of the origin and purpose."
+        echo "       $RISK_NOTES"
+        ;;
+esac
+echo ""
+
+# Exit code reflects the risk.
+case "$RISK" in
+    LOW)    exit 0 ;;
+    MEDIUM) exit 1 ;;
+    HIGH)   exit 2 ;;
+esac
+
+
+2. sbin/qprompt — generico, con wrapper + ricerca + fallback sistema
+# ----------------------------------------------------------------------
+# dropQbsd -- qprompt
+#
+# Run a command with a prompt loop, in the current terminal.
+#
+# dropQbsd commands are always executed via the wrapper (sanitized
+# environment, correct shell). qprompt resolves a name to its script
+# path and runs it through the wrapper.
+#
+# Generic: works for any dropQbsd command (qinspect, qimport, qcp, ...)
+# and, as a fallback, for plain system commands.
+#
+# Usage:  Qprompt <name> [fixed-args...]
+#         Qprompt qinspect
+#         Qprompt qimport
+#         Qprompt ls
+#
+# Prompts for ONE argument, runs '<wrapper> <script> [args...] <arg>',
+# loops until empty input.
+# ----------------------------------------------------------------------
+
+set -u
+
+WRAPPER="/opt/dropQbsd/libexec/wrapper"
+ROOT="/opt/dropQbsd"
+
+# resolve_name <name> -- print the script path for a dropQbsd command,
+# or the name itself if it is a plain system command (fallback).
+resolve_name() {
+    for d in sbin libexec admin; do
+        if [ -x "$ROOT/$d/$1" ]; then
+            echo "$ROOT/$d/$1"
+            return 0
+        fi
+    done
+    if command -v "$1" >/dev/null 2>&1; then
+        echo "$1"
+        return 0
+    fi
+    return 1
+}
+
+[ $# -ge 1 ] || { echo "Usage: Qprompt <name> [args...]" >&2; exit 1; }
+
+name="$1"; shift
+
+cmd="$(resolve_name "$name")" || {
+    echo "ERROR: '$name' not found in $ROOT/{sbin,libexec,admin}, nor in PATH" >&2
+    exit 1
+}
+
+# dropQbsd scripts go through the wrapper; system commands run directly.
+case "$cmd" in
+    "$ROOT"/*) EXEC="$WRAPPER"; SCRIPT="$cmd" ;;
+    *)         EXEC="";        SCRIPT="$cmd" ;;
+esac
+
+while :; do
+    echo ""
+    echo "Argument for '$name' (empty input exits):"
+    printf "> "
+    IFS= read -r arg || exit 0
+    [ -z "$arg" ] && exit 0
+
+    if [ -n "$EXEC" ]; then
+        "$EXEC" "$SCRIPT" "$@" "$arg"
+    else
+        "$SCRIPT" "$@" "$arg"
+    fi
+    echo ""
+done
+
