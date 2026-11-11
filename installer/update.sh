@@ -33,7 +33,8 @@
 #    4  merge        login.conf, newsyslog.conf (append new)
 #    5  migrate      format changes between versions
 #    6  users/dirs   idempotent (no-op if already correct)
-#    7  examples     desktop integration (only if changed)
+#    7  examples     desktop integration + per-home files
+#                    (only if changed)
 #    8  compile      rebuild run_app
 #    9  logins       cap_mkdb
 #    10 firewall     regenerate + repopulate
@@ -115,8 +116,9 @@ create_group
 create_users
 create_directories
 
-step "7/14   Refresh desktop integration if changed"
+step "7/14   Refresh desktop integration and per-home files"
 install_examples
+install_user_dotfiles
 
 step "8/14   Rebuild the run_app gate"
 compile_run_app

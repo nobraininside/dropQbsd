@@ -22,7 +22,7 @@
 #  Per-home dotfiles follow INSTALL_MANUAL.md 5.3 and differ between
 #  OpenBSD and FreeBSD. See install_user_dotfiles below.
 #
-#  Sourced by install.sh. No shebang, no extension.
+#  Sourced by install.sh and update.sh. No shebang, no extension.
 # ==========================================================
 
 TEMPLATES_DIR=""
@@ -37,11 +37,6 @@ install_files() {
     files_init
 
     [ -d "$TEMPLATES_DIR" ] || fail "templates dir missing: $TEMPLATES_DIR"
-
-    # --- policy files read by gen_fwall (project-owned) ---
-    run cp "${TEMPLATES_DIR}/conductor.conf_for_etc" "${ETC_DIR}/conductor.conf"
-    run cp "${TEMPLATES_DIR}/domains.conf_for_etc" "${ETC_DIR}/domains.conf"
-    run cp "${TEMPLATES_DIR}/schema_for_etc" "${ETC_DIR}/schema"
 
     # --- project-owned (templates/): copied every run ---
     run cp "${TEMPLATES_DIR}/conductor.conf_for_etc" "${ETC_DIR}/conductor.conf"
@@ -118,20 +113,6 @@ install_rcd() {
     esac
 }
 
-# append_once: append a file's contents to a target only if a marker
-# string is not already present. Makes re-runs idempotent.
-append_once() {
-    src="$1"; dst="$2"
-    [ -f "$src" ] || return 0
-    marker="dropQbsd"
-    if [ -f "$dst" ] && grep -q "$marker" "$dst" 2>/dev/null; then
-        info "$dst already contains dropQbsd entries, skipping"
-        return 0
-    fi
-    run sh -c "cat '$src' >> '$dst'"
-    success "appended $(basename "$src") to $dst"
-}
-
 # seed_once: install a file only if it does not exist yet.
 #
 # For the OPERATOR-OWNED file inside /etc/dropQbsd/: local.conf, which
@@ -139,7 +120,7 @@ append_once() {
 # rules. It comes from examples/, not templates/ -- that is what marks
 # it operator-owned (see lib/ownership).
 #
-# Project-owned files (domains.conf, schema, kshrC, profile, alias,
+# Project-owned files (domains.conf, schema, kshrc, profile, alias,
 # filelist, conductor.conf, attach.conf) are copied unconditionally:
 # they come from templates/ and the updater replaces them when they
 # change.
@@ -234,40 +215,19 @@ install_user_dotfiles() {
     # Conductor menu binding: operator-owned, install once.
     install_conductor_xbindkeys
 
-    success "per-home dotfiles installed"
+    success "per-home dotfiles ensured"
 }
 
-# install_conductor_xbindkeys: the Mod4+q binding for the
-# conductor menu. Operator-owned: installed only if absent,
-# never overwritten by an update. Not part of the integrity
-# filelist.
 install_conductor_xbindkeys() {
     src="${TEMPLATES_DIR}/xbindkeys_for_conductor"
     h="$(home_of "$CONDUCTOR_USER")"
     [ -n "$h" ] || { warn "conductor home not found; skipping xbindkeysrc"; return 0; }
-    dst="${h}/.xbindkeysrc"
-    if [ ! -f "$src" ]; then
-        warn "template missing: xbindkeys_for_conductor, skipping"
-        return 0
-    fi
-    if [ -e "$dst" ]; then
-        info "$dst exists, not overwriting (operator-owned)"
-    else
-        run cp "$src" "$dst"
-        # The conductor is RENAME-PROOF: never hardcode the account
-        # name here. $CONDUCTOR_USER is resolved from the GECOS
-        # marker by resolve_conductor_name, or from the operator's
-        # CONDUCTOR_USER override. A literal 'conductor' would fail
-        # (chown: no such user) on every renamed installation and
-        # abort the install at the last step.
-        run chown "$CONDUCTOR_USER:$CONDUCTOR_USER" "$dst"
-        run chmod 644 "$dst"
-    fi
-    # --- dependency check: xbindkeys must be installed ---------
+
+    seed_or_report "$src" "${h}/.xbindkeysrc" "$CONDUCTOR_USER:$CONDUCTOR_USER"
+
     if ! command -v xbindkeys >/dev/null 2>&1; then
         warn "xbindkeys is NOT installed -- the Super+q shortcut will not work."
         warn " Install it: pkg_add xbindkeys (OpenBSD) / pkg install xbindkeys (FreeBSD)"
-        warn " The qmenu config was still copied to $dst; it activates once xbindkeys is present."
     fi
 }
 
@@ -294,20 +254,26 @@ install_dotfiles_for() {
     esac
 }
 
-# install_dotfile: copy one template into a home, set owner, group
-# and mode. Missing templates are skipped with a warning rather than
-# aborting: a missing optional stub should not fail the install.
 install_dotfile() {
     u="$1"; h="$2"; grp="$3"; tmpl="$4"; dest="$5"
-
     src="${TEMPLATES_DIR}/${tmpl}"
+
     if [ ! -f "$src" ]; then
         warn "template missing: $tmpl, skipping ${h}/${dest}"
+        return 0
+    fi
+
+    # A stub is project-owned only in its first line (the pointer to
+    # /etc/dropQbsd/kshrc). The LAST line is the operator's window-manager
+    # choice, so overwriting it would undo a required local edit.
+    if [ -e "${h}/${dest}" ]; then
+        info "exists, kept: ${h}/${dest}"
         return 0
     fi
 
     run cp "$src" "${h}/${dest}"
     run chown "$u":"$grp" "${h}/${dest}"
     run chmod 644 "${h}/${dest}"
+    success "installed ${h}/${dest}"
 }
 

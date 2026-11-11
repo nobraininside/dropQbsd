@@ -513,9 +513,8 @@ conductor (`$CONDUCTOR_USER`) -- the session files guard it with
 `if [ "$(id -un)" = "$CONDUCTOR_USER" ]`. Its configuration,
 `~/.xbindkeysrc`, maps **`Mod4+q`** to the `qmenu` launcher. Domains never
 run `xbindkeys` and cannot launch the conductor menu. The file is
-**operator-owned**: installed once, never overwritten by an update
-(same policy as `local.conf` and the GTK theme), and it is not part
-of the integrity filelist.
+**operator-owned**: created if absent, never overwritten; an update
+reports it if the shipped version changed.
 
 **No modification to /etc/profile is required.**
 
