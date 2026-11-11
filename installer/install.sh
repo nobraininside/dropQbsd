@@ -15,20 +15,35 @@
 #    - Fail-fast: the first real error stops the run.
 #    - Logged: everything goes to /var/log/dropQbsd/install.log
 #
-#  STEP ORDER (INSTALL_MANUAL.md §10.8):
-#    integrity setup (Sign) and verification MUST run BEFORE
-#    the cron step. The verify_integrity job is only meaningful
-#    once a signature exists; installing it earlier makes cron
-#    log SETUP INCOMPLETE every 5 minutes until the signature
-#    is produced. install_cron therefore runs AFTER
-#    setup_integrity and verify_integrity_setup, and it
-#    conditions the verify_integrity entry on the signature
-#    actually existing.
+#  ORDER (mirrors INSTALL_MANUAL.md; update.sh follows the same
+#  sequence, with preserve-first in place of backup-first):
+#    1  backup      back up every file the installer will touch
+#    2  users       the drop group and four domain accounts,
+#                   each marked with its GECOS role. No passwords.
+#    3  dirs        the directory tree and the permission model
+#    4  config      /etc/dropQbsd, /opt/dropQbsd, and the per-home
+#                   shell stubs plus the conductor binding
+#    5  examples    desktop integration: mc, nnn, vi, GTK2, Xfe
+#    6  compile     rebuild run_app: static, root:wheel, mode 4755
+#    7  logins      append the resource classes, rebuild login.db
+#    8  firewall    generate, syntax-check, apply, populate tables
+#    9  integrity   generate the key pair if absent, sign manifest
+#   10  verify      one verification pass, result read from the log
+#   11  cron        merge the dropQbsd entries into root's crontab
+#   12  version     record the installed version
+#   13  checklist   verify users, files, setuid, firewall, cron
+#   14  manual      print the steps that remain
 #
-#  Naming: this is the only file with a .sh extension. It is
-#  the executable entry point. The modules under lib/ carry
-#  no extension: they are sourced, never executed, matching
-#  the dropQbsd convention.
+#  Integrity before cron. Sign (9) and Verify (10) MUST run before
+#  install_cron (11): the verify_integrity job is only meaningful
+#  once a signature exists, and installing it earlier makes cron
+#  log SETUP INCOMPLETE every five minutes. install_cron therefore
+#  conditions that entry on the signature actually existing.
+#
+#  Naming: install.sh and update.sh are the only files with a .sh
+#  extension -- the two executable entry points. The modules under
+#  lib/ carry no extension: they are sourced, never executed,
+#  matching the dropQbsd convention.
 #
 #  Usage:
 #    chmod +x install.sh

@@ -17,7 +17,7 @@
 #  so every later module can reference them without depending
 #  on sourcing order. Do not define them elsewhere.
 #
-#  Sourced by install.sh. No shebang, no extension.
+#  Sourced by install.sh and update.sh. No shebang, no extension.
 # ==========================================================
 
 # --- constants ------------------------------------------------------
@@ -35,8 +35,7 @@ SKIP_BACKUP=false
 # Set by setup_firewall when the firewall could not be applied; read by
 # the two checklists so the deferral is reported at the end of the run.
 FIREWALL_PENDING=0
-# Accumulated by seed_or_report(). Nothing reads it yet: the fourth
-# section of print_update_notes() lands with the calls that populate it.
+# Accumulated by seed_or_report(); printed by print_update_notes().
 DIVERGED_FILES=""
 
 # ----------------------------------------
@@ -83,10 +82,6 @@ GROUP="drop"
 # whose loss is not recoverable from the repository.
 BACKUP_FILES="/etc/doas.conf /etc/pf.conf /etc/newsyslog.conf /etc/login.conf \
 /etc/dropQbsd/local.conf /etc/dropQbsd/attach.conf"
-
-# Set by parse_args; declared here so `set -u` never trips on them.
-DRY_RUN=false
-SKIP_BACKUP=false
 
 # --- output helpers -------------------------------------------------
 
@@ -225,17 +220,22 @@ check_soft() {
 # exists. If the shipped version differs from the installed one, record it
 # for the end-of-run report -- the operator owns the content.
 #
-# Intended for the per-home files (.xbindkeysrc, GTK2 theme, Xfe seeds).
-# Nothing calls it yet, and it lives in common because more than one module
-# will: a utility shared across modules must be reachable by all of them,
-# including an updater that sources a subset.
+# Shared by lib/files (.xbindkeysrc) and lib/examples (GTK2 theme, Xfe
+# seeds), so it lives here: a utility used by more than one module must be
+# reachable by every module, including an updater that sources a subset.
+#
+# own = "user:group", optional (chown only on a fresh install).
 seed_or_report() {
-    src="$1"; dst="$2"
+    src="$1"; dst="$2"; own="${3:-}"
 
     [ -f "$src" ] || { warn "template missing: $src"; return 0; }
 
     if [ ! -e "$dst" ]; then
         run cp "$src" "$dst"
+        if [ -n "$own" ]; then
+            run chown "$own" "$dst"
+        fi
+        run chmod 644 "$dst"
         success "installed $dst"
         return 0
     fi
@@ -247,6 +247,24 @@ seed_or_report() {
 
     DIVERGED_FILES="${DIVERGED_FILES} ${dst}"
     warn "differs from the shipped version, not written: $dst"
+}
+
+# append_once: append a file's contents to a target only if a marker
+# string is not already present. Makes re-runs idempotent.
+#
+# Callers: install_files (newsyslog.conf) and setup_login_conf
+# (login.conf). It lives here because more than one module uses it --
+# the shared-utility rule stated in home_of's comment.
+append_once() {
+    src="$1"; dst="$2"
+    [ -f "$src" ] || return 0
+    marker="dropQbsd"
+    if [ -f "$dst" ] && grep -q "$marker" "$dst" 2>/dev/null; then
+        info "$dst already contains dropQbsd entries, skipping"
+        return 0
+    fi
+    run sh -c "cat '$src' >> '$dst'"
+    success "appended $(basename "$src") to $dst"
 }
 
 # --- argument parsing ----------------------------------------------
@@ -296,7 +314,6 @@ parse_args_update() {
     while [ $# -gt 0 ]; do
         case "$1" in
             --dry-run) DRY_RUN=true ;;
-            --skip-backup) SKIP_BACKUP=true ;;
             --from)
                 shift
                 [ $# -gt 0 ] || fail "--from requires a version argument"
@@ -324,12 +341,13 @@ EOF
     done
 }
 
-# print_update_notes: the report at the end of an update. Three
-# sections, each with the full path list: files overwritten,
-# files obsolete, files left alone.
+# print_update_notes: the report at the end of an update. Five sections,
+# each with the full path list: files overwritten, files obsolete, files
+# left alone, files that differ from the shipped version, and the
+# operator-owned files preserved untouched.
 #
-# Nothing is deleted or renamed by the updater. The last two
-# sections are for the operator to review and act on by hand.
+# Nothing is deleted or renamed by the updater. The middle sections are
+# for the operator to review and act on by hand.
 print_update_notes() {
     echo ""
     echo "========================================="
@@ -389,6 +407,22 @@ print_update_notes() {
         done
     else
         echo "No files left alone."
+    fi
+    echo ""
+
+    # --- Files yours, changed upstream ---
+    if [ -n "$DIVERGED_FILES" ]; then
+        n=$(echo "$DIVERGED_FILES" | wc -w | tr -d ' ')
+        echo "Files yours, changed upstream ($n -- not written):"
+        echo ""
+        echo " The shipped version differs from yours. The updater did not"
+        echo " touch them: review and merge by hand."
+        echo ""
+        for f in $DIVERGED_FILES; do
+            echo " ${f}"
+        done
+    else
+        echo "No operator files diverged from the shipped versions."
     fi
     echo ""
 

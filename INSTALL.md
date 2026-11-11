@@ -137,7 +137,8 @@ In order:
     vi config, and the GTK theme. The independent utilities
     (10.7-10.15 -- control panel, domain indicator, conductor menu
     `qmenu` + `xbindkeys`, site menu, Syncthing, VLC) are **not**
-    installed; add them as needed.
+    installed; add them as needed. Per-home stubs and `~/.xbindkeysrc`
+    are installed if absent, and never overwritten.
 6.  **`run_app` build** -- delegates to `admin/build_run_app`,
     which enforces `-static`, `chown root:wheel`, `chmod 4755`,
     and verifies the result.
@@ -408,6 +409,8 @@ doas ./update.sh
 - **Backs up** every file it overwrites, into a single versioned
   directory (`/var/backups/dropQbsd_update_<timestamp>/`), so any
   file can be restored with one `cp`.
+- **Completes per-home files:** creates what is missing, leaves existing
+  ones alone, and reports any that differ from the shipped version.
 - **Never regenerates the signing key.** If integrity is
   configured, it re-signs the manifest; the trust anchor is
   preserved.

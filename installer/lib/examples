@@ -32,7 +32,7 @@
 #  definitions, not personal config, and the domain colour convention
 #  must stay current.
 #
-#  What this does NOT install (INSTALL_MANUAL.md 10.6-10.15):
+#  What this does NOT install (INSTALL_MANUAL.md 10.7-10.15):
 #    control panel, domain indicator, integrity (handled by the
 #    integrity module), site menu, Syncthing, VLC.
 #
@@ -146,49 +146,45 @@ install_examples_for() {
             fi
         fi
 
-    # --- GTK2 theme (role-specific, operator-owned) ---------------
-    #
-    # The template is named after the DESTINATION (~/.gtkrc-2.0), not
-    # after Xdialog: GTK2 reads this file for ANY GTK2 application in
-    # that domain, and Xdialog is only the one we launch today.
-    if [ -f "${apps}/gtk/gtkrc.${role}" ]; then
-        if [ -e "${h}/.gtkrc-2.0" ]; then
-            warn "exists, not overwriting (operator-owned): ${h}/.gtkrc-2.0"
-            warn " the new template is at ${apps}/gtk/gtkrc.${role}"
+        # --- GTK2 theme (role-specific, operator-owned) ---------------
+        if [ -f "${apps}/gtk/gtkrc.${role}" ]; then
+            seed_or_report "${apps}/gtk/gtkrc.${role}" "${h}/.gtkrc-2.0" "$u:$grp"
+        elif [ "$DRY_RUN" = true ]; then
+            info "[dry-run] GTK2 theme for role '${role}' would be copied to ${h}/.gtkrc-2.0"
         else
-            run cp "${apps}/gtk/gtkrc.${role}" "${h}/.gtkrc-2.0"
-            run chown "$u":"$grp" "${h}/.gtkrc-2.0"
-            run chmod 644 "${h}/.gtkrc-2.0"
+            warn "no GTK2 template for role '${role}': ${apps}/gtk/gtkrc.${role}"
         fi
-    elif [ "$DRY_RUN" = true ]; then
-        # On a fresh --dry-run the files step has not run yet, so the
-        # template is not in INSTALL_DIR. The real install copies it.
-        info "[dry-run] GTK2 theme for role '${role}' would be copied to ${h}/.gtkrc-2.0"
-    else
-        warn "no GTK2 template for role '${role}': ${apps}/gtk/gtkrc.${role}"
-    fi
 
         # --- Xfe seeds (role-specific, operator-owned) ----------------
+        #
+        # Install if absent, then never look at it again. NOT
+        # seed_or_report: Xfe REWRITES its config on exit, so after the first
+        # launch the file legitimately differs from the seed. Reporting that
+        # divergence every update would train the operator to ignore the
+        # section that exists for the files that really matter.
         if [ -d "${apps}/xfe" ]; then
             for f in xferc xfwrc; do
                 src="${apps}/xfe/${f}.${role}"
                 if [ ! -f "$src" ]; then
-                    [ "$DRY_RUN" = true ] && info "[dry-run] xfe ${f}.${role} will be copied by the replace step"
+                    if [ "$DRY_RUN" = true ]; then
+                        info "[dry-run] Xfe seed ${f}.${role} not yet installed"
+                    else
+                        warn "no Xfe seed for role '${role}': $src"
+                    fi
                     continue
                 fi
-                [ -f "$src" ] || continue
-                run mkdir -p "${h}/.config/xfe"
                 dst="${h}/.config/xfe/${f}"
+                run mkdir -p "${h}/.config/xfe"
                 if [ -e "$dst" ]; then
-                    warn "exists, not overwriting (operator-owned): ${dst}"
-                else
-                    run cp "$src" "$dst"
-                    run chown "$u":"$grp" "$dst"
-                    run chmod 644 "$dst"
+                    info "exists, kept: $dst"
+                    continue
                 fi
-            done
+                run cp "$src" "$dst"
+                run chown "$u:$grp" "$dst"
+                run chmod 644 "$dst"
+                success "installed $dst"
+             done
         fi
-
     fi
 }
 
