@@ -1,0 +1,37 @@
+# ==========================================================
+# dropQbsd -- dropQbsd.desktop
+#
+# LightDM / SDDM session entry for dropQbsd.
+#
+# Installed as /usr/local/share/xsessions/dropQbsd.desktop
+# by installer/lib/files (install_session_desktop).
+#
+# Permissions: 644 root:wheel
+#
+# Requirements:
+#   - /opt/dropQbsd/libexec/wrapper
+#   - /opt/dropQbsd/libexec/session
+#   - a valid [session] wm in /etc/dropQbsd/local.conf
+#
+# Usage:
+#   Select "dropQbsd" in the LightDM or SDDM greeter.
+#
+# Notes:
+#   - Exec goes through the wrapper because libexec/session
+#     has no shebang (dropQbsd convention).
+#   - The WM is not hardcoded here: libexec/session reads
+#     DROPQBSD_WM from /etc/dropQbsd/profile, which parses
+#     [session] wm in local.conf.
+#   - Operator-owned: the installer seeds it once and never
+#     overwrites an existing file.
+#   - LightDM reads ~/.xprofile before running this entry;
+#     ~/.xprofile is a hook, not a WM selector.
+#   - startx and xenodm do not use this file: they use
+#     ~/.xinitrc and ~/.xsession respectively.
+# ==========================================================
+
+[Desktop Entry]
+Name=dropQbsd
+Comment=dropQbsd session
+Exec=/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/session
+Type=Application

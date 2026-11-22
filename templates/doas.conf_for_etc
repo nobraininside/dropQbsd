@@ -1,6 +1,10 @@
 # dropQbsd -- example /etc/doas.conf
-# Minimal configuration. conductor has NO doas access.
-# The only path to root is the run_app setuid binary,
+#
+# Path: /etc/doas.conf on OpenBSD,
+#       /usr/local/etc/doas.conf on FreeBSD (the port).
+#
+# One line: root may run commands as itself without a password.
+# The conductor has NO doas rule; it reaches root only through the gate
 # which can only launch domain applications.
 
 permit nopass root

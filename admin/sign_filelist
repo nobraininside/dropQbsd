@@ -63,6 +63,7 @@ cd /opt/dropQbsd || { report "CANNOT cd /opt/dropQbsd"; exit 1; }
 # --- Setup sanity ----------------------------------------------------
 for f in "$FILELIST" "$PRIVKEY"; do
     if [ ! -r "$f" ]; then
+        cat /opt/dropQbsd/templates/integrity_setup >&2
         report "SETUP INCOMPLETE - missing $f"
         exit 1
     fi

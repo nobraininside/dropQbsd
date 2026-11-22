@@ -1,32 +1,32 @@
 # ==========================================================
-#  dropQbsd -- qsite (YAD, browser fallback)
+# dropQbsd -- qsite (YAD, browser fallback)
 #
-#  Two-phase login flow:
-#    1. Select site -> OK = "Copy ID" -> browser opens, ID
-#       copied to clipboard, window stays open.
-#    2. Same site pre-selected -> OK = "Copy Password" ->
-#       password copied (30s timer), closes.
+# Two-phase login flow:
+#   1. Select site -> OK = "Copy ID" -> browser opens, ID
+#      copied to clipboard, window stays open.
+#   2. Same site pre-selected -> OK = "Copy Password" ->
+#      password copied (30s timer), closes.
 #
-#  Browser fallback: tries ungoogled-chromium, then librewolf,
-#  then qutebrowser. The first whose binary exists is used.
+# Browser fallback: tries ungoogled-chromium, then librewolf,
+# then qutebrowser. The first whose binary exists is used.
 #
-#  Migrated from zenity to YAD.
+# Migrated from zenity to YAD.
 #
-#  Path: /opt/dropQbsd/sbin/qsite
-#  Permissions: chmod 755, root:wheel
+# Path: /opt/dropQbsd/sbin/qsite
+# Permissions: chmod 755, root:wheel
 #
-#  Requirements: yad, pass, xclip, and a browser
+# Requirements: yad, pass, xclip, and a browser
 #
-#  sites.conf format:
-#    Label|URL|id_entry|pass_entry
-#    Bank (my_id)|https://bank.com|finance/bank_id|finance/bank_pw
-#    Gmail|https://mail.google.com||mail/gmail
+# sites.conf format:
+#   Label|URL|id_entry|pass_entry
+#   Bank (my_id)|https://bank.com|finance/bank_id|finance/bank_pw
+#   Gmail|https://mail.google.com||mail/gmail
 #
-#  IMPORTANT: This script MUST be executed via the dropQbsd
-#  wrapper or its alias. Do NOT run it directly.
+# IMPORTANT: This script MUST be executed via the dropQbsd
+# wrapper or its alias. Do NOT run it directly.
 #
-#  PORTABILITY: PD KSH (OpenBSD) + mksh (FreeBSD).
-#  Use 'case' for glob matching. ASCII only in GUI strings.
+# PORTABILITY: PD KSH (OpenBSD) + mksh (FreeBSD).
+# Use 'case' for glob matching. ASCII only in GUI strings.
 # ==========================================================
 
 UID_R=$(id -ru)
@@ -37,14 +37,13 @@ if [ -z "$HOME" ]; then
 fi
 export HOME
 
-# Reconstruct X environment if the launcher did not pass it
+# Reconstruct X environment if the launcher did not pass it.
 : "${DISPLAY:=:0.0}"
 : "${XAUTHORITY:=$HOME/.Xauthority}"
 : "${TERM:=xterm}"
 export DISPLAY XAUTHORITY TERM
 
 CONF="$HOME/.config/dropQbsd/sites.conf"
-
 RUN_APP="${RUN_APP:-/opt/dropQbsd/bin/run_app}"
 
 # -- Browser selection with fallback -------------------------
@@ -60,59 +59,119 @@ elif [ -x /usr/local/bin/qutebrowser ]; then
     BROWSER=/usr/local/bin/qutebrowser
     BROWSER_FLAGS=--temp-basedir
 else
+    yad --error \
+        --title="dropQbsd - Qsite" \
+        --text="No supported browser found.
+
+Install one of librewolf, qutebrowser, or ungoogled-chromium
+through the dropQbsd Pkg wrapper. For example:
+
+  Pkg qutebrowser
+
+or, without the alias:
+
+  /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/admin/pkg_tru_fwall qutebrowser
+
+Then start Qsite again." \
+        --button="OK:0" \
+        --width=500 2>/dev/null
     echo "Error: no browser found." >&2
     exit 1
 fi
 
+# -- Dependencies --------------------------------------------
+if ! command -v yad >/dev/null 2>&1; then
+    echo "Error: yad is required." >&2
+    exit 1
+fi
+
+# Qsite is a conductor tool. Running it as root creates
+# root-owned files in the conductor's home.
+if [ "$(id -u)" -eq 0 ]; then
+    yad --error \
+        --title="dropQbsd - Qsite" \
+        --text="Qsite must run as the conductor, not as root.
+
+Run it from the conductor's session." \
+        --button="OK:0" \
+        --width=450 2>/dev/null
+    echo "Error: Qsite must run as the conductor, not root." >&2
+    exit 1
+fi
+
 RUNDIR="$HOME/.cache/dropQbsd"
+
+# A root-owned cache directory is a leftover from a root run.
+# Do not try to chmod it as the conductor; explain the fix.
+if [ -d "$RUNDIR" ] && [ "$(stat -f %u "$RUNDIR")" -ne "$(id -u)" ]; then
+    yad --error \
+        --title="dropQbsd - Qsite" \
+        --text="Cache directory is not owned by you:
+$RUNDIR
+
+Fix it with:
+  chown -R $(id -un):$(id -gn) $RUNDIR" \
+        --button="OK:0" \
+        --width=500 2>/dev/null
+    echo "Error: $RUNDIR is not owned by $(id -un)." >&2
+    exit 1
+fi
+
 mkdir -p "$RUNDIR"
 chmod 700 "$RUNDIR"
 
-# Logging AFTER RUNDIR exists
+# Logging AFTER RUNDIR exists.
 exec 2>>"$RUNDIR/qsite.err"
 
 CLIPBOARD_PID_FILE="$RUNDIR/clipboard_clear.pid"
 STATE_FILE="$RUNDIR/qsite_state"
 PASS_CACHE="$RUNDIR/qsite_cache"
 
-# -- Check dependencies --------------------------------------
+# -- Check sites.conf ----------------------------------------
+if [ ! -f "$CONF" ]; then
+    yad --error \
+        --title="dropQbsd - Qsite" \
+        --text="sites.conf not found.
 
-if ! command -v yad >/dev/null 2>&1; then
-    echo "Error: yad is required." >&2; exit 1
-fi
-if [[ ! -f "$CONF" ]]; then
-    echo "Error: $CONF not found." >&2; exit 1
+Create it with:
+  mkdir -p ~/.config/dropQbsd
+  cp /opt/dropQbsd/examples/system/sites.conf.example ~/.config/dropQbsd/sites.conf
+  \$EDITOR ~/.config/dropQbsd/sites.conf" \
+        --button="OK:0" \
+        --width=500 2>/dev/null
+    echo "Error: $CONF not found." >&2
+    exit 1
 fi
 
 # -- Parse sites.conf ----------------------------------------
-
 cache_sites() {
     > "$PASS_CACHE"
     while IFS='|' read -r label url id_entry pass_entry; do
-        # Trim whitespace first, then filter
+        # Trim whitespace first, then filter.
         label=$(echo "$label" | sed 's/^ *//;s/ *$//')
         url=$(echo "$url" | sed 's/^ *//;s/ *$//')
         id_entry=$(echo "$id_entry" | sed 's/^ *//;s/ *$//')
         pass_entry=$(echo "$pass_entry" | sed 's/^ *//;s/ *$//')
 
-        # Skip empty lines and comments
+        # Skip empty lines and comments.
         case "$label" in
-            ""|\#*) continue ;;
+        ""|\#*) continue ;;
         esac
 
-        printf '%s|%s|%s|%s\n' "$label" "$url" "$id_entry" "$pass_entry" >> "$PASS_CACHE"
+        printf '%s|%s|%s|%s\n' \
+            "$label" "$url" "$id_entry" "$pass_entry" >> "$PASS_CACHE"
     done < "$CONF"
 }
 
 lookup() {
-    local target="$1"
-    local field="$2"
+    typeset target="$1"
+    typeset field="$2"
     while IFS='|' read -r label url id_entry pass_entry; do
-        if [[ "$label" == "$target" ]]; then
+        if [ "$label" = "$target" ]; then
             case "$field" in
-                url)        echo "$url" ;;
-                id_entry)   echo "$id_entry" ;;
-                pass_entry) echo "$pass_entry" ;;
+            url) echo "$url" ;;
+            id_entry) echo "$id_entry" ;;
+            pass_entry) echo "$pass_entry" ;;
             esac
             return
         fi
@@ -120,10 +179,10 @@ lookup() {
 }
 
 build_menu() {
-    local filter="$1"
-    local menu=""
+    typeset filter="$1"
+    typeset menu=""
     while IFS='|' read -r label url id_entry pass_entry; do
-        if [[ -n "$filter" && "$label" != "$filter" ]]; then
+        if [ -n "$filter" ] && [ "$label" != "$filter" ]; then
             continue
         fi
         menu="${menu}${label}\n"
@@ -132,38 +191,59 @@ build_menu() {
 }
 
 # -- Unlock GPG keyring --------------------------------------
-
 unlock_gpg() {
-    local entry="$1"
+    typeset entry="$1"
 
-    # Quick check with pinentry disabled -- fails instantly if locked
+    # Quick check with pinentry disabled -- fails instantly if locked.
     if PASSWORD_STORE_GPG_OPTS="--pinentry-mode cancel --batch" \
         pass show "$entry" >/dev/null 2>&1; then
         return 0
     fi
 
-    # Keyring locked -- tell user to unlock manually and retry
+    # Keyring locked -- tell the user to unlock manually and retry.
     yad --warning \
         --title="dropQbsd - GPG Locked" \
-        --text="GPG keyring is locked.\n\nOpen an xterm and run:\n\n  pass ${entry}\n\nthen close the xterm and click the\nsame site again to retry." \
+        --text="GPG keyring is locked.
+
+Open an xterm and run:
+
+  pass ${entry}
+
+then close the xterm and click the
+same site again to retry." \
         --button="OK:0" \
         --width=450 2>/dev/null
-
     return 1
 }
 
-# -- Clipboard helpers ----------------------------------------
-
+# -- Clipboard helpers ---------------------------------------
 copy_id() {
-    local id_entry="$1"
-    [[ -z "$id_entry" ]] && return 0
-    command -v pass >/dev/null 2>&1 || return 0
+    typeset id_entry="$1"
+
+    [ -z "$id_entry" ] && return 0
+
+    if ! command -v pass >/dev/null 2>&1; then
+        yad --error \
+            --title="dropQbsd - Qsite" \
+            --text="pass is required." \
+            --button="OK:0" \
+            --width=400 2>/dev/null
+        return 1
+    fi
+    if ! command -v xclip >/dev/null 2>&1; then
+        yad --error \
+            --title="dropQbsd - Qsite" \
+            --text="xclip is required." \
+            --button="OK:0" \
+            --width=400 2>/dev/null
+        return 1
+    fi
 
     unlock_gpg "$id_entry" || return 1
 
-    local id_value
+    typeset id_value
     id_value=$(pass show "$id_entry" 2>/dev/null | head -1)
-    if [[ -n "$id_value" ]]; then
+    if [ -n "$id_value" ]; then
         printf '%s' "$id_value" | xclip -selection clipboard -i 2>/dev/null
         return 0
     fi
@@ -171,20 +251,37 @@ copy_id() {
 }
 
 copy_pass() {
-    local pass_entry="$1"
-    [[ -z "$pass_entry" ]] && return 0
-    command -v pass >/dev/null 2>&1 || return 0
+    typeset pass_entry="$1"
+
+    [ -z "$pass_entry" ] && return 0
+
+    if ! command -v pass >/dev/null 2>&1; then
+        yad --error \
+            --title="dropQbsd - Qsite" \
+            --text="pass is required." \
+            --button="OK:0" \
+            --width=400 2>/dev/null
+        return 1
+    fi
+    if ! command -v xclip >/dev/null 2>&1; then
+        yad --error \
+            --title="dropQbsd - Qsite" \
+            --text="xclip is required." \
+            --button="OK:0" \
+            --width=400 2>/dev/null
+        return 1
+    fi
 
     unlock_gpg "$pass_entry" || return 1
 
-    if [[ -f "$CLIPBOARD_PID_FILE" ]]; then
+    if [ -f "$CLIPBOARD_PID_FILE" ]; then
         kill "$(cat "$CLIPBOARD_PID_FILE")" 2>/dev/null || true
         sleep 0.1
     fi
 
-    local pw_value
+    typeset pw_value
     pw_value=$(pass show "$pass_entry" 2>/dev/null | head -1)
-    if [[ -n "$pw_value" ]]; then
+    if [ -n "$pw_value" ]; then
         printf '%s' "$pw_value" | xclip -selection clipboard -i 2>/dev/null
         (
             sleep 30
@@ -198,14 +295,14 @@ copy_pass() {
 }
 
 # -- Main loop ------------------------------------------------
-
 cache_sites
+
 while true; do
     CURRENT_PHASE=""
-    [[ -f "$STATE_FILE" ]] && CURRENT_PHASE=$(cat "$STATE_FILE")
+    [ -f "$STATE_FILE" ] && CURRENT_PHASE=$(cat "$STATE_FILE")
 
-    if [[ -n "$CURRENT_PHASE" ]]; then
-        # Phase 2: single site, confirmation dialog
+    if [ -n "$CURRENT_PHASE" ]; then
+        # Phase 2: single site, confirmation dialog.
         if yad --question \
             --title="dropQbsd - Confirm Password" \
             --text="Copy password for: $CURRENT_PHASE" \
@@ -217,36 +314,34 @@ while true; do
             CHOSEN=""
         fi
     else
-        # Phase 1: full site list via YAD combo form
-        CHOSEN=$(printf '%s\n' "$(build_menu "" | tr '!' '\n')" \
-            | yad --list --column="Site" --no-headers \
-                --separator="|" --print-column=1 \
-                --title="dropQbsd - Sites" \
-                --text="Select a site:" \
-                --button="Copy ID:0" --button="Cancel:1" \
-                --height=400 --width=300 2>>"$RUNDIR/qsite.err")
-        
-        # strip the trailing |
-        CHOSEN=$(printf '%s' "$CHOSEN" | sed 's/|$//') 
+        # Phase 1: full site list via YAD list.
+        CHOSEN=$(build_menu "" \
+        | yad --list --column="Site" --no-headers \
+            --separator="|" --print-column=1 \
+            --title="dropQbsd - Sites" \
+            --text="Select a site:" \
+            --button="Copy ID:0" --button="Cancel:1" \
+            --height=400 --width=300 2>>"$RUNDIR/qsite.err")
+        # Strip the trailing separator.
+        CHOSEN=$(printf '%s' "$CHOSEN" | sed 's/|$//')
     fi
 
-    if [[ -z "$CHOSEN" ]]; then
+    if [ -z "$CHOSEN" ]; then
         rm -f "$STATE_FILE" "$PASS_CACHE"
         exit 0
     fi
 
-    if [[ "$CHOSEN" == "$CURRENT_PHASE" ]]; then
-        # Phase 2: copy password
+    if [ "$CHOSEN" = "$CURRENT_PHASE" ]; then
+        # Phase 2: copy password.
         PASS_ENTRY=$(lookup "$CHOSEN" pass_entry)
         if copy_pass "$PASS_ENTRY"; then
             rm -f "$STATE_FILE" "$PASS_CACHE"
             exit 0
         fi
     else
-        # Phase 1: copy ID and open browser
+        # Phase 1: copy ID and open browser.
         URL=$(lookup "$CHOSEN" url)
         ID_ENTRY=$(lookup "$CHOSEN" id_entry)
-
         if copy_id "$ID_ENTRY" && [ -n "$URL" ]; then
             ( "$RUN_APP" --disposable userweb "$BROWSER" $BROWSER_FLAGS "$URL" & )
             sleep 0.5

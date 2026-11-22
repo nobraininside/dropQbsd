@@ -44,11 +44,30 @@ if [ -f /etc/dropQbsd/profile ]; then
     . /etc/dropQbsd/profile
 fi
 
-# ---- Conductor account (derived from GECOS, single source of truth) ----
-# The conductor is the account whose GECOS field is "dropQbsd_conductor".
-# It can be renamed; the marker stays, so this resolves the current name.
-CONDUCTOR_USER=""
-CONDUCTOR_USER=$(getent passwd | awk -F: 'index($5, "dropQbsd_conductor") > 0 {print $1; exit}')
+# ---- XDG base directories ---
+# Packages on both platforms install under /usr/local; XFCE keeps
+# its session files in /usr/local/etc/xdg. On OpenBSD the XFCE
+# config is in /etc/xdg. Include both; the missing one is harmless.
+export XDG_CONFIG_DIRS="/usr/local/etc/xdg:/etc/xdg"
+export XDG_DATA_DIRS="/usr/local/share:/usr/share"
+
+# ---- Conductor account (derived from GECOS; mirrors the gate's rule) ----
+# The conductor is the account whose GECOS field is exactly
+# "dropQbsd_conductor". It can be renamed; the marker stays, so this
+# resolves the current name.
+#
+# Exact match, exactly one: the gate (run_app_impl) and the installer
+# use the same rule. Do not use index() or getent: a substring match
+# or a full database scan diverges from the gate. On zero or more than
+# one marker the value is empty -- the gate refuses to run, and an
+# empty value simply leaves the conductor prompt unset.
+#
+# := preserves a value already exported by the wrapper; it resolves
+# only when the variable is unset or empty.
+: "${CONDUCTOR_USER:=$(awk -F: '
+    $5 == "dropQbsd_conductor" { n++; name = $1 }
+    END { if (n == 1) print name }
+' /etc/passwd)}"
 export CONDUCTOR_USER
 
 # ------------------------------------------------------------------

@@ -104,16 +104,16 @@ The relevant properties for a controller are architectural, not procedural:
 | | Mainstream stack | dropQbsd on the BSD family |
 | -- | -- | -- |
 | **Telemetry** | Vendor-defined, on by default | None in the base system (applications are separate -- see section 4) |
-| **Auditability** | Closed source | ~5,750 lines of shell and C, all of it readable: ~5,300 `ksh`, ~380 templates, 48 C |
+| **Auditability** | Closed source | ~6,500 lines of shell and C, all of it readable: ~3,900 shell, ~2,100 installer/updater, ~490 templates, 74 C |
 | **Licensing cost** | OS + productivity + endpoint security | None (ISC license) |
 | **Endpoint security model** | Reactive scanning software with root access | Domain isolation enforced by Unix permissions and `pf` |
 | **Verification method** | Contract, certification, audit report -- each an intermediary whose scope you must also trust | Direct source inspection -- no intermediary, no scope to negotiate |
 | **Default posture** | Maximise collection, opt out where possible | Minimise exposure, default-deny |
 
-The split matters more than the total. The **~3,600 lines that run** --
+The split matters more than the total. The **~3,900 lines that run** --
 `sbin/`, `libexec/`, `admin/` -- are covered by a signed manifest that
 `verify_integrity` checks every five minutes: tampering is detected, not
-merely discouraged. The **~1,700 that build the system**, in `installer/`, are
+merely discouraged. The **~2,100 that build the system**, in `installer/`, are
 not: they execute once, as root, before any firewall exists, and there is no
 runtime check on them. Review them as part of any procurement assessment, or
 accept them on trust. The distinction is stated because a controller

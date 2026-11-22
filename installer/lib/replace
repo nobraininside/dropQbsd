@@ -41,7 +41,7 @@ replace_all() {
     OBSOLETE_FILES=""
     LEFT_ALONE_FILES=""
 
-    replace_file "${REPO_ROOT}/templates/doas.conf_for_etc" /etc/doas.conf
+    replace_file "${REPO_ROOT}/templates/doas.conf_for_etc" "$DOAS_CONF"
     replace_file "${REPO_ROOT}/templates/domains.conf_for_etc" "${ETC_DIR}/domains.conf"
     replace_file "${REPO_ROOT}/templates/schema_for_etc" "${ETC_DIR}/schema"
     replace_file "${REPO_ROOT}/templates/kshrc_for_etc" "${ETC_DIR}/kshrc"

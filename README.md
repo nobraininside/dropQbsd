@@ -13,7 +13,7 @@ Qubes-style domain isolation using native Unix users, `pf`, and `ksh`. Web, mail
 and documents run as separate users with no shared access except a policed drop
 zone. No hypervisor, no VM images, no daemon.
 
-About 5,750 lines in total, comments and blank lines excluded
+About 6,560 lines in total, comments and blank lines excluded
 (counted -- see [Recount it](#recount-it)). One person who knows shell
 can read all of it in a day -- and audit it, boundaries and all, in a few.
 
@@ -96,6 +96,62 @@ isolation.
 - **Korn shell:**
   - OpenBSD: `/bin/ksh` (base system).
   - FreeBSD: `mksh` — `pkg install mksh`.
+- **`doas`** (FreeBSD only; base on OpenBSD): `pkg install doas`, then
+  create `/usr/local/etc/doas.conf` with `permit :wheel` (plus
+  `permit nopass root` for the dropQbsd template).
+
+**What is in the base system.** On OpenBSD, `ksh`, `doas`, `signify`,
+`tmux`, `pf`, `xrandr`, `setxkbmap`, `xenodm` and the base window managers
+(`cwm`, `fvwm`, `twm`) are part of the base install. On FreeBSD, the base has
+`sh`, `pf` (as a kernel module), `pfctl`, `file`, `stat`, `sha256`, `tar`,
+`head`, `grep`, `sed`, `awk`; `ksh`, `doas`, `signify`, `tmux`, `xrandr`,
+`setxkbmap`, `xfce`, `lightdm`, `dbus`, `qutebrowser`, `Xdialog` and all of
+X11 are packages.
+
+### Graphical session
+
+A window manager or desktop environment is not installed by default.
+Set `[session] wm` in `/etc/dropQbsd/local.conf` to the WM/DE you actually
+use: `startxfce4`, `mate-session`, `cwm`, `twm`, `i3`.
+
+If you want XFCE:
+
+- **OpenBSD** (`xenodm` is the default DM; `lightdm` is not required):
+  ```sh
+  pkg_add xfce xfce-extras
+  rcctl enable messagebus
+  rcctl start messagebus
+  ```
+- **FreeBSD**:
+  ```sh
+  pkg install -y xfce lightdm lightdm-gtk-greeter
+  sysrc dbus_enable=YES
+  sysrc lightdm_enable=YES
+  service dbus start
+  service lightdm start
+  ```
+
+Then set:
+
+```ini
+[session]
+wm = startxfce4
+```
+
+`startxfce4` is the XFCE wrapper; it sets the environment before
+`xfce4-session`. Do not hardcode it in `~/.xsession`.
+
+On **OpenBSD/xenodm**, the installer's `~/.xsession` ends with:
+
+```sh
+exec /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/session
+```
+
+Leave it as is; `libexec/session` reads `[session] wm`. Do not replace it
+with `exec startxfce4`.
+
+On **FreeBSD**, `~/.xsession` is never installed. Use `~/.xprofile` for
+LightDM/SDDM and `~/.xinitrc` for `startx`.
 
 ### Optional packages
 
@@ -106,33 +162,60 @@ security install is not acceptable. If you prefer to install them
 **after**, or step by step, follow
 [INSTALL_MANUAL.md](./INSTALL_MANUAL.md).
 
-| Package | Enables | If missing |
-|---------|---------|------------|
-| `tmux`, `nnn` | `Qfile` | `Qfile` does not work |
-| `dzen2`, `xdotool` | `Indicator` (domain indicator) | `Indicator` does not work |
-| `yad`, `xbindkeys`, `pass`, `xclip` | `Qmenu` (conductor menu), `Qsite` (site menu) | `Qmenu` and `Qsite` do not work |
-| `Xdialog` | `Qattach` (attach a file to a mail/upload) | `Qattach` does not work |
-| `signify` | Integrity verification (`Sign`/`Verify`) | Integrity not available |
-| `syncthing` | LAN file sync for `userdoc` | **dropQbsd still works**; only `userdoc` loses sync |
-| a window manager | XFCE, cwm, twm, i3, ... | no graphical session |
+| Package | Platform | Enables | If missing |
+|---|---|---|---|
+| `doas` | FreeBSD (base on OpenBSD) | root access for the installer and documented commands | use `su`, or `pkg install doas` |
+| `mksh` | FreeBSD (base on OpenBSD) | the Korn shell the wrapper runs | no dropQbsd script runs |
+| `tmux` | FreeBSD (base on OpenBSD) | `Qfile` | `Qfile` does not work |
+| `nnn` | both | `Qfile` | `Qfile` does not work |
+| `dzen2`, `xdotool` | both | `Indicator` | `Indicator` does not work |
+| `password-store`, `xbindkeys`, `xclip`, `yad` | both | `Qmenu`, `Qsite` | `Qmenu` and `Qsite` do not work |
+| `Xdialog` | both (`xdialog` on FreeBSD) | `Qattach` | `Qattach` does not work |
+| `signify` | FreeBSD (base on OpenBSD) | integrity verification | integrity not available |
+| `syncthing` | both | LAN file sync for `userdoc` | `userdoc` loses sync |
+| `xrandr` | FreeBSD (base on OpenBSD) | DPI pinned to 96 at session start | fonts too large on high-density panels |
+| `setxkbmap` | both (FreeBSD package; OpenBSD base) | `[keyboard] layout` applied by `libexec/session` | keyboard layout not applied |
+| `qutebrowser` (or `ungoogled-chromium` / `librewolf`) | both | `Qsite` browser | Qsite shows the no-browser popup |
+| `xfce`, `xfce-extras` | both (optional) | graphical session, XFCE | use another WM/DE and set `[session] wm` |
+| `lightdm`, `lightdm-gtk-greeter` | FreeBSD only (optional) | graphical login for XFCE | use SDDM, `startx`, or xenodm; OpenBSD uses xenodm |
+| `dbus` / `messagebus` | FreeBSD (`dbus`), OpenBSD (`messagebus`) | XFCE/LightDM session bus | XFCE/LightDM may fail |
+| `mc`, `xfe` | both (optional) | file managers | no GUI/dual-pane file manager |
+| a window manager | FreeBSD (OpenBSD base: `cwm`, `fvwm`, `twm`) | graphical session | no graphical session |
 
-Four of the seven rows are functional dependencies of a command. If the
-package is missing, that command does not work; everything else is unaffected.
-**`signify`, `syncthing`, and a window manager are different**: they are optional
-(`signify` for integrity verification, `syncthing` for one domain, userdoc, and
-a window manager only for a graphical session), and their absence does not affect
-dropQbsd's core.
+`doas` and `mksh` are prerequisites, not optional features. The other
+rows are optional: a missing package disables one command, not the
+system. `Xdialog` is installed separately because it can block.
+`qutebrowser` is one of three supported browsers; `ungoogled-chromium`
+and `librewolf` are alternatives.
+
+The package list in `installer/optional_packages_list` uses three columns:
+`<platform> <package> [binary]`. On FreeBSD the package is probed with
+`pkg info -q`; the binary column is the `command -v` fallback
+(`password-store` provides `pass`, `xdialog` provides `Xdialog`).
 
 On OpenBSD:
 
 ```sh
-doas pkg_add tmux nnn dzen2 xdotool yad xbindkeys pass xclip syncthing Xdialog
+doas pkg_add mc xfe nnn dzen2 xdotool yad xbindkeys password-store xclip syncthing qutebrowser Xdialog
 ```
 
-On FreeBSD:
+On FreeBSD, `doas` and `mksh` are packages, not base. Install them first
+as root:
 
 ```sh
-doas pkg install tmux nnn dzen2 xdotool yad xbindkeys pass xclip syncthing xdialog
+su -
+pkg install doas mksh
+cat > /usr/local/etc/doas.conf <<'EOF'
+permit :wheel
+permit nopass root
+EOF
+exit
+```
+
+Then:
+
+```sh
+doas pkg install -y mc xfe nnn tmux dzen2 xdotool yad xbindkeys password-store signify xclip syncthing xdialog xrandr setxkbmap qutebrowser
 ```
 
 **A pre-existing account that collides with the conductor name stops the
@@ -153,6 +236,12 @@ data (data belongs in `userdoc`).
 ---
 
 ## Install
+
+**In a hurry?** Start with **[QUICKSTART.md](./QUICKSTART.md)**.
+
+For the full paths: **[INSTALL.md](./INSTALL.md)** for the
+semi-automatic install, and **[INSTALL_MANUAL.md](./INSTALL_MANUAL.md)**
+for the manual procedure.
 
 From the repository's `installer/` directory, as root:
 
@@ -175,9 +264,6 @@ GECOS role marker. If the account already exists *with the correct marker*,
 the installer reuses it (upgrade/re-install). If it exists *without the marker*
 (a pre-existing personal account), the installer **refuses to proceed**.
 See the Prerequisites warning above.
-
-See **[INSTALL.md](./INSTALL.md)** for the quick start, and
-**[INSTALL_MANUAL.md](./INSTALL_MANUAL.md)** for the manual procedure.
 
 ---
 
@@ -279,7 +365,7 @@ it is installed only if absent and never overwritten by an update.
 
 | User       | Role                                                   | Network                         |
 | ---------- | ------------------------------------------------------ | ------------------------------- |
-| `conductor` | Conductor -- orchestrates, imports/exports, administers. Rename-proof: recognized by the `dropQbsd_conductor` GECOS marker, not by name. | None (no direct network access) |
+| `conductor` | Conductor -- orchestrates, imports/exports, administers. Rename-proof: recognized by the `dropQbsd_conductor` GECOS marker, not by name. In `wheel` for `su`, no `doas`. | None (no direct network access) |
 | `userweb`  | Web browser -- isolated from mail and LAN               | HTTP/HTTPS only                 |
 | `usermail` | Email client -- isolated from web                       | Mail servers only               |
 | `userdoc`  | Documents, sync, LAN storage -- no direct internet      | LAN + Syncthing                 |
@@ -346,6 +432,20 @@ simplicity and daily-use convenience.
 3. `qimport` copies the file out into `~/Downloads`.
 4. `enforce_drop` removes abandoned files after 30 minutes.
 
+**Lifecycle.** `enforce_drop` decides by the file's **mtime**, not by when
+it arrived:
+
+| State | What `enforce_drop` does |
+|-------|--------------------------|
+| mtime older than 30 minutes | deletes it (`abandoned`), whatever its mode or GID |
+| younger, wrong GID (and not root-owned) | quarantines it, whatever its mode |
+| younger, correct GID, wrong mode | fixes the mode (`440` file, `570` dir) |
+| younger, correct GID and mode | leaves it alone |
+
+A file with an old mtime is "old" the moment it lands: the first cycle
+deletes it. `qcp` and `qmv` reset the timestamp for this reason; a manual
+`mv` or `cp -p` preserves it, and the file is removed at the next cycle.
+
 ### The Conductor -- `run_app` Architecture
 
 The conductor launches graphical apps inside any domain without switching users.
@@ -354,7 +454,7 @@ privilege escalation:
 
 | File                   | Type                          | Role                                                       |
 | ---------------------- | ----------------------------- | ---------------------------------------------------------- |
-| `bin/run_app`          | Compiled binary (setuid root) | Immutable gate -- 48 lines of C, no decision logic |
+| `bin/run_app`          | Compiled binary (setuid root) | Immutable gate -- 74 lines of C, no decision logic |
 | `libexec/wrapper`      | `sh` script                   | Sanitizes the environment, selects the shell               |
 | `libexec/run_app_impl` | `ksh`/`mksh` script           | All the logic -- domain selection, X11 cookie, tmpfs        |
 | `src/run_app.c`        | C source                      | Reference only; needed only if the ABI breaks              |
@@ -365,7 +465,10 @@ arguments, does not branch on input, and does not decide which script to run.
 All session logic -- domain selection, X11 cookie handling, tmpfs setup --
 lives in `run_app_impl`, a plain script. Immutable after compilation: if you
 need to add a domain, change paths, or adjust cleanup behavior, you edit the
-script. No recompilation.
+script. No recompilation. 
+The gate drops supplementary groups and sets gid 0 before uid 0, so
+files created by root-owned scripts carry `wheel`, not the caller's
+group.
 
 **Two classes of action.** The gate recognizes two kinds of first argument:
 a **domain** (`userweb`, `usermail`, `userdoc`) -- launch an app in that
@@ -373,6 +476,14 @@ domain -- or a **conductor action** listed in `/etc/dropQbsd/conductor.conf`
 -- run a project script as root. Conductor actions are the gate's second
 authority: they are declared in a signed file, so the set of root-runnable
 scripts is auditable. Today there is one: `qattach`.
+
+The gate is setuid root and therefore executable by every local user, so
+**`run_app_impl` refuses any invoker that is not the conductor account** --
+identified by the `dropQbsd_conductor` GECOS marker. Without that check a
+compromised domain could launch applications in another domain, which is
+the one crossing the compartment model exists to prevent. The gate captures
+the caller's real uid with `getuid()` before `setuid(0)` and passes it as the first
+argument; the wrapper clears the environment, so nothing else survives.
 
 **The wrapper is the environment-sanitization and shell-selection layer.**
 It runs with the privileges of its caller: root when invoked through `run_app`
@@ -387,11 +498,13 @@ invoked from cron. The wrapper sanitizes the environment before any script sees 
 - Only `DISPLAY`, `XAUTHORITY`, and `TERM` survive the crossing.
 - The wrapper then selects the shell: `/bin/ksh` on OpenBSD, `mksh` on FreeBSD.
 
-**`doas.conf` is one line:** `permit nopass root`. `$CONDUCTOR_USER` has no `doas` access
-at all. The only path to root is the blind gate. The gate can launch domain
+**`doas.conf` is one line:** `permit nopass root` -- at `/etc/doas.conf` on OpenBSD,
+`/usr/local/etc/doas.conf` on FreeBSD. `$CONDUCTOR_USER` has no `doas` access at all.
+The conductor is in `wheel`, so `Xtroot` can `su -` to root with the root password;
+the gate is the only **passwordless** path to root. The gate can launch domain in
 applications, and it can run **conductor actions** -- project scripts declared
-in a signed file (`conductor.conf`). No conductor action is added silently:
-the set is under `verify_integrity`.
+a signed file (`conductor.conf`). No conductor action is added silently: the set
+is under `verify_integrity`.
 
 **Two modes.** Normal mode creates an isolated runtime directory under `/tmp`,
 cleaned on exit. Disposable mode mounts a tmpfs in RAM (500 MB default,
@@ -555,6 +668,14 @@ letters of the significant words, capitalized and joined.
 | `Xtuserweb`     | `sbin/xterm_userweb`               |
 | ...             | see `/etc/dropQbsd/alias`          |
 
+**Backgrounding.** `&` belongs in an alias only for a command that blocks
+on a GUI dialog and must give the prompt back: `Qmenu` (`sbin/qmenu &`)
+and `Qsite` (`sbin/qsite &`). Every `xterm_*` script detaches itself with
+`nohup … &`, so backgrounding it again from the alias is redundant.
+Commands that do real work in the foreground -- `Qcp`, `Qmv`, `Qimport`,
+`Run`, `Gen`, `Sign`, `Verify` -- must not be backgrounded: you would lose
+the exit status and the output.
+
 ### Moving Files Between Domains
 
 Files move through `/home/drop`, the only bridge between domains.
@@ -600,6 +721,9 @@ Three popups: pick a file (the picker runs **as the source domain**,
 confined to its home -- other domains' homes, mode 700, are invisible to it),
 then pick the destination, then confirm the file landing in the destination's
 `~/Downloads`. The file is staged in the drop zone, then imported.
+
+The installer creates `~/Downloads` in every domain home. If the
+directory is missing, `qattach` creates it before importing.
 
 **Allowed directions** are declared in `/etc/dropQbsd/attach.conf`, one
 `SRC:DST` per line:
@@ -917,7 +1041,7 @@ does not report a statically linked ELF, rebuild it with
 | `qcontrol`        | conductor | ncurses dashboard -- domain status, drop zone, system health         |
 | `qsite`           | conductor | Two-phase site launcher with `pass(1)` integration                   |
 | `xterm_conductor` | conductor | Color-coded xterm for the conductor domain (black)                   |
-| `xterm_root`      | conductor | Color-coded xterm, then `su -` to root                               |
+| `xterm_root`      | conductor | Color-coded xterm, then `su -` to root (conductor in `wheel`; root password required)                   |
 | `xterm_userdoc`   | conductor | Color-coded xterm for userdoc domain (dark green)                    |
 | `xterm_usermail`  | conductor | Color-coded xterm for usermail domain (dark orchid)                  |
 | `xterm_userweb`   | conductor | Color-coded xterm for userweb domain (dark blue)                     |
@@ -1067,7 +1191,7 @@ The goal is not to add layers of abstraction but to remove them. If Unix users
 and permissions already provide isolation, why add a hypervisor? If `cron` and
 `find` can police a shared directory, why run a daemon? If `ksh` and `pfctl`
 can manage network access for updates, why build a package manager wrapper?
-If a 48-line setuid C binary can gate privilege escalation, why give `conductor` a
+If a 74-line setuid C binary can gate privilege escalation, why give `conductor` a
 `doas` ticket to the whole system?
 
 **Complexity is the enemy of security.** dropQbsd keeps it simple, auditable,
@@ -1075,14 +1199,17 @@ and boring -- exactly what you want from a security tool.
 
 ### Recount it
 
-Comments and blank lines excluded, in three parts:
+Comments and blank lines excluded, in four parts:
 
-- **~3,600** of shell -- what runs: `sbin/`, `libexec/`, `admin/`.
+- **~3,900** of shell -- what runs: `sbin/`, `libexec/`, `admin/`.
   Covered by the signed manifest that `verify_integrity` checks.
-- **~1,700** for the `installer/` and `update.sh` tree -- what builds the
+- **~2,100** for the `installer/` and `update.sh` tree -- what builds the
   system. Runs once, as root, before any firewall exists. Not copied to
   `/opt`, so not covered by the manifest: it is read, or it is trusted.
-- **~380** of shell templates, **48** of C.
+- **~490** of shell templates.
+- **74** of C.
+
+Total: about 6,560 lines.
 
 Nothing up our sleeve -- the numbers are reproducible:
 

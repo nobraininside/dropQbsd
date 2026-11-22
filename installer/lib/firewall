@@ -68,6 +68,23 @@ verify_local_conf() {
     return 0
 }
 
+# enable_pf: on FreeBSD pf is a loadable module and is NOT enabled at
+# boot by default. Applying the ruleset with pfctl -f works until the
+# next reboot, and then the machine comes back with no firewall and no
+# per-domain isolation -- silently. OpenBSD enables pf by default.
+enable_pf() {
+    case "$OS" in
+    FreeBSD)
+        if [ "$(sysrc -n pf_enable 2>/dev/null)" != "YES" ]; then
+            run sysrc pf_enable=YES
+            success "pf enabled at boot (pf_enable=YES)"
+        else
+            info "pf already enabled at boot"
+        fi
+        ;;
+    esac
+}
+
 # setup_firewall -- generate and apply the PF firewall.
 #
 # The firewall is DERIVED from /etc/dropQbsd/local.conf. If that file
@@ -82,6 +99,21 @@ verify_local_conf() {
 setup_firewall() {
     wrapper="${INSTALL_DIR}/libexec/wrapper"
     gen="${INSTALL_DIR}/admin/gen_fwall"
+
+    # Make the firewall survive a reboot before applying it. On FreeBSD
+    # pf is a loadable module and is not enabled at boot by default;
+    # without this the machine comes back after a reboot with no
+    # firewall and no per-domain isolation, silently.
+    enable_pf
+
+    if [ "$DRY_RUN" = true ]; then
+        info "[dry-run] would run: $wrapper $gen $FW_BACKEND"
+        info "[dry-run] would verify: pfctl -nf /etc/pf.conf"
+        info "[dry-run] would apply: pfctl -f /etc/pf.conf"
+        info "[dry-run] would populate: update_mailserver_table update_services_table ensure_updates_table"
+        return 0
+    fi
+
     [ -x "$wrapper" ] || fail "wrapper missing: $wrapper"
     [ -x "$gen" ] || fail "gen_fwall missing: $gen"
 
@@ -156,7 +188,23 @@ setup_firewall() {
     fi
 
     # 4. Apply. This empties every persistent table.
+    #
+    # FreeBSD: pfctl -f loads the ruleset but does NOT enable pf. The
+    # rules sit in the kernel and filter nothing until pf is enabled --
+    # and every table check still passes, so the only symptom is the
+    # checklist's "pf is enabled". OpenBSD enables pf at boot by default.
+    #
+    # -e is needed only once, and calling it on an already-enabled pf
+    # prints "pf already enabled" -- which not every build reports as
+    # success. Check the status instead of relying on the exit code.
     run pfctl -f /etc/pf.conf
+    case "$OS" in
+    FreeBSD)
+        if ! pfctl -s info 2>/dev/null | grep -q 'Status: Enabled'; then
+            run pfctl -e
+        fi
+        ;;
+    esac
 
     # 5. Repopulate the tables. Order matters: ensure_updates_table
     # is the one the admin scripts depend on, and it does its own

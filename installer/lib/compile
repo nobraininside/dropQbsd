@@ -28,6 +28,14 @@ compile_run_app() {
     build="${INSTALL_DIR}/admin/build_run_app"
     bin="${INSTALL_DIR}/bin/run_app"
 
+    # Dry-run on a fresh machine: the files step printed its plan only,
+    # so INSTALL_DIR does not exist. Nothing to build, nothing to check.
+    if [ "$DRY_RUN" = true ]; then
+        info "[dry-run] would run: $build"
+        info "[dry-run] then verify: setuid bit present, no NEEDED entries"
+        return 0
+    fi
+
     [ -f "$build" ] || fail "build script missing: $build"
 
     # build_run_app is installed by copy_scripts with the source

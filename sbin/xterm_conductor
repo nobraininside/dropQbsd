@@ -1,22 +1,25 @@
 # ==========================================================
 #  dropQbsd -- xterm_conductor
 #
-#  Opens a conductor xterm optionally running a command.
-#  Launched by the conductor via the wrapper.
+#  Opens a conductor xterm, optionally running a command.
+#  Launched by the conductor through the wrapper.
 #
-#  v0.3.0 changes:
-#    - The wrapper sanitizes the environment (unset HOME, ENV,
-#      hardcoded PATH): this script now DECLARES what it needs
-#      instead of inheriting it.
-#    - HOME rebuilt from passwd via real uid -- never trusted
-#      from the environment.
-#    - XAUTHORITY falls back to $HOME/.Xauthority when the
-#      session does not export it (xenodm keeps the cookie
-#      only in the canonical file).
-#    - ENV exported so interactive shells (-ls) load the
-#      dropQbsd ksh chain.
-#    - Fail fast if xterm is not available: a missing binary
-#      must produce a message, not a silent vanishing PID.
+#  Environment. The wrapper unsets HOME, ENV and any caller-supplied
+#  PATH before this script runs, so nothing can be inherited: the script
+#  DECLARES what it needs.
+#    - PATH is set explicitly, and the script exits if xterm is not in
+#      it. A missing binary must say so, not vanish and leave a silent
+#      dead terminal.
+#    - HOME is rebuilt from /etc/passwd using the real uid. It is never
+#      taken from the environment.
+#    - XAUTHORITY falls back to $HOME/.Xauthority when the session does
+#      not export one: xenodm keeps the cookie only in the canonical
+#      file.
+#    - ENV is exported, so an interactive shell (-ls) loads the dropQbsd
+#      ksh chain instead of whatever /etc/profile left behind.
+#
+#  The xterm is started with `nohup ... &`: the script returns at once
+#  and the terminal outlives the shell that launched it.
 #
 #  Path: /opt/dropQbsd/sbin/xterm_conductor
 #  Permissions: chmod 755, root:wheel

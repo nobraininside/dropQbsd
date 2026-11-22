@@ -46,10 +46,11 @@ C_DIM='\033[2;37m'
 C_USERWEB='\033[1;36m'
 C_USERMAIL='\033[1;35m'
 C_USERDOC='\033[1;32m'
-C_WARN='\033[1;33m'
-C_OK='\033[1;33m'
+C_WARN='\033[1;31m'   # red: a warning must stand out
+C_OK='\033[1;32m'     # green: counts in the header
 C_LOCK='\033[1;31m'
 C_FILE='\033[0;37m'
+C_TYPE='\033[1;33m'   # yellow: file/dir type labels
 C_QUAR='\033[1;33m'
 C_RESET='\033[0m'
 
@@ -303,14 +304,27 @@ render() {
     clear
 
     # Count items in drop zone (files + dirs, excluding export dirs and quarantine)
-    n_files=0; n_quar=0
-    for f in "$DROP_ZONE"/*; do
+    n_files=0; n_dirs=0; n_quar=0 
+    # `*` does not match a leading dot: add `.*` explicitly. Skip '.'
+    # and '..', the export dirs, the quarantine dir and qcp/qmv staging
+    # dirs (private, still in use -- enforce_drop skips them too).
+    for f in "$DROP_ZONE"/* "$DROP_ZONE"/.*; do
         case "$f" in
-            */usermail_export|*/userweb_export|*/_quarantine) continue ;;
+        "$DROP_ZONE"/.|"$DROP_ZONE"/..) continue ;;
+        */usermail_export|*/userweb_export|*/_quarantine) continue ;;
+        */.staging.*) continue ;;
         esac
-        [ -e "$f" ] && n_files=$(( n_files + 1 ))
-    done
-    for f in "$QUARANTINE_DIR"/*; do [ -f "$f" ] && n_quar=$(( n_quar + 1 )); done
+        # Same 60-minute window as the list: the header must count what
+        # the list shows. Older items are stale and enforce_drop's job.
+        dz_mtime=$(stat -f '%m' "$f" 2>/dev/null) || continue
+        dz_age_min=$(( ( $(now_epoch) - dz_mtime ) / 60 ))
+        [ "$dz_age_min" -gt 60 ] && continue
+        if [ -d "$f" ]; then
+            n_dirs=$(( n_dirs + 1 ))
+        elif [ -e "$f" ]; then
+            n_files=$(( n_files + 1 ))
+        fi
+    done  
 
     uw_pid=$(ps -U userweb -o pid= 2>/dev/null | wc -l | tr -d ' ')
     um_pid=$(ps -U usermail -o pid= 2>/dev/null | wc -l | tr -d ' ')
@@ -322,13 +336,20 @@ render() {
 
     row=0
     tput cup $row 0
-    printf '%b  dropQbsd Control Panel%b' "$C_HEADER" "$C_RESET"
-    tput cup $row $(( COLS - 48 ))
+    printf '%b dropQbsd Control Panel%b' "$C_HEADER" "$C_RESET"
+
+    # Right-align the key hints to their actual length, not a fixed 48:
+    # with a fixed offset the hints start too far left and overlap the
+    # title when the pane is narrower than ~72 columns.
     if [ "$ROOT_AUTHED" -eq 1 ]; then
-        printf '%b[q]uit  [a]uth  [r]efresh root%b' "$C_DIM" "$C_RESET"
+        RIGHT="[q]uit [a]uth [r]efresh root"
     else
-        printf '%b[q]uit  [a]uth  [r]efresh%b' "$C_DIM" "$C_RESET"
+        RIGHT="[q]uit [a]uth [r]efresh"
     fi
+    right_col=$(( COLS - ${#RIGHT} ))
+    [ "$right_col" -lt 0 ] && right_col=0
+    tput cup $row "$right_col"
+    printf '%b%s%b' "$C_DIM" "$RIGHT" "$C_RESET"
 
     row=1
     tput cup $row 0; printf '%b' "$C_DIM"; hr "$COLS"; printf '%b' "$C_RESET"
@@ -352,9 +373,9 @@ render() {
     # This is the single source of truth for the totals: the list
     # below is capped at 8 rows per category.
     tput cup $row 2
-    printf '%bDROP ZONE%b  %b%s%b  %b(%s files, %s quarantined)%b' \
+    printf '%bDROP ZONE%b %b%s%b %b(%s files, %s folders, %s quarantined)%b' \
         "$C_HEADER" "$C_RESET" "$C_DIM" "$DROP_ZONE" "$C_RESET" \
-        "$C_OK" "$n_files" "$n_quar" "$C_RESET"
+        "$C_OK" "$n_files" "$n_dirs" "$n_quar" "$C_RESET" 
     row=$(( row + 1 ))
 
     # Two counters: dz_total counts everything, dz_shown caps the
@@ -362,19 +383,23 @@ render() {
     # quarantined items.
     dz_total=0
     dz_shown=0
-    for f in "$DROP_ZONE"/*; do
+    for f in "$DROP_ZONE"/* "$DROP_ZONE"/.*; do
         [ -e "$f" ] || continue
-
-        # Skip export directories and quarantine - infrastructure,
-        # not user-facing items in transit
+        # Skip '.', '..', the export dirs and quarantine (infrastructure,
+        # not user-facing items in transit), and qcp/qmv staging dirs
+        # (private, still in use).
         case "$f" in
-            */usermail_export|*/userweb_export|*/_quarantine) continue ;;
+        "$DROP_ZONE"/.|"$DROP_ZONE"/..) continue ;;
+        */usermail_export|*/userweb_export|*/_quarantine) continue ;;
+        */.staging.*) continue ;;
         esac
 
         # Single stat call; skip silently if the file vanished between
         # glob and stat (enforce_drop cleans every 60s).
         # Format: "<mtime> <octal-perms>" -> take the last 4 digits.
-        dz_mtime=$(stat -f '%m %p' "$f" 2>/dev/null) || continue
+        # %Lp, not %p: %p is the ls-style mode string; the case below
+        # matches the octal 440/444.
+        dz_mtime=$(stat -f '%m %Lp' "$f" 2>/dev/null) || continue 
         dz_age_min=$(( ( $(now_epoch) - ${dz_mtime%% *} ) / 60 ))
         dz_perms=$(print -r -- "${dz_mtime#* }" | tail -c 5)
 
@@ -399,20 +424,23 @@ render() {
 
         # Directories are always shown as ready (permissions enforced by SGID)
         if [ "$dz_type" = "dir" ]; then
-            printf '%bdir%b' "$C_USERDOC" "$C_RESET"
+            printf '%bdir%b' "$C_TYPE" "$C_RESET"
         else
             case "$dz_perms" in
-                *440|*444) printf '%bready%b' "$C_OK" "$C_RESET" ;;
-                *)         printf '%bWARN%b' "$C_WARN" "$C_RESET" ;;
+            *440|*444) printf '%bfile%b' "$C_TYPE" "$C_RESET" ;;
+            *) printf '%bWARN%b' "$C_WARN" "$C_RESET" ;;
             esac
-        fi
+        fi 
         row=$(( row + 1 ))
     done
 
     # Quarantine gets its own 8-row budget: a full drop zone must not
     # swallow the quarantined items.
     dz_shown=0
-    for f in "$QUARANTINE_DIR"/*; do
+    for f in "$QUARANTINE_DIR"/* "$QUARANTINE_DIR"/.*; do
+        case "$f" in
+        "$QUARANTINE_DIR"/.|"$QUARANTINE_DIR"/..) continue ;;
+        esac 
         [ -f "$f" ] || continue
         [ "$dz_shown" -ge 8 ] && continue
         dz_shown=$(( dz_shown + 1 ))

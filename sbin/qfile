@@ -51,8 +51,13 @@ WEB_BMS="h:/home/userweb;d:/home/drop;D:/home/userweb/Downloads"
 MAIL_BMS="h:/home/usermail;d:/home/drop;D:/home/usermail/Downloads"
 
 # -- Pane 0: top-left, qcontrol -----------------------
+# qcontrol is started one second late: the terminal is resized to 3/4
+# just after the session is created, and starting qcontrol during that
+# resize storm makes it redraw on every SIGWINCH. One second is enough
+# for the resize and the attach to settle; qcontrol then renders once,
+# at the final size.
 tmux new-session -d -s "$SESSION" -n 'bridge' \
-    "/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qcontrol"
+"sleep 1; exec /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qcontrol" 
 tmux select-pane -t "$SESSION:0.0" -T "qcontrol"
 
 # -- Pane 1: top-right, userdoc (green) ---------------------
@@ -130,6 +135,22 @@ cleanup() {
     exit 0
 }
 trap cleanup EXIT INT TERM HUP
+
+# -- Resize the terminal to 2/3 of the screen -----------------
+# qfile fills the terminal; a 2/3 window leaves the desktop usable
+# around it. WINDOWID is set by xterm (and most X terminals); xdotool
+# is optional -- if either is missing, keep the current size.
+if [ -n "${WINDOWID:-}" ] && command -v xdotool >/dev/null 2>&1; then
+    eval "$(xdotool getdisplaygeometry --shell 2>/dev/null)" || true
+    if [ -n "${WIDTH:-}" ] && [ -n "${HEIGHT:-}" ]; then
+        W=$((WIDTH * 3 / 4))
+        H=$((HEIGHT * 3 / 4))
+        X=$(( (WIDTH - W) / 2 ))
+        Y=$(( (HEIGHT - H) / 2 ))
+        xdotool windowsize "$WINDOWID" "$W" "$H" 2>/dev/null || true
+        xdotool windowmove "$WINDOWID" "$X" "$Y" 2>/dev/null || true
+    fi
+fi
 
 # -- Focus the conductor pane before attaching ---------------
 tmux select-pane -t "$SESSION:0.0"

@@ -42,13 +42,30 @@ create_directories() {
     run chown root:"$GROUP" "$HOME_DROP"
     run chmod 2770 "$HOME_DROP"
 
+    # Drop-zone subdirectories (INSTALL_MANUAL.md 2).
+    #
+    # Exports: SGID root:drop. The exporting domain writes its archive
+    # here; the importing domain (userdoc) reads it. 2770 is the mode
+    # enforce_drop enforces, so installer and enforcer agree.
+    for d in userweb_export usermail_export; do
+        run mkdir -p "$HOME_DROP/$d"
+        run chown root:"$GROUP" "$HOME_DROP/$d"
+        run chmod 2770 "$HOME_DROP/$d"
+    done
+
+    # Quarantine: operator-only, root:wheel 750. Domains must not read
+    # the tickets; the conductor is not root and must not read them
+    # either. enforce_drop creates it on demand too, with the same
+    # ownership -- this is the install-time half of the same rule.
+    run mkdir -p "$HOME_DROP/_quarantine"
+    run chown root:wheel "$HOME_DROP/_quarantine"
+    run chmod 750 "$HOME_DROP/_quarantine"
+
     # Configuration and state directories.
     run chown root:wheel "$ETC_DIR"
     run chmod 755 "$ETC_DIR"
-
     run chown root:wheel "$INSTALL_DIR"
     run chmod 755 "$INSTALL_DIR"
-
     run chown root:wheel "$LOG_DIR"
     run chmod 750 "$LOG_DIR"
 
@@ -63,17 +80,7 @@ create_directories() {
     done
 
     # Per-domain working directories.
-    #
-    # userweb/www: the default export source. The export_www_to_drop
-    # script reads from here (or from [sync] www_src in local.conf).
-    # Without it, the default export fails.
-    #
-    # userdoc/Sync: the default import destination, and Syncthing's
-    # sync folder. The import scripts create it if missing, but
-    # creating it here means the first import lands in the right
-    # place without a surprise.
     create_working_dirs
-
     success "directory tree and permissions applied"
 }
 
@@ -81,7 +88,8 @@ create_directories() {
 # import scripts use by default. Both are overridable in
 # local.conf ([sync] www_src, [sync] dst); these are the defaults.
 create_working_dirs() {
-    # userweb/www
+    # userweb/www: the default export source. The export_www_to_drop
+    # script reads from here (or from [sync] www_src in local.conf).
     h="$(home_of userweb)"
     if [ -n "$h" ] && [ -d "$h" ]; then
         run mkdir -p "${h}/www"
@@ -91,17 +99,39 @@ create_working_dirs() {
         warn "userweb home not found; skipping ${h}/www"
     fi
 
-    # userdoc/Sync
+    # userdoc/Sync: the default import destination, and Syncthing's
+    # sync folder. 2770 matches enforce_sync, which enforces this mode
+    # on every directory in the sync tree -- including this one.
     h="$(home_of userdoc)"
     if [ -n "$h" ] && [ -d "$h" ]; then
         run mkdir -p "${h}/Sync"
         run chown userdoc:userdoc "${h}/Sync"
-        # 2770 matches enforce_sync, which enforces this mode on every
-        # directory in the sync tree -- including this one.
-        run chmod 2700 "${h}/Sync"
+        run chmod 2770 "${h}/Sync"
     else
         warn "userdoc home not found; skipping ${h}/Sync"
     fi
+
+    # usermail/.mail: the default mail export source. A missing source
+    # is a hard error for export_mail_to_drop; an empty one is fine.
+    h="$(home_of usermail)"
+    if [ -n "$h" ] && [ -d "$h" ]; then
+        run mkdir -p "${h}/.mail"
+        run chown usermail:usermail "${h}/.mail"
+        run chmod 700 "${h}/.mail"
+    else
+        warn "usermail home not found; skipping ${h}/.mail"
+    fi
+
+    # Downloads in every domain home. qattach imports into the
+    # DESTINATION's ~/Downloads; without it, qimport has nowhere to
+    # write. The conductor's is created too: it is not a qattach
+    # destination today, but a missing Downloads should not depend on
+    # which account is used.
+    for u in $USER_LIST; do
+        h="$(home_of "$u")"
+        [ -n "$h" ] && [ -d "$h" ] || continue
+        run mkdir -p "${h}/Downloads"
+        run chown "$u":"$u" "${h}/Downloads"
+        run chmod 700 "${h}/Downloads"
+    done
 }
-
-

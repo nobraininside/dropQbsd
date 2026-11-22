@@ -1,0 +1,48 @@
+# ==========================================================
+# dropQbsd -- integrity_setup
+#
+# Copy-paste commands to configure signify(1) integrity
+# verification after an install or an update.
+#
+# This file is a TEMPLATE, not a script. It is printed by:
+#   - installer/lib/integrity   (setup_integrity)
+#   - installer/lib/checklist   (print_manual_steps)
+#   - admin/sign_filelist       (when the private key is missing)
+#
+# Installed as /opt/dropQbsd/templates/integrity_setup by
+# copy_scripts. The live copy is read with:
+#   cat /opt/dropQbsd/templates/integrity_setup
+#
+# Permissions: 644 root:wheel
+#
+# Requirements:
+#   - signify(1)
+#       FreeBSD: pkg install signify
+#       OpenBSD: in the base system
+#   - sha256(1): in the base system on both platforms
+#
+# Notes:
+#   - Run the commands as root.
+#   - The private key is encrypted: a passphrase is asked once,
+#     at signing time. Keep the passphrase elsewhere.
+#   - Cron never needs the private key; verification is
+#     public-key only.
+#   - Re-run Sign after any change to a monitored file.
+#   - Do not put the private key in the repository or in a
+#     world-readable location.
+# ==========================================================
+
+# FreeBSD: install signify first. OpenBSD ships signify in the
+# base system; skip the pkg install line there.
+#
+# pkg install signify
+
+cd /opt/dropQbsd
+rm -f /root/dropQbsd.sec keys/dropQbsd.pub keys/dropQbsd_scripts.sha256.sig
+signify -G -e -p keys/dropQbsd.pub -s /root/dropQbsd.sec
+chmod 600 /root/dropQbsd.sec
+cp templates/filelist_for_etc /etc/dropQbsd/filelist
+chown root:wheel /etc/dropQbsd/filelist
+chmod 644 /etc/dropQbsd/filelist
+Sign
+Verify

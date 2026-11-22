@@ -32,30 +32,8 @@
 # ==========================================================
 
 LOCKDIR="/var/run/enforce_sync.lock"
-LOCK_TTL=900   # seconds. A cycle takes seconds; an older lock is orphaned.
-
-# Acquire non-blocking lock using mkdir (atomic on Unix).
-if ! mkdir "$LOCKDIR" 2>/dev/null; then
-    # Lock exists: either a cycle is genuinely running (skip -- correct)
-    # or the lock is ORPHANED (SIGKILL / reboot mid-cycle left it behind,
-    # and every subsequent run would exit silently forever -- the
-    # v0.2.0 failure mode). Tell them apart by age: no cycle lasts
-    # minutes, so an old lock is garbage. Remove and RE-ACQUIRE (the
-    # rmdir+mkdir pair stays race-free: two concurrent reclaimers,
-    # one wins the mkdir, the other exits).
-    LOCK_AGE=$(( $(date +%s) - $(stat -f '%m' "$LOCKDIR" 2>/dev/null || echo 0) ))
-    if [ "$LOCK_AGE" -gt "$LOCK_TTL" ]; then
-        rmdir "$LOCKDIR" 2>/dev/null
-        mkdir "$LOCKDIR" 2>/dev/null || exit 0
-    else
-        exit 0
-    fi
-fi
-trap 'rmdir "$LOCKDIR"' EXIT
-
-TARGET="/home/userdoc/Sync"
+LOCK_TTL=900   # seconds. Used only for locks without a pid file.
 LOG_FILE="/var/log/dropQbsd/enforce_sync.log"
-GRACE_MIN=2
 
 #-----------------------------------------------------------------------------
 # LOG FUNCTION
@@ -67,6 +45,56 @@ GRACE_MIN=2
 log_write() {
     printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$LOG_FILE"
 }
+
+# lock_acquire: the lock directory carries a 'pid' file. Age alone
+# cannot distinguish a killed cycle from a live but slow one, and
+# reclaiming a live process's lock would let two enforcers overlap.
+lock_acquire() {
+    if mkdir "$LOCKDIR" 2>/dev/null; then
+        printf '%s\n' "$$" > "$LOCKDIR/pid"
+        return 0
+    fi
+
+    LOCK_AGE=$(( $(date +%s) - $(stat -f '%m' "$LOCKDIR" 2>/dev/null || echo 0) ))
+    LOCK_PID=$(cat "$LOCKDIR/pid" 2>/dev/null) || LOCK_PID=""
+
+    # No pid file: a lock from an older version. Use the TTL.
+    if [ -z "$LOCK_PID" ]; then
+        [ "$LOCK_AGE" -le "$LOCK_TTL" ] && return 1
+        rm -f "$LOCKDIR/pid" 2>/dev/null
+        rmdir "$LOCKDIR" 2>/dev/null
+        mkdir "$LOCKDIR" 2>/dev/null || return 1
+        printf '%s\n' "$$" > "$LOCKDIR/pid"
+        return 0
+    fi
+
+    if kill -0 "$LOCK_PID" 2>/dev/null; then
+        # A live process holds the lock. Never reclaim: a slow cycle
+        # on a large tree is not an orphan, and a reused pid must be
+        # investigated, not overridden.
+        if ps -p "$LOCK_PID" -o args= 2>/dev/null | grep -q 'enforce_sync'; then
+            log_write "lock held by live pid $LOCK_PID (age ${LOCK_AGE}s); skipping"
+        else
+            log_write "lock pid $LOCK_PID is alive but not enforce_sync; investigate"
+        fi
+        return 1
+    fi
+
+    # Dead pid: orphaned. Reclaim at any age.
+    rm -f "$LOCKDIR/pid" 2>/dev/null
+    rmdir "$LOCKDIR" 2>/dev/null
+    mkdir "$LOCKDIR" 2>/dev/null || return 1
+    printf '%s\n' "$$" > "$LOCKDIR/pid"
+    return 0
+}
+
+if ! lock_acquire; then
+    exit 0
+fi
+trap 'rm -f "$LOCKDIR/pid"; rmdir "$LOCKDIR" 2>/dev/null' EXIT
+
+TARGET="/home/userdoc/Sync"
+GRACE_MIN=2
 
 #-----------------------------------------------------------------------------
 # EXISTENCE CHECK

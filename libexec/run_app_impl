@@ -1,114 +1,183 @@
 # ==========================================================
-#  dropQbsd -- run_app_impl
+# dropQbsd -- run_app_impl
 #
-#  Launches graphical applications as a domain user with
-#  X11 forwarding, and dispatches named conductor actions
-#  (scripts in sbin/ invoked as root, e.g. qattach).
+# Launches graphical applications as a domain user with X11
+# forwarding, and dispatches named conductor actions (scripts in
+# sbin/ invoked as root, e.g. qattach).
 #
-#  The main user (conductor) invokes this through a setuid
-#  wrapper (run_app) that escalates to root, keeping the
-#  conductor's doas.conf clean of any privilege.
+# The conductor invokes this through a setuid wrapper (run_app) that
+# escalates to root, keeping the conductor's doas.conf clean of any
+# privilege.
 #
-#  Three modes:
-#    Domain launch:   launch an application as a domain user,
-#                     with an isolated runtime directory under
-#                     /tmp, cleaned on exit.
-#    Disposable:      dedicated tmpfs mounted in RAM, destroyed
-#                     on exit. Nothing survives. Ideal for
-#                     browsers and untrusted files.
-#    Conductor action: run a named action (from
-#                     /etc/dropQbsd/conductor.conf) as root,
-#                     e.g. qattach (attach a file between
-#                     domains). The action receives its
-#                     argument plus the resolved display and
-#                     X11 cookie.
+# Three modes:
+#   Domain            launch an application as a domain user, in an
+#                     isolated runtime directory under /tmp, cleaned
+#                     on exit.
+#   Disposable        a dedicated tmpfs mounted in RAM, destroyed on
+#                     exit. Nothing survives. For browsers and
+#                     untrusted files.
+#   Conductor action  a named action from /etc/dropQbsd/conductor.conf,
+#                     run as root, e.g. qattach. The action receives
+#                     its argument plus the resolved display and X11
+#                     cookie.
 #
-#  Portable across OpenBSD and FreeBSD:
-#    - X11 cookie: $XAUTHORITY -> ~/.Xauthority -> xenodm
-#    - tmpfs: mfs (OpenBSD) vs tmpfs (FreeBSD)
+# Portable across OpenBSD and FreeBSD: the X11 cookie chain and the
+# tmpfs backend (mfs on OpenBSD, tmpfs on FreeBSD) differ per platform
+# and are resolved at runtime.
 #
-#  v0.4.0 changes:
-#    - Conductor actions: a named action in sbin/ (allowlisted
-#      in /etc/dropQbsd/conductor.conf) can be invoked as
-#      `run_app <action> <argument>`. The action runs as root,
-#      WITH the conductor actions resolved X11 cookie and the
-#      display, so it can launch pickers (Xdialog) as a domain.
-#      The dispatch runs BEFORE the --disposable parsing and the
-#      domain allowlist, because an action is neither.
-#    - AUTH_SRC is now resolved at the top, before dispatch, so
-#      conductor actions receive the cookie without a second
-#      resolution.
+# Invoking identity. run_app.c captures the caller's real uid with
+# getuid() BEFORE setuid(0) and passes it as the first argument.
+# setuid(0) sets real, effective and saved uid to 0 on both platforms,
+# so the argument is the only trusted source of the invoking identity.
+# The wrapper clears the environment; nothing else survives.
 #
-#  v0.3.0 changes:
-#    - /tmp xauth_* fallback now filtered by INVOKING uid
-#      (real uid preserved by the setuid wrapper), never by
-#      target user; symlinks excluded by -type f.
-#    - xenodm cookie selection picks the NEWEST A:0-* file
-#      (head -1 could pick another concurrent session's cookie).
-#    - eval echo ~user replaced by an /etc/passwd lookup.
-#    - ENV=/etc/dropQbsd/kshrc exported to the domain shell:
-#      interactive shells (! in nnn) load the dropQbsd chain
-#      instead of whatever /etc/profile left behind.
-#    - Unknown NNN_*/ENV overrides are now rejected instead of
-#      being silently consumed and dropped.
-#    - --disposable size is validated before reaching mount.
-#    - Cleanup guaranteed by traps (EXIT/INT/TERM/HUP), with
-#      rm -rf guards; SIGKILL orphans are collected at the
-#      next run_app invocation (orphan_gc).
-#    - All critical operations fail loudly instead of
-#      half-configuring a session.
+# Invoker check. The gate is setuid root and executable by every local
+# user. run_app_impl refuses any invoker that is not the conductor:
+# it resolves the dropQbsd_conductor GECOS marker to a uid and compares
+# it with the uid passed by the gate. The conductor is identified by
+# the marker, not by name, so a renamed conductor keeps working.
+# Exactly one account may carry the marker: zero means the system is
+# not installed, more than one means a leftover or a tampered passwd
+# file. Substring matches are rejected.
 #
-#  Paths:
-#    /opt/dropQbsd/bin/run_app       (setuid C wrapper)
-#    /opt/dropQbsd/libexec/run_app_impl  (this script)
+# X11 cookie. Candidates, in order: $XAUTHORITY; the newest non-empty
+# A:0-* file in the xenodm auth directory; the invoking user's
+# ~/.Xauthority; then /tmp/xauth_* owned by the INVOKING user. Every
+# candidate must be non-empty (-s): an empty cookie file produces
+# "Authorization required, but no authorization protocol specified"
+# in every X client.
+# - $XAUTHORITY is caller-controlled, so it must be a regular file
+#   owned by the INVOKING user, with symlinks resolved: stat(1)
+#   defaults to lstat, and a symlink to /root/... would otherwise
+#   pass with the symlink's owner. This closes a root-readable file
+#   copy into a domain's runtime directory.
+# - The newest A:0-* file is chosen on purpose: head -1 could pick a
+#   cookie left behind by another concurrent session.
+# - The /tmp fallback is filtered by the invoking real uid, never by
+#   the target user, and symlinks are excluded with -type f.
 #
-#  Permissions:
-#    run_app:      4755 root:wheel
-#    run_app_impl: 0755 root:wheel
+# Environment handed to the domain shell. ENV=/etc/dropQbsd/kshrc is
+# exported so interactive shells (! in nnn) load the dropQbsd chain
+# instead of whatever /etc/profile left behind. The invoking user's
+# home comes from /etc/passwd, never from `eval echo ~user`: tilde
+# expansion is shell-specific and eval is unnecessary surface. Unknown
+# NNN_*/ENV overrides are rejected, not silently consumed and dropped.
 #
-#  IMPORTANT: This script is invoked by the run_app gate:
-#    /opt/dropQbsd/bin/run_app <target_user> <command> [args...]
-#    OR
-#    /opt/dropQbsd/bin/run_app <action> <argument>
-#    OR
-#    Run <target_user> <command> [args...]
-#    OR
-#    Qattach <source-domain>
-#  Do NOT run it directly.
+# Dispatch order. A named action from conductor.conf is dispatched
+# BEFORE --disposable is parsed and BEFORE the domain allowlist,
+# because an action is neither. The action runs as root with the
+# resolved display and X11 cookie, so it can launch a picker (Xdialog)
+# as a domain -- which is why AUTH_SRC is resolved at the top, before
+# dispatch. A --disposable size is validated before it reaches mount.
+#
+# su -l and -c. su processes options only BEFORE the login name;
+# everything after the login name is passed to the login shell. The
+# -c in the launch line is therefore the shell's -c, not su's (su's
+# -c selects a login class). Do not move it before the login name.
+# The first argument after -c becomes $0 inside the shell; the '--'
+# is that $0, and the following arguments are $1..$N.
+#
+# Cleanup. Traps on EXIT/INT/TERM/HUP are installed immediately after
+# the runtime directory is created, before the tmpfs is mounted, and
+# unmount the tmpfs and remove the runtime directory. rm -rf guards
+# refuse an empty or unexpected path. SIGKILL cannot be trapped, so
+# orphan_gc collects surviving directories older than 24 h at the next
+# invocation -- accumulation is structurally impossible.
+#
+# Every critical operation fails loudly: a session is never
+# half-configured and then handed over.
+#
+# Paths:
+#   /opt/dropQbsd/bin/run_app          (setuid C wrapper)
+#   /opt/dropQbsd/libexec/run_app_impl (this script)
+#
+# Permissions:
+#   run_app:       4755 root:wheel
+#   run_app_impl:  0700 root:wheel
+#
+# IMPORTANT: This script is invoked by the run_app gate:
+#   /opt/dropQbsd/bin/run_app <target_user> <command> [args...]
+#   /opt/dropQbsd/bin/run_app <action> <argument>
+#   Run <target_user> <command> [args...]
+#   Qattach <source-domain>
+# Do NOT run it directly.
 # ==========================================================
-
 #-----------------------------------------------------------------------------
 # CONFIGURATION
 #-----------------------------------------------------------------------------
 AUTH_DIR="/etc/X11/xenodm/authdir/authfiles"
 DEFAULT_DISPOSABLE_SIZE="500M"
 ENV_FILE="/etc/dropQbsd/kshrc"
-ORPHAN_MAX_AGE=86400        # seconds: 24h, then collected by orphan_gc
-
+ORPHAN_MAX_AGE=86400    # seconds: 24h, then collected by orphan_gc
+CONDUCTOR_CONF="/etc/dropQbsd/conductor.conf"
+SBIN_DIR="/opt/dropQbsd/sbin"
+WRAPPER="/opt/dropQbsd/libexec/wrapper"
+#-----------------------------------------------------------------------------
+# RUN AS ROOT ONLY
+#-----------------------------------------------------------------------------
+# The gate is the only supported entry point: it escalates to root and
+# passes the invoking uid. Invoked directly by a user, this script can do
+# nothing privileged, and every failure would be a confusing one. Refuse
+# early. umask 077 also keeps the action log private from creation.
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Error: run_app_impl must run as root, through run_app." >&2
+    exit 1
+fi
+umask 077
 #-----------------------------------------------------------------------------
 # INVOKING USER (passed as $1 by run_app.c)
 #-----------------------------------------------------------------------------
 # run_app.c captures the conductor's real uid before setuid(0) and
 # passes it as the first argument. Passing it explicitly is portable:
-# on Linux setuid(0) zeroes ruid, on OpenBSD it does not. The wrapper
-# cleared the environment, so this argument is the only trusted source
-# of the invoking identity.
+# setuid(0) sets real, effective and saved uid to 0 on both platforms,
+# so the argument is the only trusted source of the invoking identity.
 INVOKE_UID="$1"
 shift
-
 case "$INVOKE_UID" in
     ''|*[!0-9]*)
         echo "Error: invalid INVOKE_UID '$INVOKE_UID'" >&2
         exit 1
         ;;
 esac
-
+#-----------------------------------------------------------------------------
+# INVOKER CHECK: the conductor only
+#-----------------------------------------------------------------------------
+# The gate is setuid root and executable by every local user. Without this
+# check any domain account could run `run_app userweb <command>` and launch
+# an application in another domain -- crossing the boundary the model
+# exists to enforce, from the exposed side (userweb) to the trusted one
+# (userdoc).
+#
+# The conductor is identified by its GECOS marker, not by name, so a
+# renamed conductor keeps working. The marker is written by the installer
+# and checked by the updater; a system without one cannot run the gate.
+#
+# /etc/passwd, not getent: the domains and the conductor are local
+# accounts, and a getent lookup can block on an unreachable NSS source.
+# Exact match, not index(): "xdropQbsd_conductor" is not the marker.
+# Exactly one match: zero is an uninstalled system, more than one is a
+# leftover or a tampered passwd file.
+CONDUCTOR_UID="$(
+    awk -F: '
+        $5 == "dropQbsd_conductor" { print $3; found++ }
+        END { if (found != 1) exit 1 }
+    ' /etc/passwd
+)" || {
+    echo "Error: expected exactly one account with the dropQbsd_conductor marker." >&2
+    echo " Run the installer, or mark the accounts (INSTALL_MANUAL.md 1)." >&2
+    exit 1
+}
+if [ "$INVOKE_UID" != "$CONDUCTOR_UID" ]; then
+    echo "Error: run_app may only be invoked by the conductor account." >&2
+    exit 1
+fi
 #-----------------------------------------------------------------------------
 # LOCATE X11 AUTHENTICATION COOKIE (portable across display managers)
 #-----------------------------------------------------------------------------
 # Precedence:
 #   1. $XAUTHORITY -- preserved by the setuid wrapper's whitelist
-#      (set by sddm, gdm, lightdm)
+#      (set by sddm, gdm, lightdm). Caller-controlled: it must be a
+#      regular file owned by the INVOKING user, with symlinks resolved.
 #   2. xenodm auth dir -- OpenBSD-specific (A:0-<random>), NEWEST
 #      non-empty file; run_app_impl reads it as root
 #   3. ~/.Xauthority of the INVOKING user (non-empty)
@@ -120,54 +189,55 @@ esac
 # produces "Authorization required, but no authorization protocol
 # specified" in every X client.
 find_xauth() {
-    typeset xa="" invoker_home
-
+    typeset xa=""
+    typeset invoker_home cand
     # 1. $XAUTHORITY -- only if the wrapper preserves it (whitelist).
-    #    Must be non-empty: an empty file means "no cookie here".
-    if [[ -n "$XAUTHORITY" && -s "$XAUTHORITY" ]]; then
-        xa="$XAUTHORITY"
+    # Must be a regular file owned by the invoker. find -L follows
+    # symlinks, so a symlink to /root/dropQbsd.sec is rejected: the
+    # target is root-owned, not invoker-owned. stat(1) alone would
+    # report the symlink's owner and let it through.
+    if [ -n "$XAUTHORITY" ] && [ -f "$XAUTHORITY" ] && [ -s "$XAUTHORITY" ]; then
+        if [ -n "$(find -L "$XAUTHORITY" -maxdepth 0 -uid "$INVOKE_UID" -print 2>/dev/null)" ]; then
+            xa="$XAUTHORITY"
+        fi
     fi
-
     # 2. xenodm auth dir -- root-readable (run_app_impl is root),
-    #    user-inaccessible. Newest A:0-* file; non-empty required.
-    #    Preferred over the invoker's home file: xenodm keeps the
-    #    LIVE session cookie here, while ~/.Xauthority may be
-    #    empty or stale depending on the DM configuration.
-    if [[ -z "$xa" && -d "$AUTH_DIR" ]]; then
-        typeset cand
+    # user-inaccessible. Newest A:0-* file; non-empty required.
+    # Preferred over the invoker's home file: xenodm keeps the
+    # LIVE session cookie here, while ~/.Xauthority may be
+    # empty or stale depending on the DM configuration.
+    if [ -z "$xa" ] && [ -d "$AUTH_DIR" ]; then
         cand=$(find "$AUTH_DIR" -maxdepth 1 -name 'A:0-*' -type f \
-             -exec stat -f '%m %N' {} + 2>/dev/null \
-             | sort -rn | head -1 | cut -d' ' -f2-)
-        [[ -n "$cand" && -s "$cand" ]] && xa="$cand"
+            -exec stat -f '%m %N' {} + 2>/dev/null \
+            | sort -rn | head -1 | cut -d' ' -f2-)
+        if [ -n "$cand" ] && [ -s "$cand" ]; then
+            xa="$cand"
+        fi
     fi
-
     # 3. ~/.Xauthority of the INVOKING user (real uid), non-empty.
-    #    Fallback: some DMs keep the live cookie here.
-    if [[ -z "$xa" ]]; then
+    # Fallback: some DMs keep the live cookie here.
+    if [ -z "$xa" ]; then
         invoker_home=$(awk -F: -v u="$INVOKE_UID" \
             '$3 == u {print $6; exit}' /etc/passwd 2>/dev/null)
-        if [[ -n "$invoker_home" && -s "$invoker_home/.Xauthority" ]]; then
+        if [ -n "$invoker_home" ] && [ -s "$invoker_home/.Xauthority" ]; then
             xa="$invoker_home/.Xauthority"
         fi
     fi
-
     # 4. FreeBSD sddm/gdm fallback: cookie in /tmp/xauth_*
-    #    Filtered by INVOKING uid, non-empty required.
-    #    Never trust another user's file.
-    if [[ -z "$xa" ]]; then
-        typeset cand
+    # Filtered by INVOKING uid, non-empty required.
+    # Never trust another user's file.
+    if [ -z "$xa" ]; then
         cand=$(find /tmp -maxdepth 1 -name 'xauth_*' -type f \
             -uid "$INVOKE_UID" \
             -exec stat -f '%m %N' {} + 2>/dev/null \
             | sort -rn | head -1 | cut -d' ' -f2-)
-        [[ -n "$cand" && -s "$cand" ]] && xa="$cand"
+        if [ -n "$cand" ] && [ -s "$cand" ]; then
+            xa="$cand"
+        fi
     fi
-
     printf '%s' "$xa"
 }
-
 AUTH_SRC=$(find_xauth)
-
 #-----------------------------------------------------------------------------
 # CONDUCTOR ACTION DISPATCH
 #-----------------------------------------------------------------------------
@@ -181,94 +251,94 @@ AUTH_SRC=$(find_xauth)
 # allowlist: conductor actions take no flags, no overrides, no
 # target user. They receive the resolved X11 cookie (AUTH_SRC)
 # and the display, so the action can launch a picker as a domain.
-CONDUCTOR_CONF="/etc/dropQbsd/conductor.conf"
-SBIN_DIR="/opt/dropQbsd/sbin"
-WRAPPER="/opt/dropQbsd/libexec/wrapper"
-
+is_domain() {
+    case "$1" in
+        userweb|usermail|userdoc) return 0 ;;
+    esac
+    return 1
+}
 case "$1" in
-    userweb|usermail|userdoc)
-        ;;   # domain launch -- fall through to existing logic
-    --*)
-        ;;   # a domain flag -- fall through to existing logic
     '')
         echo "Error: no target user or action specified." >&2
         exit 1
         ;;
+    --*)
+        ;;  # a domain flag -- fall through to disposable parsing
     *)
-        if [ -f "$CONDUCTOR_CONF" ] \
-           && grep -v '^[[:space:]]*#' "$CONDUCTOR_CONF" \
-              | grep -v '^[[:space:]]*$' \
-              | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
-              | grep -qx -- "$1"; then
-
-            ACTION="$1"
-            shift
-
-            if [ $# -ne 1 ]; then
-                echo "Error: conductor action '$ACTION' requires exactly one argument." >&2
-                exit 1
+        if ! is_domain "$1"; then
+            if [ -f "$CONDUCTOR_CONF" ] \
+                && grep -v '^[[:space:]]*#' "$CONDUCTOR_CONF" \
+                | grep -v '^[[:space:]]*$' \
+                | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+                | grep -qx -- "$1"; then
+                ACTION="$1"
+                shift
+                if [ $# -ne 1 ]; then
+                    echo "Error: conductor action '$ACTION' requires exactly one argument." >&2
+                    exit 1
+                fi
+                # No path components: an action is a bare name in sbin/.
+                # The prefix glob below is not enough on its own: it
+                # accepts "sbin/../../bin/sh".
+                case "$ACTION" in
+                    */*|.*)
+                        echo "Error: invalid conductor action '$ACTION'." >&2
+                        exit 1
+                        ;;
+                esac
+                SCRIPT="$SBIN_DIR/$ACTION"
+                if [ ! -f "$SCRIPT" ]; then
+                    echo "Error: conductor action '$ACTION' has no script." >&2
+                    exit 1
+                fi
+                case "$SCRIPT" in
+                    "$SBIN_DIR"/*) ;;
+                    *) echo "Error: refusing action path '$SCRIPT'." >&2; exit 1 ;;
+                esac
+                if [ -z "$AUTH_SRC" ]; then
+                    echo "Error: No X11 authentication file found." >&2
+                    exit 1
+                fi
+                {
+                    printf '%s conductor action: %s (arg %s, invoker uid %s)\n' \
+                        "$(date '+%Y-%m-%d %H:%M:%S')" "$ACTION" "$1" "$INVOKE_UID" \
+                        >> /var/log/dropQbsd/run_app_impl.log
+                } 2>/dev/null || true
+                exec "$WRAPPER" "$SCRIPT" "$1" "${DISPLAY:-:0.0}" "$AUTH_SRC"
             fi
-
-            SCRIPT="$SBIN_DIR/$ACTION"
-            if [ ! -f "$SCRIPT" ]; then
-                echo "Error: conductor action '$ACTION' has no script." >&2
-                exit 1
-            fi
-
-            case "$SCRIPT" in
-                "$SBIN_DIR"/*) ;;
-                *) echo "Error: refusing action path '$SCRIPT'." >&2; exit 1 ;;
-            esac
-
-            if [ -z "$AUTH_SRC" ]; then
-                echo "Error: No X11 authentication file found." >&2
-                exit 1
-            fi
-
-            printf '%s conductor action: %s (arg %s, invoker uid %s)\n' \
-                "$(date '+%Y-%m-%d %H:%M:%S')" "$ACTION" "$1" "$INVOKE_UID" \
-                >> /var/log/dropQbsd/run_app_impl.log 2>/dev/null || true
-
-            exec "$WRAPPER" "$SCRIPT" "$1" "${DISPLAY:-:0.0}" "$AUTH_SRC"
+            echo "Error: '$1' is not a valid domain user." >&2
+            exit 1
         fi
-
-        echo "Error: '$1' is not a valid domain user." >&2
-        exit 1
         ;;
 esac
-
 #-----------------------------------------------------------------------------
 # PARSE OPTIONAL --disposable FLAG
 #-----------------------------------------------------------------------------
 DISPOSABLE=0
 DISPOSABLE_SIZE="$DEFAULT_DISPOSABLE_SIZE"
-
-if [[ "$1" == "--disposable" ]]; then
+if [ "$1" = "--disposable" ]; then
     DISPOSABLE=1
     shift
     case "$1" in
-        [0-9]*[MG])
+        [0-9]*[MGmg])
             DISPOSABLE_SIZE="$1"
             shift
             ;;
-        *M|*G)
+        [0-9]*)
             echo "Error: invalid size '$1' (expected e.g. 500M, 1G)." >&2
             exit 1
             ;;
     esac
 fi
-
 #-----------------------------------------------------------------------------
 # ARGUMENT CHECK
 #-----------------------------------------------------------------------------
-if [[ $# -lt 2 ]]; then
-    echo "Usage: $(basename $0) <invoke_uid> [--disposable [size]] <target_user> [VAR=value ...] <command> [args...]" >&2
+if [ $# -lt 2 ]; then
+    echo "Usage: $(basename "$0") <invoke_uid> [--disposable [size]] <target_user>[VAR=value ...] <command> [args...]" >&2
     exit 1
 fi
-
 TARGET_USER=$1
 shift
-
 #-----------------------------------------------------------------------------
 # PARSE ENVIRONMENT OVERRIDES (passed as arguments)
 #-----------------------------------------------------------------------------
@@ -279,7 +349,6 @@ NNN_COLORS=""
 NNN_PLUG=""
 NNN_BMS=""
 ENV_EXPORT="$ENV_FILE"
-
 while [[ "$1" == NNN_* || "$1" == ENV=* ]]; do
     case "$1" in
         NNN_COLORS=*) NNN_COLORS="${1#NNN_COLORS=}" ;;
@@ -293,38 +362,32 @@ while [[ "$1" == NNN_* || "$1" == ENV=* ]]; do
     esac
     shift
 done
-
 #-----------------------------------------------------------------------------
 # REQUIRE A COMMAND AFTER THE OVERRIDES
 #-----------------------------------------------------------------------------
-if [[ $# -lt 1 ]]; then
+if [ $# -lt 1 ]; then
     echo "Error: No command specified after overrides." >&2
     exit 1
 fi
-
 APP_CMD=$1
 shift
-
+if [ -z "$APP_CMD" ]; then
+    echo "Error: empty command." >&2
+    exit 1
+fi
 #-----------------------------------------------------------------------------
-# VERIFY TARGET USER EXISTS
+# ALLOWLIST: ONLY DOMAIN USERS PERMITTED
 #-----------------------------------------------------------------------------
+# Checked before id(1): the target is one of three fixed names, so a
+# stray argument never reaches id as an option or a lookup.
+if ! is_domain "$TARGET_USER"; then
+    echo "Error: '$TARGET_USER' is not a valid domain user." >&2
+    exit 1
+fi
 if ! id "$TARGET_USER" >/dev/null 2>&1; then
     echo "Error: User '$TARGET_USER' does not exist." >&2
     exit 1
 fi
-
-#-----------------------------------------------------------------------------
-# ALLOWLIST: ONLY DOMAIN USERS PERMITTED
-#-----------------------------------------------------------------------------
-case "$TARGET_USER" in
-    userweb|usermail|userdoc)
-        ;;
-    *)
-        echo "Error: '$TARGET_USER' is not a valid domain user." >&2
-        exit 1
-        ;;
-esac
-
 #-----------------------------------------------------------------------------
 # ORPHAN GARBAGE COLLECTION
 #-----------------------------------------------------------------------------
@@ -336,32 +399,32 @@ orphan_gc() {
     typeset d age now
     now=$(date +%s)
     for d in /tmp/disposable.* /tmp/runtime.*; do
-        [[ -e "$d" ]] || continue
+        [ -e "$d" ] || continue
         age=$(( now - $(stat -f '%m' "$d" 2>/dev/null || echo "$now") ))
-        [[ "$age" -lt "$ORPHAN_MAX_AGE" ]] && continue
-
+        [ "$age" -lt "$ORPHAN_MAX_AGE" ] && continue
         # If still mounted (a SIGKILLed disposable session), unmount
         # first. If unmount fails, skip this run: the directory stays
         # for the next run_app. Never rm -rf a live mount point.
-        if mount | grep -q " $d "; then
+        # -F: the dots in the path are not a regex.
+        if mount | grep -Fq " $d "; then
             umount "$d" 2>/dev/null || continue
         fi
         rm -rf "$d" 2>/dev/null
     done
 }
-
 orphan_gc
-
+#-----------------------------------------------------------------------------
+# X11 COOKIE REQUIRED (domain path)
+#-----------------------------------------------------------------------------
 # AUTH_SRC was resolved near the top (before the conductor dispatch),
 # so conductor actions could receive it. This check applies to the
 # domain path: a domain launch with no usable cookie cannot proceed.
-if [[ -z "$AUTH_SRC" ]]; then
+if [ -z "$AUTH_SRC" ]; then
     echo "Error: No X11 authentication file found." >&2
-    echo "       Checked: \$XAUTHORITY, invoking user's ~/.Xauthority," >&2
-    echo "                $AUTH_DIR, /tmp/xauth_* (uid $INVOKE_UID)" >&2
+    echo " Checked: \$XAUTHORITY, invoking user's ~/.Xauthority," >&2
+    echo " $AUTH_DIR, /tmp/xauth_* (uid $INVOKE_UID)" >&2
     exit 1
 fi
-
 #-----------------------------------------------------------------------------
 # MOUNT TMPFS (portable across OpenBSD and FreeBSD)
 #-----------------------------------------------------------------------------
@@ -369,140 +432,156 @@ mount_tmpfs() {
     typeset size="$1"
     typeset dir="$2"
     typeset os
-
     os=$(uname -s)
     if [ "$os" = "FreeBSD" ]; then
-        # FreeBSD tmpfs does not accept the nodev mount option.
-        # The tmpfs lives in RAM and is 0700-owned by the target
-        # user; device nodes cannot be created there by an
-        # unprivileged process anyway.
+        # FreeBSD tmpfs: size is a tmpfs-specific option. nodev is a
+        # generic VFS flag; verify it on your release and add it here
+        # if mount(8) accepts it.
         mount -t tmpfs -o rw,nosuid,size="$size" tmpfs "$dir"
     else
         mount -t mfs -o rw,nodev,nosuid,-s="$size" swap "$dir"
     fi
 }
-
+#-----------------------------------------------------------------------------
+# CLEANUP (trapped: also runs on INT/TERM/HUP, not only on normal exit)
+#-----------------------------------------------------------------------------
+# Guards: never rm -rf an empty or unexpected path. RUNDIR always comes
+# from mktemp and must match the expected shape: the prefix plus exactly
+# six characters, no slashes. A plain prefix match would accept
+# /tmp/runtime.x/../../etc.
+cleanup() {
+    case "$RUNDIR" in
+        /tmp/runtime.??????|/tmp/disposable.??????) ;;
+        *) return 0 ;;
+    esac
+    if [ "$DISPOSABLE" -eq 1 ]; then
+        # Unmount first; only remove the mount point if the unmount
+        # succeeded, or if nothing is mounted there (mount failure).
+        if mount | grep -Fq " $RUNDIR "; then
+            umount "$RUNDIR" 2>/dev/null || return 0
+        fi
+        rmdir "$RUNDIR" 2>/dev/null
+    else
+        rm -rf "$RUNDIR" 2>/dev/null
+    fi
+}
 #-----------------------------------------------------------------------------
 # SET UP RUNTIME DIRECTORY
 #-----------------------------------------------------------------------------
-umask 077
-
-if [[ "$DISPOSABLE" -eq 1 ]]; then
+if [ "$DISPOSABLE" -eq 1 ]; then
     RUNDIR=$(mktemp -d /tmp/disposable.XXXXXX) || {
         echo "Error: cannot create runtime directory." >&2
         exit 1
     }
-    if ! mount_tmpfs "$DISPOSABLE_SIZE" "$RUNDIR"; then
-        echo "Error: Failed to mount tmpfs ($DISPOSABLE_SIZE). Not enough RAM?" >&2
-        rmdir "$RUNDIR"
-        exit 1
-    fi
-    chown "$TARGET_USER" "$RUNDIR"
-    chmod 700 "$RUNDIR"
 else
     RUNDIR=$(mktemp -d /tmp/runtime.XXXXXX) || {
         echo "Error: cannot create runtime directory." >&2
         exit 1
     }
-    chown "$TARGET_USER" "$RUNDIR"
-    chmod 700 "$RUNDIR"
 fi
-
+# From here on every exit path cleans up: the traps are installed before
+# the tmpfs is mounted, not after the whole session is configured.
+trap cleanup EXIT
+trap 'cleanup; trap - EXIT; exit 129' HUP
+trap 'cleanup; trap - EXIT; exit 130' INT
+trap 'cleanup; trap - EXIT; exit 143' TERM
+if [ "$DISPOSABLE" -eq 1 ]; then
+    if ! mount_tmpfs "$DISPOSABLE_SIZE" "$RUNDIR"; then
+        echo "Error: Failed to mount tmpfs ($DISPOSABLE_SIZE). Not enough RAM?" >&2
+        exit 1
+    fi
+fi
+chown "$TARGET_USER" "$RUNDIR" || {
+    echo "Error: cannot chown $RUNDIR to $TARGET_USER." >&2
+    exit 1
+}
+chmod 700 "$RUNDIR" || {
+    echo "Error: cannot chmod 700 $RUNDIR." >&2
+    exit 1
+}
 #-----------------------------------------------------------------------------
 # COPY AND RESTRICT X11 COOKIE
 #-----------------------------------------------------------------------------
 AUTH_FILE="$RUNDIR/.Xauthority"
 if ! cp "$AUTH_SRC" "$AUTH_FILE"; then
     echo "Error: cannot copy X11 cookie." >&2
-    [[ "$DISPOSABLE" -eq 1 ]] && { umount "$RUNDIR" 2>/dev/null; rmdir "$RUNDIR" 2>/dev/null; }
-    rm -rf "${RUNDIR:?}" 2>/dev/null
     exit 1
 fi
 # The copied cookie must actually contain an entry: an empty .Xauthority
 # produces "Authorization required, but no authorization protocol
 # specified" in every X client, long after this script is gone.
-if [[ ! -s "$AUTH_FILE" ]]; then
+if [ ! -s "$AUTH_FILE" ]; then
     echo "Error: X11 cookie file '$AUTH_SRC' is empty." >&2
-    [[ "$DISPOSABLE" -eq 1 ]] && { umount "$RUNDIR" 2>/dev/null; rmdir "$RUNDIR" 2>/dev/null; }
-    rm -rf "${RUNDIR:?}" 2>/dev/null
     exit 1
 fi
-chown "$TARGET_USER" "$AUTH_FILE"
-chmod 600 "$AUTH_FILE"
-
+chown "$TARGET_USER" "$AUTH_FILE" || {
+    echo "Error: cannot chown $AUTH_FILE." >&2
+    exit 1
+}
+chmod 600 "$AUTH_FILE" || {
+    echo "Error: cannot chmod 600 $AUTH_FILE." >&2
+    exit 1
+}
 #-----------------------------------------------------------------------------
 # DETERMINE APPLICATION HOME (no eval: passwd lookup)
 #-----------------------------------------------------------------------------
-if [[ "$DISPOSABLE" -eq 1 ]]; then
+if [ "$DISPOSABLE" -eq 1 ]; then
     APP_HOME="$RUNDIR"
 else
     APP_HOME=$(awk -F: -v u="$TARGET_USER" '$1 == u {print $6; exit}' /etc/passwd)
-    if [[ -z "$APP_HOME" ]]; then
+    if [ -z "$APP_HOME" ]; then
         echo "Error: cannot resolve home directory for $TARGET_USER." >&2
-        rm -rf "${RUNDIR:?}" 2>/dev/null
         exit 1
     fi
 fi
-
 #-----------------------------------------------------------------------------
 # DOWNLOADS BRIDGE (disposable mode only)
 #-----------------------------------------------------------------------------
-if [[ "$DISPOSABLE" -eq 1 ]]; then
+if [ "$DISPOSABLE" -eq 1 ]; then
     REAL_DOWNLOADS="/home/$TARGET_USER/Downloads"
-    if ! mkdir -p "$REAL_DOWNLOADS"; then
-        echo "Error: cannot create $REAL_DOWNLOADS." >&2
-        umount "$RUNDIR" 2>/dev/null
-        rmdir "$RUNDIR" 2>/dev/null
+    # Only create and set the mode if the directory is new: an existing
+    # Downloads keeps the permissions its owner chose.
+    if [ ! -d "$REAL_DOWNLOADS" ]; then
+        mkdir -p "$REAL_DOWNLOADS" || {
+            echo "Error: cannot create $REAL_DOWNLOADS." >&2
+            exit 1
+        }
+        chown "$TARGET_USER" "$REAL_DOWNLOADS" || {
+            echo "Error: cannot chown $REAL_DOWNLOADS." >&2
+            exit 1
+        }
+        chmod 700 "$REAL_DOWNLOADS" || {
+            echo "Error: cannot chmod $REAL_DOWNLOADS." >&2
+            exit 1
+        }
+    fi
+    su -l "$TARGET_USER" -c "ln -sfn '$REAL_DOWNLOADS' '$RUNDIR/Downloads'" || {
+        echo "Error: cannot bridge $RUNDIR/Downloads." >&2
         exit 1
-    fi
-    chown "$TARGET_USER" "$REAL_DOWNLOADS"
-    chmod 700 "$REAL_DOWNLOADS"
-    su -l "$TARGET_USER" -c "ln -sfn '$REAL_DOWNLOADS' '$RUNDIR/Downloads'"
+    }
 fi
-
-#-----------------------------------------------------------------------------
-# CLEANUP (trapped: also runs on INT/TERM/HUP, not only on normal exit)
-#-----------------------------------------------------------------------------
-# Guards: never rm -rf an empty or unexpected path; RUNDIR always comes
-# from mktemp and must match the expected prefixes.
-cleanup() {
-    if [[ -n "$RUNDIR" && ( "$RUNDIR" == /tmp/runtime.* || "$RUNDIR" == /tmp/disposable.* ) ]]; then
-        if [[ "$DISPOSABLE" -eq 1 ]]; then
-            # Unmount first; only remove the mount point if the
-            # unmount succeeded. A failed unmount leaves the directory
-            # for orphan_gc to collect at the next run_app.
-            umount "$RUNDIR" 2>/dev/null && rmdir "$RUNDIR" 2>/dev/null
-        else
-            rm -rf "$RUNDIR" 2>/dev/null
-        fi
-    fi
-}
-trap cleanup EXIT
-trap 'cleanup; trap - EXIT; exit 129' HUP
-trap 'cleanup; trap - EXIT; exit 130' INT
-trap 'cleanup; trap - EXIT; exit 143' TERM
-
 #-----------------------------------------------------------------------------
 # LAUNCH APPLICATION AS TARGET USER
 #-----------------------------------------------------------------------------
-# Build the command line as a single string. Variables are expanded by
-# run_app_impl (ksh) BEFORE su sees them; $* joins all app arguments.
-# This avoids the positional-parameter incompatibility between ksh
-# (OpenBSD) and /bin/sh (FreeBSD) in su's -c handling.
-# The '--' separates su's own options from the positional parameters
-# that become $1..$8 inside the target shell. $0 is the '--' itself.
+# The command is passed as positional parameters, not joined into a
+# string: su hands everything after the login name to the login shell,
+# so the shell's -c receives the script and the arguments stay separate.
+# The first argument after -c becomes $0; '--' is that $0, and the
+# following arguments are $1..$8.
+#
+# su processes options only BEFORE the login name. The -c below is the
+# shell's -c, not su's (su's -c selects a login class). Do not move it.
 su -l "$TARGET_USER" -c '
-    export DISPLAY="$1"
-    export XAUTHORITY="$2"
-    export XDG_RUNTIME_DIR="$3"
-    export HOME="$4"
-    export NNN_COLORS="$5"
-    export NNN_PLUG="$6"
-    export NNN_BMS="$7"
-    export ENV="$8"
-    shift 8
-    exec "$@"
-' -- "$DISPLAY" "$AUTH_FILE" "$RUNDIR" "$APP_HOME" \
-     "$NNN_COLORS" "$NNN_PLUG" "$NNN_BMS" "$ENV_EXPORT" "$APP_CMD" "$@"
-
+export DISPLAY="$1"
+export XAUTHORITY="$2"
+export XDG_RUNTIME_DIR="$3"
+export HOME="$4"
+export NNN_COLORS="$5"
+export NNN_PLUG="$6"
+export NNN_BMS="$7"
+export ENV="$8"
+shift 8
+exec "$@"
+' -- "${DISPLAY:-:0.0}" "$AUTH_FILE" "$RUNDIR" "$APP_HOME" \
+"$NNN_COLORS" "$NNN_PLUG" "$NNN_BMS" "$ENV_EXPORT" "$APP_CMD" "$@"
 exit 0

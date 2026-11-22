@@ -26,7 +26,8 @@
 #    5  examples    desktop integration: mc, nnn, vi, GTK2, Xfe
 #    6  compile     rebuild run_app: static, root:wheel, mode 4755
 #    7  logins      append the resource classes, rebuild login.db
-#    8  firewall    generate, syntax-check, apply, populate tables
+#    8  firewall    enable pf at boot, generate, syntax-check, apply,
+#                   populate tables
 #    9  integrity   generate the key pair if absent, sign manifest
 #   10  verify      one verification pass, result read from the log
 #   11  cron        merge the dropQbsd entries into root's crontab
@@ -87,9 +88,27 @@ USER_LIST="$CONDUCTOR_USER userdoc usermail userweb"
 check_root
 check_os
 resolve_repo_root
+# Resolve the repository version before any step uses it.
+# A missing or empty VERSION is a hard error: the updater depends on it.
+REPO_VERSION="$(head -1 "${REPO_ROOT}/VERSION" | tr -d '[:space:]')"
+[ -n "$REPO_VERSION" ] || fail "VERSION file is missing or empty: ${REPO_ROOT}/VERSION"
 init_log
-
 banner
+
+# Pre-flight: at most one conductor marker. resolve_conductor_name
+# catches duplicates only when CONDUCTOR_USER is unset; with an
+# explicit override the duplicate would surface after the files are
+# written. Fail before the first action.
+n="$(count_conductor_markers)"
+if [ "$n" -gt 1 ]; then
+    fail "expected at most one dropQbsd_conductor marker, found $n"
+fi
+if [ "$n" -eq 1 ]; then
+    marked="$(awk -F: '$5 == "dropQbsd_conductor" { print $1; exit }' /etc/passwd)"
+    if [ "$marked" != "$CONDUCTOR_USER" ]; then
+        fail "the dropQbsd_conductor marker is on '$marked', not on '$CONDUCTOR_USER' -- set CONDUCTOR_USER=$marked"
+    fi
+fi
 
 step "1/14   Back up files the installer will touch"
 backup_all
@@ -101,9 +120,10 @@ create_users
 step "3/14   Create directories and set permissions"
 create_directories
 
-step "4/14   Install configuration, scripts and dotfiles"
+step "4/14 Install configuration, scripts and dotfiles"
 install_files
 set_script_perms
+relocate_conflicting_dotfiles
 install_user_dotfiles
 
 step "5/14   Install desktop integration (mc, nnn, vi)"
@@ -115,7 +135,7 @@ compile_run_app
 step "7/14   Configure login.conf and rebuild the database"
 setup_login_conf
 
-step "8/14   Generate and apply the firewall"
+step "8/14 Generate and apply the firewall"
 setup_firewall
 
 step "9/14   Configure script integrity (Sign)"

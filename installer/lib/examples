@@ -18,7 +18,7 @@
 #
 #  OVERWRITTEN (a backup is taken first, in BACKUP_DIR):
 #    ~/.exrc, ~/.config/mc/ini, ~/.config/mc/menu,
-#    ~/.config/nnn/plugins, and the mc skins.
+#    ~/.config/nnn/plugins, ~/.config/xfe/scripts, and the mc skins.
 #    These are the project's defaults for the working environment;
 #    the installer keeps them current with the shipped version.
 #
@@ -46,7 +46,7 @@
 # Run ONCE -- running it per-account would chown those files to
 # the last user in the loop.
 install_examples() {
-    CONDUCTOR_USER="${CONDUCTOR_USER:-$(getent passwd | awk -F: 'index($5, "dropQbsd_conductor") > 0 {print $1; exit}')}"
+    CONDUCTOR_USER="${CONDUCTOR_USER:-$(awk -F: '$5 == "dropQbsd_conductor" { print $1; exit }' /etc/passwd)}"
     CONDUCTOR_USER="${CONDUCTOR_USER:-conductor}"
     apps="${INSTALL_DIR}/examples/apps"
     [ -d "$apps" ] || {
@@ -55,7 +55,10 @@ install_examples() {
     }
 
     # Per-account: root uses wheel; domains use their own group.
-    install_examples_for root /root wheel ""
+    # root is a role too: mc/ini.root and mc/skins/root.ini are shipped
+    # for it (dark red). Only the GTK theme and the Xfe seeds have no
+    # root variant, and those two blocks skip it by name.
+    install_examples_for root /root wheel root
 
     # Each domain: role (suffix of the mc/ and gtk/ template names) and
     # account (the real Unix user) can differ for the conductor.
@@ -93,6 +96,7 @@ install_examples_for() {
     # --- Midnight Commander: skins (all, project-owned) ---------------
     if [ -d "${apps}/mc/skins" ]; then
         run mkdir -p "${h}/.local/share/mc/skins" "${h}/.config/mc"
+        run chown "$u":"$grp" "${h}/.config" "$h/.local"
         run cp -R "${apps}/mc/skins/." "${h}/.local/share/mc/skins/"
         run chown -R "$u":"$grp" "${h}/.local/share/mc/skins" "${h}/.config/mc"
         run sh -c "find '${h}/.local/share/mc/skins' -type d -exec chmod 755 {} +"
@@ -121,10 +125,13 @@ install_examples_for() {
 
     # ------------------------------------------------------------------
     # Blocks that DO depend on $role: run only when a role is given.
-    # root (role="") skips these silently -- there is no per-role
-    # file for root, and warning about a missing "ini." would be
-    # noise. The suffix is the ROLE, not the account: the conductor
-    # account may be renamed, but the file is always "ini.conductor".
+    # The suffix is the ROLE, not the account: the conductor account may
+    # be renamed, but the file is always "ini.conductor".
+    #
+    # root IS a role: mc/ini.root and mc/skins/root.ini exist, and root
+    # gets the dark red skin like every other account. It has no GTK
+    # theme and no Xfe seed -- root runs neither pickers nor a GUI file
+    # manager -- so those two blocks skip it by name.
     # ------------------------------------------------------------------
     if [ -n "$role" ]; then
 
@@ -147,22 +154,21 @@ install_examples_for() {
         fi
 
         # --- GTK2 theme (role-specific, operator-owned) ---------------
-        if [ -f "${apps}/gtk/gtkrc.${role}" ]; then
-            seed_or_report "${apps}/gtk/gtkrc.${role}" "${h}/.gtkrc-2.0" "$u:$grp"
-        elif [ "$DRY_RUN" = true ]; then
-            info "[dry-run] GTK2 theme for role '${role}' would be copied to ${h}/.gtkrc-2.0"
-        else
-            warn "no GTK2 template for role '${role}': ${apps}/gtk/gtkrc.${role}"
+        # No root variant: root runs no pickers, so asking for a
+        # gtk/gtkrc.root would only produce a warning on every run.
+        if [ "$role" != "root" ]; then
+            if [ -f "${apps}/gtk/gtkrc.${role}" ]; then
+                seed_or_report "${apps}/gtk/gtkrc.${role}" "${h}/.gtkrc-2.0" "$u:$grp"
+            elif [ "$DRY_RUN" = true ]; then
+                info "[dry-run] GTK2 theme for role '${role}' would be copied to ${h}/.gtkrc-2.0"
+            else
+                warn "no GTK2 template for role '${role}': ${apps}/gtk/gtkrc.${role}"
+            fi
         fi
 
         # --- Xfe seeds (role-specific, operator-owned) ----------------
-        #
-        # Install if absent, then never look at it again. NOT
-        # seed_or_report: Xfe REWRITES its config on exit, so after the first
-        # launch the file legitimately differs from the seed. Reporting that
-        # divergence every update would train the operator to ignore the
-        # section that exists for the files that really matter.
-        if [ -d "${apps}/xfe" ]; then
+        # No root variant: root runs no GUI file manager.
+        if [ "$role" != "root" ] && [ -d "${apps}/xfe" ]; then
             for f in xferc xfwrc; do
                 src="${apps}/xfe/${f}.${role}"
                 if [ ! -f "$src" ]; then
@@ -185,6 +191,25 @@ install_examples_for() {
                 success "installed $dst"
              done
         fi
+        # --- Xfe custom actions (per-account, project-owned) ----------
+        # xfqcp, xfqimport and xfqmv are code, not seeds: they call qcp,
+        # qimport and qmv from the Xfe menu. Install them in every domain
+        # home and keep them current, like the nnn plugins. Without them
+        # the Xfe menu entries fail.
+        if [ "$role" != "root" ] && [ -d "${apps}/xfe/scripts" ]; then
+            backup_before_overwrite "${h}/.config/xfe/scripts"
+            run mkdir -p "${h}/.config/xfe/scripts"
+            run cp -R "${apps}/xfe/scripts/." "${h}/.config/xfe/scripts/"
+            run chown -R "$u":"$grp" "${h}/.config/xfe/scripts"
+            run sh -c "find '${h}/.config/xfe/scripts' -type d -exec chmod 755 {} +"
+            run sh -c "find '${h}/.config/xfe/scripts' -type f -name 'xf*' -exec chmod 755 {} +"
+        fi
     fi
+    # Ensure every parent and child created above is owned by the account.
+    for d in "${h}/.config" "$h/.local" "$h/.cache"; do
+        if [ -d "$d" ]; then
+            run chown -R "$u":"$grp" "$d"
+        fi
+    done
 }
 

@@ -4,9 +4,8 @@
 #  Merges the dropQbsd cron entries into root's crontab.
 #
 #  crontab(1) REPLACES the whole table; it does not append.
-#  The merge therefore strips any pre-existing dropQbsd lines
-#  (identified by the marker string) before appending the
-#  template, so repeated runs do not duplicate entries.
+#  The merge therefore strips the previous BEGIN/END block before
+#  appending the template, so repeated runs do not duplicate entries.
 #
 #  All dropQbsd jobs run as root. Jobs that act on behalf of
 #  a domain user use `su -l <user> -c`; there are no per-user
@@ -33,14 +32,21 @@
 # ==========================================================
 
 install_cron() {
+    if [ "$DRY_RUN" = true ]; then
+        info "[dry-run] would merge the dropQbsd entries into root's crontab"
+        return 0
+    fi
+
     example="${INSTALL_DIR}/examples/system/crontab.example"
     [ -f "$example" ] || fail "crontab example missing: $example"
 
     tmp="$(mktemp)" || fail "mktemp failed"
     trap 'rm -f "$tmp"' EXIT
 
-    # Preserve existing entries that are not ours.
-    crontab -l 2>/dev/null | grep -v dropQbsd > "$tmp" || true
+    # Preserve existing entries that are not ours: drop the old
+    # BEGIN/END block, then append the shipped one.
+    crontab -l 2>/dev/null \
+        | sed '/^# BEGIN dropQbsd$/,/^# END dropQbsd$/d' > "$tmp"
 
     # Condition the verify_integrity entry on the signature
     # existing. All other jobs are always installed.
@@ -53,7 +59,7 @@ install_cron() {
         grep -v 'verify_integrity' "$example" >> "$tmp"
     fi
 
-    run crontab "$tmp"
+    crontab "$tmp"
     rm -f "$tmp"
     trap - EXIT
 

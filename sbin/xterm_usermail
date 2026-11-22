@@ -12,9 +12,9 @@
 #  IMPORTANT: This script MUST be executed via the dropQbsd
 #  wrapper or its alias. Do NOT run it directly.
 #  Usage:
-#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_usermail
+#    /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_usermail  [command [args...]]
 #    OR
-#    Xusermail
+#    Xtusermail  [command [args...]]
 # ==========================================================
 
 if [ $# -gt 0 ]; then

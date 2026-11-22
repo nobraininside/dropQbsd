@@ -30,17 +30,20 @@
 #  Path: /etc/dropQbsd/local.conf
 # ==========================================================
 
-
 # ----------------------------------------------------------
 # [network] -- YOUR LOCAL NETWORK (REQUIRED)
 # ----------------------------------------------------------
 # The LAN subnet used by userdoc (file sharing, Syncthing)
 # and by any rule targeting @lan in the policy.
 #
-# Find it with:  ifconfig egress | grep inet
-#   inet 192.168.1.42  ->  subnet is 192.168.1.0/24
+# Find it with:
+# OpenBSD:
+#   ifconfig egress | grep inet
+# FreeBSD:
+#   ifconfig "$(route -n get default | awk '/interface:/{print $2}')" | grep inet
 #
 # Use the SUBNET, not your single IP:
+#   inet 192.168.1.42  ->  subnet is 192.168.1.0/24
 #   CORRECT: 192.168.1.0/24
 #   WRONG:   192.168.1.42
 [network]
@@ -49,21 +52,16 @@ lan = 192.168.1.0/24
 # ----------------------------------------------------------
 # [updates] -- UPDATE MIRRORS
 # ----------------------------------------------------------
-# OpenBSD uses Fastly CDN blocks (static CIDRs).
-# FreeBSD uses GeoDNS hostnames (resolved via userweb DNS).
-# Official source: https://api.fastly.com/public-ip-list
-#
-# IMPORTANT: use ONE of the two sections below, not both.
-# The parser reads the FIRST [updates] section it finds.
-#
-# OpenBSD (default):
 [updates]
+# OpenBSD: Fastly CDN blocks (static CIDRs).
+# FreeBSD: GeoDNS hostnames, resolved via userweb DNS each run.
+#
+# Both keys live in ONE section on purpose: ensure_updates_table branches
+# on uname -s and reads only the key for the running system, so nothing
+# has to be commented out. Two separate [updates] sections would not
+# work -- the parser reads the first one it finds.
 mirrors = 151.101.0.0/16 199.232.0.0/16 23.235.32.0/20 104.156.80.0/20
-
-# FreeBSD: comment the OpenBSD section above, then uncomment
-# the two lines below.
-# [updates]
-# hosts = pkg.FreeBSD.org update.FreeBSD.org
+hosts = pkg.FreeBSD.org update.FreeBSD.org
 
 # ----------------------------------------------------------
 # [mailserver] -- YOUR MAIL SERVERS (OPTIONAL)
@@ -117,17 +115,63 @@ mirrors = 151.101.0.0/16 199.232.0.0/16 23.235.32.0/20 104.156.80.0/20
 # Where the export scripts read from, and where the import
 # scripts write to. If a value is omitted, the default is used.
 #
+# The installer creates these three directories, empty, with the
+# correct ownership:
+#   /home/userdoc/Sync       userdoc:userdoc,   2700
+#   /home/userweb/www        userweb:userweb,   700
+#   /home/usermail/.mail     usermail:usermail, 700
+#
+# Change a value ONLY if you use a different directory. If you do,
+# create it yourself with the same ownership and mode as the default.
+# A missing source is a hard error for the export scripts; an empty
+# one is fine.
+#
 # Export sources (read by export_www_to_drop / export_mail_to_drop):
-#   www_src   -- default /home/userweb/www
-#   mail_src  -- default /home/usermail/.mail
+#   www_src  -- default /home/userweb/www
+#   mail_src -- default /home/usermail/.mail
 #
 # Import destination (read by import_www_from_drop /
 # import_mail_from_drop):
-#   dst       -- default /home/userdoc/Sync
+#   dst      -- default /home/userdoc/Sync
 [sync]
-dst      = /home/userdoc/Sync
-www_src  = /home/userweb/www
+dst = /home/userdoc/Sync
+www_src = /home/userweb/www
 mail_src = /home/usermail/.mail
+
+# ----------------------------------------------------------
+# [locale] -- LOCALE FOR DROPQBSD USERS
+# ----------------------------------------------------------
+# The locale used by the dropQbsd shell environment.
+# Set values that exist on your system (see `locale -a`).
+# If a key is omitted, the environment value is kept, then
+# en_US.UTF-8 is used as the last fallback.
+[locale]
+lang = en_US.UTF-8
+# lc_ctype = en_US.UTF-8
+# lc_collate = en_US.UTF-8
+# lc_time = en_US.UTF-8
+# lc_monetary = en_US.UTF-8
+# lc_numeric = en_US.UTF-8
+
+# ----------------------------------------------------------
+# [keyboard] -- X11 KEYBOARD LAYOUT
+# ----------------------------------------------------------
+# The XKB layout applied by libexec/session before the WM.
+# Use the layout name from `setxkbmap -query` (it, us, de, fr, ...).
+# Leave empty to keep the X server default (usually us).
+[keyboard]
+layout = us
+
+# ----------------------------------------------------------
+# [session] -- WINDOW MANAGER
+# ----------------------------------------------------------
+# The window manager or desktop environment launched by
+# /opt/dropQbsd/libexec/session.
+# Used by LightDM, SDDM, startx and xenodm.
+#
+# Examples: xfce4-session, mate-session, cwm, twm, i3
+[session]
+wm = startxfce4
 
 # ----------------------------------------------------------
 # [qmenu] -- APPS IN DROPQBSD MENU 
@@ -158,12 +202,13 @@ USERMAIL
 /opt/dropQbsd/bin/run_app usermail claws-mail | Claws Mail
 /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_usermail mc | MC (usermail)
 /opt/dropQbsd/bin/run_app usermail thunderbird | Thunderbird
+/opt/dropQbsd/bin/run_app usermail xfe | Xfe (usermail)
 /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_usermail | Xterm (usermail)
 USERWEB
-/opt/dropQbsd/bin/run_app userweb /usr/local/bin/librewolf --temp-profile https://qwant.com | Librewolf (disposable)
+/opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/librewolf --temp-profile https://qwant.com | Librewolf (disposable)
 /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_userweb mc | MC (userweb)
-/opt/dropQbsd/bin/run_app userweb /usr/local/bin/qutebrowser --temp-basedir https://qwant.com | Qutebrowser (disposable)
-/opt/dropQbsd/bin/run_app userweb /usr/local/bin/ungoogled-chromium --temp-profile https://qwant.com | Ungoogled Chromium (disposable)
+/opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/qutebrowser --temp-basedir https://qwant.com | Qutebrowser (disposable)
+/opt/dropQbsd/bin/run_app --disposable userweb /usr/local/bin/ungoogled-chromium --temp-profile https://qwant.com | Ungoogled Chromium (disposable)
 /opt/dropQbsd/bin/run_app userweb xfe | Xfe (userweb)
 /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_userweb | Xterm (userweb)
 

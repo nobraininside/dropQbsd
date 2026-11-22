@@ -2,15 +2,16 @@
 #  dropQbsd -- optional_packages_list
 #
 #  Optional packages checked by lib/checklist (check_optional_
-#  packages). One entry per line: "<platform> <package>".
+#  packages). One entry per line: "<platform> <package> <binary>".
 #
 #  platform: all | openbsd | freebsd
 #    all       -- checked on every install
 #    openbsd   -- checked only on OpenBSD
 #    freebsd   -- checked only on FreeBSD
 #
-#  The package name doubles as the binary probed with command -v.
-#  A future need for a distinct binary name is a third column.
+# The package name doubles as the binary probed with command -v.
+# Where they differ (password-store provides `pass`), list the
+# BINARY: this file checks what is installed, it does not install it.
 #
 #  This file is part of the shipped tree and is covered by the
 #  installer/updater coherence check (every shipped file must be
@@ -20,16 +21,19 @@
 #  README.md, INSTALL.md and INSTALL_MANUAL.md.
 # ==========================================================
 
-# platform  package
-all        dzen2
-all        nnn
-all        pass
-all        signify
-all        syncthing
-all        tmux
-all        xbindkeys
-all        xclip
-all        xdotool
-freebsd    xdialog
-openbsd    Xdialog
-all        yad
+# platform package [binary]
+freebsd doas doas
+all dzen2 dzen2
+all nnn nnn
+all password-store pass
+all setxkbmap setxkbmap
+all signify signify
+all syncthing syncthing
+all tmux tmux
+all xbindkeys xbindkeys
+all xclip xclip
+freebsd xdialog Xdialog
+openbsd Xdialog Xdialog
+all xdotool xdotool
+freebsd xrandr xrandr
+all yad yad

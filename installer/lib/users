@@ -68,7 +68,7 @@ gecos_for() {
                 return 0
             fi
             # Existing account renamed via GECOS marker match (rename-proof).
-            getent passwd "$1" | awk -F: 'index($5, "dropQbsd_conductor") > 0 { print $5; exit }'
+            awk -F: -v u="$1" '$1 == u && $5 == "dropQbsd_conductor" { print $5; exit }' /etc/passwd
             ;;
     esac
 }
@@ -99,12 +99,18 @@ expected_marker() {
 verify_domain_marker() {
     u="$1"
     want="$(expected_marker "$u")" || return 1
-    have="$(getent passwd "$u" 2>/dev/null | awk -F: '{print $5; exit}')"
-    [ -n "$have" ] || return 1
-    case "$have" in
-        *"$want"*) return 0 ;;
-    esac
+    # Exact match: the gate compares $5 == the marker. A substring
+    # match here would accept an account the gate rejects.
+    have="$(awk -F: -v u="$u" '$1 == u { print $5; exit }' /etc/passwd)"
+    [ "$have" = "$want" ] && return 0
     return 1
+}
+
+# count_conductor_markers: how many accounts carry the conductor
+# marker. The gate requires exactly one; the installer and updater
+# must agree, or a duplicate passes installation and bricks the gate.
+count_conductor_markers() {
+    awk -F: '$5 == "dropQbsd_conductor" { n++ } END { print n + 0 }' /etc/passwd
 }
 
 create_group() {
@@ -112,7 +118,11 @@ create_group() {
         info "group $GROUP already exists"
         return 0
     fi
-    run groupadd "$GROUP"
+    case "$OS" in
+        FreeBSD) run pw groupadd "$GROUP" ;;
+        OpenBSD) run groupadd "$GROUP" ;;
+        *) fail "create_group: unsupported OS: $OS" ;;
+    esac
     success "group $GROUP created"
 }
 
@@ -141,6 +151,12 @@ create_users() {
                 exit 1
             fi
             info "user $u exists, ensuring membership in $GROUP"
+            if ! getent group "$u" >/dev/null 2>&1; then
+                case "$OS" in
+                FreeBSD) run pw groupadd "$u" ;;
+                OpenBSD) run groupadd "$u" ;;
+                esac
+            fi
             add_to_group_safe "$u" "$GROUP"
         else
             create_one_user "$u" "$sh"
@@ -151,6 +167,12 @@ create_users() {
     # files root stages into the drop zone can carry the wrong
     # group and be quarantined by enforce_drop on its next cycle.
     add_to_group_safe root "$GROUP"
+
+    # The conductor must be able to `su -` to root: xterm_root runs
+    # `su -` inside the terminal, and BSD `su` to root is restricted to
+    # the wheel group. This is NOT a doas grant: doas.conf stays
+    # 'permit nopass root', and the root password is still required.
+    add_to_group_safe "$CONDUCTOR_USER" wheel
 }
 
 gecos_mark_commands() {
@@ -173,24 +195,48 @@ gecos_mark_commands() {
     esac
 }
 
-# verify_all_markers: pre-flight gate for the updater. Refuses BEFORE
-# any file is replaced when an account exists without its dropQbsd
-# marker -- a pre-marker installation, or a foreign account.
+# verify_all_markers: pre-flight gate for the updater. Refuses BEFORE any
+# file is replaced when the system is not a dropQbsd installation, or is
+# one whose accounts carry no role marker.
 #
 # This cannot live in create_users (step 6): by then replace_all has
-# already rewritten /etc/dropQbsd and /opt/dropQbsd, and the run
-# aborts with a half-updated tree.
+# already rewritten /etc/dropQbsd and /opt/dropQbsd, and the run aborts
+# with a half-updated tree.
+#
+# Three outcomes, three remedies:
+#   - no account at all      the updater is the wrong tool: install first
+#   - some accounts missing  the conductor name is wrong: set CONDUCTOR_USER
+#   - accounts unmarked      a pre-marker installation: mark them
 verify_all_markers() {
+    missing=0
     bad=0
+    total=0
+
     for u in $USER_LIST; do
+        total=$((total + 1))
         if ! id "$u" >/dev/null 2>&1; then
-            warn "account '$u' does not exist (CONDUCTOR_USER=${CONDUCTOR_USER}?)"
-            bad=$((bad + 1))
+            missing=$((missing + 1))
         elif ! verify_domain_marker "$u"; then
             warn "account '$u' exists without its dropQbsd GECOS marker"
             bad=$((bad + 1))
         fi
     done
+
+    # 1. Nothing at all: this machine has no dropQbsd installation. The
+    #    four missing accounts are not the story -- installing is.
+    if [ "$missing" -eq "$total" ]; then
+        fail "no dropQbsd accounts found: run installer/install.sh first"
+    fi
+
+    # 2. Some missing: the conductor name is probably not the one this
+    #    system uses. The marking commands cannot help here -- they would
+    #    name an account that does not exist.
+    if [ "$missing" -gt 0 ]; then
+        fail "$missing of $total domain accounts do not exist -- set CONDUCTOR_USER=<name> to the account carrying the dropQbsd_conductor marker, then re-run"
+    fi
+
+    # 3. Every account exists, some carry no marker: a pre-marker
+    #    installation. Marking fixes it, and the commands are printed.
     if [ "$bad" -gt 0 ]; then
         echo "" >&2
         echo "Mark the accounts first (INSTALL_MANUAL.md 1," >&2
@@ -198,29 +244,40 @@ verify_all_markers() {
         gecos_mark_commands >&2
         fail "$bad account(s) are not dropQbsd domain accounts"
     fi
+
+    # 4. More than one account carries the conductor marker: the gate
+    # fails closed on this, so the updater must refuse too. Zero is
+    # already covered by the missing check above.
+    n="$(count_conductor_markers)"
+    if [ "$n" -ne 1 ]; then
+        fail "expected exactly one dropQbsd_conductor marker, found $n"
+    fi
 }
 
 create_one_user() {
     u="$1"; sh="$2"
     info "creating user $u (no password)"
     marker="$(gecos_for "$u")"
-
     case "$OS" in
-        FreeBSD)
-            # -G sets the secondary group directly; -c sets GECOS.
-            run pw useradd "$u" -m -G "$GROUP" -s "$sh" -c "$marker"
-            ;;
-        OpenBSD)
-            # useradd(8) has no -G. Create the user (with the
-            # GECOS marker via -c), then add the secondary group
-            # with usermod -G (via the safe helper, which
-            # preserves any existing membership).
-            run useradd -m -s "$sh" -c "$marker" "$u"
-            add_to_group_safe "$u" "$GROUP"
-            ;;
-        *)
-            fail "create_one_user: unsupported OS: $OS"
-            ;;
+    FreeBSD)
+        # Create a per-user group so chown user:user and enforce_home
+        # are deterministic on FreeBSD 15.
+        if ! getent group "$u" >/dev/null 2>&1; then
+            run pw groupadd "$u"
+        fi
+        run pw useradd "$u" -m -g "$u" -G "$GROUP" -s "$sh" -c "$marker"
+        ;;
+    OpenBSD)
+        # useradd(8) has no -G; create the per-user group first.
+        if ! getent group "$u" >/dev/null 2>&1; then
+            run groupadd "$u"
+        fi
+        run useradd -m -g "$u" -s "$sh" -c "$marker" "$u"
+        add_to_group_safe "$u" "$GROUP"
+        ;;
+    *)
+        fail "create_one_user: unsupported OS: $OS"
+        ;;
     esac
     success "user $u created"
 }
@@ -239,20 +296,27 @@ create_one_user() {
 # only then rebuild the list with the new group appended.
 add_to_group_safe() {
     u="$1"; g="$2"
-
-    current="$(id -Gn "$u" 2>/dev/null | tr ' ' ',')"
-    case ",${current}," in
-        *",${g},"*)
-            info "$u is already in $g"
-            return 0
-            ;;
+    primary="$(id -gn "$u" 2>/dev/null || true)"
+    current="$(id -Gn "$u" 2>/dev/null | tr ' ' ',' || true)"
+    # Remove the primary group: pw usermod -G must not list it.
+    new=""
+    oldIFS="$IFS"; IFS=','
+    for grp in $current; do
+        [ "$grp" = "$primary" ] && continue
+        new="${new:+$new,}$grp"
+    done
+    IFS="$oldIFS"
+    case ",${new}," in
+    *",${g},"*)
+        info "$u is already in $g"
+        return 0
+        ;;
     esac
-
-    new="${current:+${current},}${g}"
+    new="${new:+$new,}$g"
     case "$OS" in
-        FreeBSD) run pw usermod "$u" -G "$new" ;;
-        OpenBSD) run usermod -G "$new" "$u" ;;
-        *)       fail "add_to_group_safe: unsupported OS: $OS" ;;
+    FreeBSD) run pw usermod "$u" -G "$new" ;;
+    OpenBSD) run usermod -G "$new" "$u" ;;
+    *) fail "add_to_group_safe: unsupported OS: $OS" ;;
     esac
     success "$u added to $g"
 }

@@ -1,5 +1,5 @@
 "====================================================
-" dropQbsd -- example .exrc for nvi (OpenBSD base system)
+" dropQbsd -- exrc for nvi (OpenBSD base system)
 "
 " vi/ex configuration with quality-of-life mappings.
 " Copy to: ~/.exrc
