@@ -54,8 +54,6 @@
 #  freebsd only.
 # ==========================================================
 
-
-
 POLICY_DIR="/etc/dropQbsd"
 DOMAINS_CONF="$POLICY_DIR/domains.conf"
 LOCAL_CONF="$POLICY_DIR/local.conf"

@@ -1,3 +1,4 @@
-# Open the dropQbsd conductor menu with Super+q
+# Mod4 is the Super key: Windows logo on a PC keyboard, Command on an
+# Apple one (where Alt sits on a PC). See INSTALL_MANUAL.md 5.3.
 "/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qmenu"
     Mod4+q

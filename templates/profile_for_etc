@@ -20,21 +20,60 @@ export DROPQBSD_ETC="/etc/dropQbsd"
 export DROPQBSD_LOG="/var/log/dropQbsd"
 export DROPQBSD_RUN="/var/run/dropQbsd"
 
+# --- Conductor account -------------------------------------------------
+# Resolve the conductor from the GECOS marker, the same rule the
+# installer and run_app use. Do not hardcode the account name.
+CONDUCTOR_USER="${CONDUCTOR_USER:-$(awk -F: '$5 == "dropQbsd_conductor" { print $1; exit }' /etc/passwd)}"
+export CONDUCTOR_USER
+
 # --- Locale (portable: OpenBSD + FreeBSD) ---
+# [locale] in local.conf is operator-owned and wins over the
+# environment. Omitted keys keep the environment value (e.g.
+# FreeBSD login.conf); the last fallback is en_US.UTF-8.
+#
 # LC_ALL must be unset: it would override every LC_* below.
-# ${VAR:-default} honours values set earlier (e.g. FreeBSD login.conf).
 #
 # Portability note: OpenBSD honours LC_CTYPE only; the other
 # categories are ignored there but work on FreeBSD. Keeping them
 # all in one block is deliberate -- single file, both platforms.
-unset LC_ALL
+_dq_lang=""; _dq_lc_ctype=""; _dq_lc_collate=""
+_dq_lc_time=""; _dq_lc_monetary=""; _dq_lc_numeric=""
 
-export LANG="${LANG:-en_US.UTF-8}"
-export LC_CTYPE="${LC_CTYPE:-en_US.UTF-8}"
-export LC_COLLATE="${LC_COLLATE:-en_US.UTF-8}"
-export LC_TIME="${LC_TIME:-en_US.UTF-8}"
-export LC_MONETARY="${LC_MONETARY:-en_US.UTF-8}"
-export LC_NUMERIC="${LC_NUMERIC:-en_US.UTF-8}"
+_dq_locale="$(awk -F= '
+/^[[:space:]]*\[locale\][[:space:]]*(#.*)?$/ { s=1; next }
+/^[[:space:]]*\[/ { s=0 }
+s && $1 ~ /^[[:space:]]*(lang|lc_ctype|lc_collate|lc_time|lc_monetary|lc_numeric)[[:space:]]*$/ {
+    key=$1
+    val=$2
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", val)
+    sub(/[[:space:]]*#.*/, "", val)
+    print key "=" val
+}' /etc/dropQbsd/local.conf 2>/dev/null)"
+
+while IFS='=' read -r _dq_k _dq_v; do
+    [ -n "$_dq_k" ] || continue
+    case "$_dq_k" in
+    lang) _dq_lang="$_dq_v" ;;
+    lc_ctype) _dq_lc_ctype="$_dq_v" ;;
+    lc_collate) _dq_lc_collate="$_dq_v" ;;
+    lc_time) _dq_lc_time="$_dq_v" ;;
+    lc_monetary) _dq_lc_monetary="$_dq_v" ;;
+    lc_numeric) _dq_lc_numeric="$_dq_v" ;;
+    esac
+done <<EOF
+$_dq_locale
+EOF
+unset _dq_locale _dq_k _dq_v
+
+unset LC_ALL
+export LANG="${_dq_lang:-${LANG:-en_US.UTF-8}}"
+export LC_CTYPE="${_dq_lc_ctype:-${LC_CTYPE:-$LANG}}"
+export LC_COLLATE="${_dq_lc_collate:-${LC_COLLATE:-$LANG}}"
+export LC_TIME="${_dq_lc_time:-${LC_TIME:-$LANG}}"
+export LC_MONETARY="${_dq_lc_monetary:-${LC_MONETARY:-$LANG}}"
+export LC_NUMERIC="${_dq_lc_numeric:-${LC_NUMERIC:-$LANG}}"
+unset _dq_lang _dq_lc_ctype _dq_lc_collate _dq_lc_time _dq_lc_monetary _dq_lc_numeric
 
 # less does not infer the charset from LC_CTYPE on OpenBSD.
 export LESSCHARSET="${LESSCHARSET:-utf-8}"
@@ -58,6 +97,51 @@ if [ "$(id -u)" -eq 0 ]; then
     export PATH
 fi
 
+# --- XDG base directories ----------------------------------------------
+# FreeBSD packages install XDG data under /usr/local. Preserve values
+# already set by the display manager.
+case "$(uname -s)" in
+FreeBSD)
+    XDG_CONFIG_DIRS="${XDG_CONFIG_DIRS:-/usr/local/etc/xdg:/usr/local/etc:/etc/xdg}"
+    XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+    ;;
+*)
+    XDG_CONFIG_DIRS="${XDG_CONFIG_DIRS:-/etc/xdg}"
+    XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+    ;;
+esac
+export XDG_CONFIG_DIRS XDG_DATA_DIRS
+
+# --- XDG runtime directory ---------------------------------------------
+# LightDM/SDDM may not set XDG_RUNTIME_DIR. Create a per-uid directory
+# only if it is missing or already owned by this uid.
+if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+    XDG_RUNTIME_DIR="/tmp/runtime-$(id -u)"
+    if [ ! -d "$XDG_RUNTIME_DIR" ]; then
+        mkdir -m 700 "$XDG_RUNTIME_DIR" 2>/dev/null || XDG_RUNTIME_DIR=""
+    elif [ "$(stat -f %u "$XDG_RUNTIME_DIR" 2>/dev/null)" -ne "$(id -u)" ]; then
+        XDG_RUNTIME_DIR=""
+    fi
+    [ -n "$XDG_RUNTIME_DIR" ] && export XDG_RUNTIME_DIR
+fi
+
+# --- Session window manager --------------------------------------------
+# The operator sets [session] wm in local.conf. The session launcher
+# (libexec/session) reads DROPQBSD_WM; the fallback is xfce4-session.
+_dq_wm="$(awk -F= '
+/^[[:space:]]*\[session\][[:space:]]*(#.*)?$/ { s=1; next }
+/^[[:space:]]*\[/ { s=0 }
+s && $1 ~ /^[[:space:]]*wm[[:space:]]*$/ {
+    v=$2
+    sub(/^[[:space:]]+/, "", v)
+    sub(/[[:space:]]+$/, "", v)
+    sub(/[[:space:]]*#.*/, "", v)
+    print v
+    exit
+}' /etc/dropQbsd/local.conf 2>/dev/null)"
+[ -n "$_dq_wm" ] && export DROPQBSD_WM="$_dq_wm"
+unset _dq_wm
+
 # --- Conductor reminder (login only, conductor only) ---
 if [ "$(id -un)" = "$CONDUCTOR_USER" ] && [ -z "${_DQ_REMINDER_SHOWN:-}" ]; then
     case "$-" in
@@ -71,6 +155,23 @@ if [ "$(id -un)" = "$CONDUCTOR_USER" ] && [ -z "${_DQ_REMINDER_SHOWN:-}" ]; then
             ;;
     esac
 fi
+
+# --- X11 keyboard layout -----------------------------------------------
+# [keyboard] layout in local.conf. libexec/session applies it with
+# setxkbmap before launching the WM. Empty means "keep the X default".
+_dq_xkb="$(awk -F= '
+/^[[:space:]]*\[keyboard\][[:space:]]*(#.*)?$/ { s=1; next }
+/^[[:space:]]*\[/ { s=0 }
+s && $1 ~ /^[[:space:]]*layout[[:space:]]*$/ {
+    v=$2
+    sub(/^[[:space:]]+/, "", v)
+    sub(/[[:space:]]+$/, "", v)
+    sub(/[[:space:]]*#.*/, "", v)
+    print v
+    exit
+}' /etc/dropQbsd/local.conf 2>/dev/null)"
+[ -n "$_dq_xkb" ] && export DROPQBSD_XKB="$_dq_xkb"
+unset _dq_xkb
 
 # --- System-Specific Variables ---
 if [ "$(uname -s)" = "OpenBSD" ] || [ "$(uname -s)" = "FreeBSD" ]; then
@@ -87,6 +188,7 @@ export NNN_COLORS=7777
 export NNN_PLUG='c:nnnqcp;m:nnnqmv;i:nnnqimport'
 
 case "$(id -un)" in
+    "$CONDUCTOR_USER") export NNN_BMS="h:$HOME;d:/home/drop;D:$HOME/Downloads" ;;
     root)  export NNN_BMS='h:/root;d:/home/drop;D:/root/Downloads' ;;
     userdoc)  export NNN_BMS='h:/home/userdoc;d:/home/drop;D:/home/userdoc/Downloads' ;;
     usermail) export NNN_BMS='h:/home/usermail;d:/home/drop;D:/home/usermail/Downloads' ;;

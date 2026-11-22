@@ -77,13 +77,25 @@ unset IFS LD_LIBRARY_PATH LD_PRELOAD LDDLFLAGS \
       PERL5LIB PYTHONPATH CDPATH SHELL HOME LOGNAME USER
 umask 022
 
-# ---- Conductor account (derived from GECOS, single source of truth) ----
-# The conductor is the account whose GECOS field is "dropQbsd_conductor".
-# It can be renamed; the marker stays, so this resolves the current name.
-# Fallback to "conductor" if no account carries the marker (pre-GECOS).
-CONDUCTOR_USER=""
-CONDUCTOR_USER=$(getent passwd | awk -F: 'index($5, "dropQbsd_conductor") > 0 {print $1; exit}')
-CONDUCTOR_USER="${CONDUCTOR_USER:-conductor}"
+# ---- Conductor account (derived from GECOS, mirrors the gate's rule; the gate is the authority) -------------------------
+# The conductor is the account whose GECOS field is exactly
+# "dropQbsd_conductor". It can be renamed; the marker stays, so this
+# resolves the current name.
+#
+# Exact match, exactly one: the gate (run_app_impl) and the installer
+# use the same rule. A substring match or a first-wins would export a
+# different name than the one the gate accepts.
+#
+# /etc/passwd, not getent: the conductor is a local account, and a
+# getent lookup can block on an unreachable NSS source.
+#
+# Empty when there is no unique marker. The gate is the authority and
+# fails closed; the wrapper must not stop cron enforcers on a broken
+# system, so it exports nothing rather than guessing "conductor".
+CONDUCTOR_USER=$(awk -F: '
+    $5 == "dropQbsd_conductor" { print $1; found++ }
+    END { if (found != 1) exit 1 }
+' /etc/passwd) || CONDUCTOR_USER=""
 export CONDUCTOR_USER
 
 # Restore the whitelisted session variables.

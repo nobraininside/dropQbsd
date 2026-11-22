@@ -10,11 +10,10 @@
 #      chown <user>:<user> ~/.xsession
 #      chmod 644 ~/.xsession
 #
-#  WARNING -- never install this file on FreeBSD.
-#    SDDM reads ~/.xsession and waits for it to exit; the
-#    "exec <session>" line never returns, so the graphical
-#    session freezes at login. Use ~/.xprofile (SDDM) or
-#    ~/.xinitrc (startx) on FreeBSD.
+#  WARNING -- never install this file on FreeBSD with SDDM.
+#  SDDM reads ~/.xsession and waits for it to exit.
+#  LightDM ignores ~/.xsession; on FreeBSD use ~/.xprofile
+#  (LightDM/SDDM) or ~/.xinitrc (startx).
 #
 #  Coverage:
 #    xenodm reads ~/.xsession and NOT ~/.profile or ~/.xprofile.
@@ -29,23 +28,25 @@
 #      cannot find the X cookie and the indicator does nothing.
 # ==========================================================
 
+# dropQbsd-stub: 0.4.0
+# Sources /etc/dropQbsd/kshrc. Bump the marker above when the project's
+# part of this stub changes: the updater compares the marker, not the file.
+
 if [ -f /etc/dropQbsd/kshrc ]; then
     . /etc/dropQbsd/kshrc
 fi
 
-export XAUTHORITY="$HOME/.Xauthority"
+export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
 export DISPLAY="${DISPLAY:-:0.0}"
 
 # Start xbindkeys (global hotkey -> qmenu) ONLY for the conductor.
 # Domains run no xbindkeys and cannot launch the conductor menu.
 if [ "$(id -un)" = "$CONDUCTOR_USER" ]; then
-    # One xbindkeys per session. X grants a key grab to a single client;
-    # a second instance gets BadAccess and which one holds Mod4+q depends
-    # on start order -- the symptom is a shortcut that works
-    # intermittently. indicator_de already carries a uid-keyed lock for
-    # exactly this reason; the hotkey never got one.
+    # One xbindkeys per session. X grants a key grab to a single client,
+    # so a second instance can end up owning Mod4+q depending on start
+    # order. indicator_de carries a uid-keyed lock for the same reason. 
     if ! pgrep -x -U "$(id -u)" xbindkeys >/dev/null 2>&1; then
-        xbindkeys &
+        ( xbindkeys -n & ) 
     fi
 fi
 
@@ -68,5 +69,12 @@ fi
     exec /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/indicator_de
 ) >/dev/null 2>&1 &
 
+# Pin X's DPI to 96 before the WM starts. Otherwise X derives it from the
+# monitor's reported physical size, and on some panels that yields fonts
+# far larger than intended. The WM reads this value at startup, so it has
+# to run after the session environment is set and before `exec`.
+command -v xrandr >/dev/null 2>&1 && xrandr --dpi 96
+
 # --- Launch the desktop session ----------------------------------
-exec xfce4-session
+# The WM is read from [session] wm in /etc/dropQbsd/local.conf.
+exec /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/session

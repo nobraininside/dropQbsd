@@ -56,13 +56,16 @@ install_files() {
     run cp "${TEMPLATES_DIR}/filelist_for_etc" "${ETC_DIR}/filelist"
 
     # --- doas: canonical location outside /etc/dropQbsd/ ---
-    run cp "${TEMPLATES_DIR}/doas.conf_for_etc" /etc/doas.conf
+    # OS-specific: /etc/doas.conf on OpenBSD, /usr/local/etc/doas.conf
+    # on FreeBSD (the port). DOAS_CONF comes from common.
+    run cp "${TEMPLATES_DIR}/doas.conf_for_etc" "$DOAS_CONF"
 
     # --- newsyslog: idempotent append, never overwrite ---
     append_once "${TEMPLATES_DIR}/newsyslog_append" /etc/newsyslog.conf
 
     # --- rc.d for syncthing_userdoc ---
     install_rcd
+    install_session_desktop
 
     # --- copy the scripts themselves ---
     copy_scripts
@@ -113,6 +116,24 @@ install_rcd() {
     esac
 }
 
+# install_session_desktop: install the LightDM/SDDM session entry.
+# The entry runs libexec/session, which reads [session] wm from local.conf.
+# Operator-owned: seed once, never overwrite.
+install_session_desktop() {
+    src="${TEMPLATES_DIR}/dropQbsd.desktop"
+    dst="/usr/local/share/xsessions/dropQbsd.desktop"
+    [ -f "$src" ] || { warn "template missing: $src"; return 0; }
+    if [ -e "$dst" ]; then
+        info "exists, kept: $dst"
+        return 0
+    fi
+    run mkdir -p /usr/local/share/xsessions
+    run cp "$src" "$dst"
+    run chown root:wheel "$dst"
+    run chmod 644 "$dst"
+    success "installed $dst"
+}
+
 # seed_once: install a file only if it does not exist yet.
 #
 # For the OPERATOR-OWNED file inside /etc/dropQbsd/: local.conf, which
@@ -136,9 +157,9 @@ seed_once() {
 }
 
 # set_script_perms: matches INSTALL_MANUAL.md §3.
-#   bin/, sbin/, libexec/  -> 755 root:wheel
-#   admin/                 -> 700 root:wheel
-#   run_app_impl           -> 755 root:wheel (declared in its header)
+# bin/, sbin/, libexec/ -> 755 root:wheel
+# admin/ -> 700 root:wheel
+# run_app_impl -> 700 root:wheel: the gate is the only entry point
 set_script_perms() {
     run chown -R root:wheel "$INSTALL_DIR"
 
@@ -157,8 +178,20 @@ set_script_perms() {
     fi
 
     if [ -f "${INSTALL_DIR}/libexec/run_app_impl" ]; then
-        run chmod 755 "${INSTALL_DIR}/libexec/run_app_impl"
+        run chmod 700 "${INSTALL_DIR}/libexec/run_app_impl"
     fi
+
+    # examples/ carries scripts that the file managers invoke -- nnn
+    # plugins and Xfe custom actions. A missing execute bit fails
+    # silently, with no terminal to collect the error, and unlike
+    # bin/sbin/libexec these directories are not covered by the loop
+    # above.
+    for d in examples/apps/nnn/plugins examples/apps/xfe/scripts; do
+        [ -d "${INSTALL_DIR}/${d}" ] || continue
+        if [ -n "$(ls -A "${INSTALL_DIR}/${d}" 2>/dev/null)" ]; then
+            run sh -c "chmod 755 '${INSTALL_DIR}/${d}'/*"
+        fi
+    done
 
     success "script permissions applied"
 }
@@ -166,6 +199,30 @@ set_script_perms() {
 # ---------------------------------------------------------------------
 #  Per-home dotfiles (INSTALL_MANUAL.md 5.3) + conductor menu binding
 # ---------------------------------------------------------------------
+
+# relocate_conflicting_dotfiles: move pre-existing shell dotfiles aside
+# before the stubs are installed. A fresh system ships its own
+# /root/.profile (and sometimes others); install_dotfile is
+# install-if-absent, so without this step the dropQbsd chain would never
+# load and root would have no aliases. Files carrying the dropQbsd-stub
+# marker are ours and are left alone, so a re-run is a no-op.
+#
+# This is INSTALL_MANUAL.md 5.1, performed by the installer instead of
+# asked of the operator.
+relocate_conflicting_dotfiles() {
+    ts="$(date +%Y%m%d_%H%M%S)"
+    for h in "$(home_of "$CONDUCTOR_USER")" \
+             "$(home_of userdoc)" "$(home_of usermail)" "$(home_of userweb)" \
+             /root; do
+        [ -n "$h" ] && [ -d "$h" ] || continue
+        for f in .profile .xprofile .xsession .xinitrc; do
+            [ -f "${h}/${f}" ] || continue
+            grep -q '^# dropQbsd-stub:' "${h}/${f}" 2>/dev/null && continue
+            run mv "${h}/${f}" "${h}/${f}.bak.${ts}"
+            success "moved aside: ${h}/${f}"
+        done
+    done
+}
 
 # install_user_dotfiles: install the shell-chain stubs into each
 # domain user's home, and into root's home, plus the conductor's
@@ -263,11 +320,20 @@ install_dotfile() {
         return 0
     fi
 
-    # A stub is project-owned only in its first line (the pointer to
-    # /etc/dropQbsd/kshrc). The LAST line is the operator's window-manager
-    # choice, so overwriting it would undo a required local edit.
+    # A stub is project-owned logic plus one operator line (the window
+    # manager). Comparing bytes would report every stub on every update,
+    # because that line always differs -- and an operator may add lines
+    # of their own. Compare the version marker instead: silence when the
+    # stub is current, a report when the shipped stub really changed.
     if [ -e "${h}/${dest}" ]; then
-        info "exists, kept: ${h}/${dest}"
+        want="$(sed -n 's/^#[[:space:]]*dropQbsd-stub:[[:space:]]*//p' "$src" | head -1)"
+        have="$(sed -n 's/^#[[:space:]]*dropQbsd-stub:[[:space:]]*//p' "${h}/${dest}" | head -1)"
+        if [ "$want" = "$have" ]; then
+            info "exists, kept: ${h}/${dest}"
+        else
+            DIVERGED_FILES="${DIVERGED_FILES} ${h}/${dest}:${src}"
+            warn "differs from the shipped version, not written: ${h}/${dest} (shipped: ${src})"
+        fi
         return 0
     fi
 

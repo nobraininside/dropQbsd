@@ -6,6 +6,9 @@
 # Xfe rewrites the full file on exit; keep this template as the
 # installation seed, not as a live file.
 
+[OPTIONS]
+root_mode=0
+
 [PROGS]
 pdfviewer=evince
 xterm="xterm -bg darkorchid3 -fg white -fa monospace -fs 12"

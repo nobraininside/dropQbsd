@@ -44,7 +44,7 @@ DIVERGED_FILES=""
 # Priority:
 #   1. $CONDUCTOR_USER exported by the operator (explicit override)
 #   2. An existing account carrying the dropQbsd_conductor GECOS marker
-#      (upgrade / re-install: rename-proof)
+#      (exactly one)
 #   3. The default name 'conductor' -- unless an account named 'conductor'
 #      already exists without the marker. In that case, the install FAILS
 #      with a clear message: the operator must set CONDUCTOR_USER=<name>.
@@ -53,9 +53,19 @@ DIVERGED_FILES=""
 resolve_conductor_name() {
     [ -n "${CONDUCTOR_USER:-}" ] && { echo "$CONDUCTOR_USER"; return 0; }
 
-    existing="$(getent passwd | awk -F: 'index($5, "dropQbsd_conductor") > 0 {print $1; exit}')"
+    # Exact match, and exactly one: the gate resolves the marker the
+    # same way. A substring match or a silent first-wins would let the
+    # installer accept a system the gate rejects.
+    existing="$(awk -F: '
+        $5 == "dropQbsd_conductor" { print $1; found++ }
+        END { if (found > 1) exit 2 }
+    ' /etc/passwd)" || {
+        echo "ERROR: more than one account carries the dropQbsd_conductor marker." >&2
+        echo " Resolve the duplicate (rename the account or clear its GECOS field)" >&2
+        echo " before running install.sh or update.sh" >&2
+        return 1
+    }
     [ -n "$existing" ] && { echo "$existing"; return 0; }
-
     if id conductor >/dev/null 2>&1; then
         echo "ERROR: ..." >&2
         return 1
@@ -80,8 +90,18 @@ GROUP="drop"
 # once and never overwrites them (see seed_once in lib/files), but
 # they are backed up here all the same: they are the two files
 # whose loss is not recoverable from the repository.
-BACKUP_FILES="/etc/doas.conf /etc/pf.conf /etc/newsyslog.conf /etc/login.conf \
-/etc/dropQbsd/local.conf /etc/dropQbsd/attach.conf"
+#
+# doas.conf lives in different places: base doas on OpenBSD reads
+# /etc/doas.conf; the FreeBSD port reads /usr/local/etc/doas.conf.
+# uname, not $OS: common is sourced before detect, so $OS is not set yet.
+case "$(uname -s)" in
+FreeBSD) DOAS_CONF="/usr/local/etc/doas.conf" ;;
+*)       DOAS_CONF="/etc/doas.conf" ;;
+esac
+
+BACKUP_FILES="$DOAS_CONF /etc/pf.conf /etc/newsyslog.conf /etc/login.conf \
+/etc/dropQbsd/local.conf /etc/dropQbsd/attach.conf \
+/usr/local/share/xsessions/dropQbsd.desktop"
 
 # --- output helpers -------------------------------------------------
 
@@ -180,11 +200,12 @@ flat_name() {
 
 # run: execute an action. In dry-run, print the plan instead.
 run() {
-    log "EXEC: $*"
     if [ "$DRY_RUN" = true ]; then
+        log "DRY-RUN: $*"
         printf "${BLUE}[dry-run]${NC} %s\n" "$*"
         return 0
     fi
+    log "EXEC: $*"
     "$@" || fail "command failed: $*"
 }
 
@@ -245,8 +266,12 @@ seed_or_report() {
         return 0
     fi
 
-    DIVERGED_FILES="${DIVERGED_FILES} ${dst}"
-    warn "differs from the shipped version, not written: $dst"
+    # Record the PAIR, not just the destination: the operator has to
+    # compare two files, and the report must say which two. ':' is safe
+    # as a separator here -- these are files the project generates, and
+    # a colon in their names would break other things first.
+    DIVERGED_FILES="${DIVERGED_FILES} ${dst}:${src}"
+    warn "differs from the shipped version, not written: $dst (shipped: $src)"
 }
 
 # append_once: append a file's contents to a target only if a marker
@@ -416,15 +441,27 @@ print_update_notes() {
         echo "Files yours, changed upstream ($n -- not written):"
         echo ""
         echo " The shipped version differs from yours. The updater did not"
-        echo " touch them: review and merge by hand."
+        echo " touch them: review and merge by hand. Each entry names the"
+        echo " file and the shipped copy to compare it with."
         echo ""
-        for f in $DIVERGED_FILES; do
-            echo " ${f}"
+        for pair in $DIVERGED_FILES; do
+            case "$pair" in
+                *:*)
+                    echo " ${pair%%:*}"
+                    echo "     shipped: ${pair#*:}"
+                    ;;
+                *)
+                    # No separator: a malformed entry. Print it once rather
+                    # than twice identically -- a duplicated path is the
+                    # signature of a missing ':'.
+                    echo " ${pair}"
+                    ;;
+            esac
         done
     else
         echo "No operator files diverged from the shipped versions."
     fi
-    echo ""
+    echo "" 
 
     # --- Preserved (operator-owned) ---
     # Counted from the classification, never hardcoded: the list and the

@@ -34,20 +34,21 @@ check_root() {
 check_os() {
     OS="$(uname -s)"
     case "$OS" in
-        OpenBSD)
-            FW_BACKEND="openbsd"
-            ;;
-        FreeBSD)
-            FW_BACKEND="freebsd"
-            check_mksh
-            ;;
-        NetBSD)
-            fail "NetBSD is not supported: npf(7) does not filter per user. See the roadmap."
-            ;;
-        *)
-            fail "unsupported OS: $OS (OpenBSD and FreeBSD only)"
-            ;;
+    OpenBSD)
+        FW_BACKEND="openbsd"
+        ;;
+    FreeBSD)
+        FW_BACKEND="freebsd"
+        check_mksh
+        ;;
+    NetBSD)
+        fail "NetBSD is not supported: npf(7) does not filter per user. See the roadmap."
+        ;;
+    *)
+        fail "unsupported OS: $OS (OpenBSD and FreeBSD only)"
+        ;;
     esac
+    check_pf
     info "detected OS: $OS (firewall backend: $FW_BACKEND)"
 }
 
@@ -66,6 +67,28 @@ check_mksh() {
         return 0
     fi
     fail "mksh is required on FreeBSD. Install it first: pkg install mksh"
+}
+
+# check_pf: the firewall IS the isolation model. Without it the install
+# produces four domains with no network separation at all -- and the
+# failure would surface at step 8, after users and files are in place.
+#
+# On FreeBSD pf is a loadable module: /dev/pf appears only after
+# `kldload pf`. On OpenBSD pf is part of the kernel and /dev/pf always
+# exists.
+check_pf() {
+    [ -e /dev/pf ] && return 0
+    case "$OS" in
+    FreeBSD)
+        fail "pf is not available. Load the module and enable it at boot:
+  kldload pf
+  sysrc pf_enable=YES
+then re-run the installer."
+        ;;
+    *)
+        fail "pf is not available: /dev/pf missing"
+        ;;
+    esac
 }
 
 # login_shell: the Korn shell path for the target OS. Used by the
@@ -91,4 +114,6 @@ resolve_repo_root() {
     [ -d "${REPO_ROOT}/templates" ] || \
         fail "templates/ not found under $REPO_ROOT (wrong layout?)"
     info "repository root: $REPO_ROOT (source); install dir: ${INSTALL_DIR} (destination)"
+    [ -f "${REPO_ROOT}/VERSION" ] || \
+        fail "VERSION not found under $REPO_ROOT -- run installer/install.sh from the repository root, not from /opt/dropQbsd"
 }

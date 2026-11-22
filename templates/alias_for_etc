@@ -10,6 +10,13 @@
 #    - run_app (bin/) is a setuid binary and is invoked
 #      directly -- it does not need the wrapper.
 #
+#  Naming rule: every alias starts with a capital letter.
+#
+#  `&` only for a command that blocks on a GUI dialog and must return the
+#  prompt: Qmenu, Qsite. The xterm_* scripts detach themselves, so a
+#  second `&` is redundant. Foreground commands must not be backgrounded:
+#  their exit status and output would be lost.
+#
 #  Installation:
 #     cp /opt/dropQbsd/templates/alias_for_etc /etc/dropQbsd/alias 
 #     chown root:wheel /etc/dropQbsd/alias
@@ -64,8 +71,8 @@ alias Qmenu="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qmenu &"
 alias Qmv="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qmv"
 alias Qprompt="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qprompt"
 alias Qsite="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qsite &"
-alias Xtconductor="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_conductor &"
-alias Xtroot="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_root &"
-alias Xtuserdoc="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_userdoc &"
-alias Xtusermail="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_usermail &"
-alias Xtuserweb="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_userweb &"
+alias Xtconductor="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_conductor"
+alias Xtroot="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_root"
+alias Xtuserdoc="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_userdoc"
+alias Xtusermail="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_usermail"
+alias Xtuserweb="/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_userweb"

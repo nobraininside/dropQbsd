@@ -56,10 +56,10 @@ ${ETC_DIR}/profile
 ${ETC_DIR}/alias
 ${ETC_DIR}/filelist
 ${ETC_DIR}/conductor.conf
-/etc/doas.conf
+${DOAS_CONF}
 "
-# /etc/doas.conf is project-owned and lives outside ETC_DIR because
-# that is its canonical location. It is replaced (with a backup) like
+# doas.conf is project-owned and lives outside ETC_DIR because that
+# is its canonical location. It is replaced (with a backup) like
 # the other project files: the shipped policy is 'permit nopass root'
 # and nothing else. If you need doas rules of your own, keep them
 # outside this file or re-add them from the backup after an update.

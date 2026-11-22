@@ -12,15 +12,19 @@
 #
 #  Coverage:
 #    Login shells only: text login (tty), su -, ssh, startx
-#    from a text console. Graphical sessions started by a
-#    display manager do NOT read ~/.profile -- see
-#    xprofile_for_home and xsession_for_home.
+#    from a text console. Graphical sessions may source 
+#    ~/.profile (FreeBSD LightDM does). The dropQbsd
+#    chain is idempotent, so double sourcing is harmless.
 #
 #  Notes:
 #    - This file is a STUB. All logic lives in
 #      /etc/dropQbsd/kshrc, which is idempotent.
 #    - This file MUST be sourced, not executed.
 # ==========================================================
+
+# dropQbsd-stub: 0.4.0
+# Sources /etc/dropQbsd/kshrc. Bump the marker above when the project's
+# part of this stub changes: the updater compares the marker, not the file.
 
 if [ -f /etc/dropQbsd/kshrc ]; then
     . /etc/dropQbsd/kshrc

@@ -29,7 +29,8 @@
 #  ORDER (mirrors the installer, with preserve first):
 #    1  version      read installed vs repo version
 #    2  preserve     back up operator-owned and merged files
-#    3  replace      project-owned files (only if changed)
+#    3  replace      project-owned files (only if changed), set permissions,
+#                    refresh the rc.d service script
 #    4  merge        login.conf, newsyslog.conf (append new)
 #    5  migrate      format changes between versions
 #    6  users/dirs   idempotent (no-op if already correct)
@@ -37,7 +38,8 @@
 #                    (only if changed)
 #    8  compile      rebuild run_app
 #    9  logins       cap_mkdb
-#    10 firewall     regenerate + repopulate
+#    10  firewall    enable pf at boot, generate, syntax-check, apply,
+#                   populate tables
 #    11 integrity    re-sign (NEVER regenerate the key)
 #    12 cron         merge crontab
 #    13 checklist    verify
@@ -102,8 +104,11 @@ check_version
 step "2/14   Preserve operator-owned and merged files"
 preserve_all
 
-step "3/14   Replace project-owned files (only if changed)"
+step "3/14 Replace project-owned files and set their permissions"
 replace_all
+set_script_perms
+install_rcd
+install_session_desktop
 
 step "4/14   Merge appended files (login.conf, newsyslog.conf)"
 merge_all
@@ -129,8 +134,9 @@ setup_login_conf
 step "10/14  Regenerate and apply the firewall"
 setup_firewall
 
-step "11/14  Re-sign the integrity manifest"
+step "11/14 Re-sign the integrity manifest"
 update_integrity
+verify_integrity_setup
 
 step "12/14  Refresh cron jobs"
 install_cron

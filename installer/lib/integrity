@@ -47,13 +47,18 @@ setup_integrity() {
     read answer || answer=no
     case "$answer" in
         [Yy]*) : ;;
-        *) info "integrity setup skipped"; return 0 ;;
+        *)
+            info "integrity setup skipped"
+            cat "${INSTALL_DIR}/templates/integrity_setup" >&2
+            return 0
+            ;;
     esac
 
-    command -v signify >/dev/null 2>&1 || {
-        warn "signify not found; install it and re-run this step"
+    if ! command -v signify >/dev/null 2>&1; then
+        warn "signify not found; integrity setup skipped"
+        cat "${INSTALL_DIR}/templates/integrity_setup" >&2
         return 0
-    }
+    fi
 
     pub="${INSTALL_DIR}/keys/dropQbsd.pub"
     sec="/root/dropQbsd.sec"
@@ -126,6 +131,11 @@ setup_integrity() {
 # Trusting its exit code would report "passed" on a violation.
 # The check below reads the log's last line instead.
 verify_integrity_setup() {
+    if [ "$DRY_RUN" = true ]; then
+        info "[dry-run] would run one verification pass and read the log"
+        return 0
+    fi
+
     filelist="${ETC_DIR}/filelist"
     [ -f "$filelist" ] || fail "filelist missing: $filelist"
     [ -s "$filelist" ] || fail "filelist is empty: $filelist"

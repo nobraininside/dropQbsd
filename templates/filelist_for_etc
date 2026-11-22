@@ -20,6 +20,7 @@ libexec/import_www_from_drop
 libexec/indicator_de
 libexec/root_snapshot
 libexec/run_app_impl
+libexec/session
 libexec/update_mailserver_table
 libexec/update_services_table
 libexec/wrapper
@@ -38,6 +39,7 @@ sbin/xterm_root
 sbin/xterm_userdoc
 sbin/xterm_usermail
 sbin/xterm_userweb
+templates/integrity_setup
 /etc/dropQbsd/alias
 /etc/dropQbsd/attach.conf
 /etc/dropQbsd/conductor.conf

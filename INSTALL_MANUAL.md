@@ -27,24 +27,53 @@ typed, tables are read.
 | ------- | ------- |
 | 7.5 or newer | 14.0 or newer |
 
-**Core functionality:** everything is in the base system, except the Korn Shell
-on FreeBSD.
+**Core functionality.** The installer needs a Korn shell and root
+access:
 
-| OpenBSD | FreeBSD |
-| ------- | ------- |
-| `ksh` is in base (`/bin/ksh`) | Install `mksh`: `pkg install mksh` |
+| Component | OpenBSD | FreeBSD |
+| --------- | ------- | ------- |
+| Korn shell | `ksh` in base (`/bin/ksh`) | `mksh` package (`pkg install mksh`) |
+| Root access | `doas` in base (`/usr/bin/doas`) | `doas` package (`pkg install doas`), or `su` |
+| Firewall | `pf` in base | `pf` kernel module + `pfctl` in base (`kldload pf`) |
+
+On FreeBSD, `doas` is a package and reads `/usr/local/etc/doas.conf`.
+Install it as root and create the file:
+
+```sh
+su -
+pkg install doas
+cat > /usr/local/etc/doas.conf <<'EOF'
+permit :wheel
+permit nopass root
+EOF
+exit
+```
+
+`permit :wheel` lets your admin account use `doas`; `permit nopass
+root` is the line the dropQbsd template carries. The installer
+replaces the file with the template; your rule is backed up in
+`/var/backups/dropQbsd_<ts>/` and can be re-added afterwards. If you
+prefer not to install `doas`, use `su` for the root steps.
+
+Everything else is optional. On FreeBSD, `signify`, `tmux`, `xrandr`
+and all of X11 are packages; on OpenBSD they are in base.
 
 **Optional utilities** -- install only what you need:
 
-| Utility | Packages |
-| --------- | -------- |
-| `indicator_de` | `dzen2`, `xdotool` |
-| `qattach` | `Xdialog` (`xdialog` on FreeBSD) |
-| `qfile` | `tmux`, `nnn` |
-| `qmenu` (conductor menu) | `yad`, `xbindkeys` |
-| `qsite` | `yad`, `pass`, `xclip` |
-| `Syncthing` (userdoc) | `syncthing` |
-| Integrity verification | `signify` -- base on OpenBSD, `pkg install signify` on FreeBSD |
+| Utility | OpenBSD | FreeBSD |
+| ------- | ------- | ------- |
+| `indicator_de` | `dzen2`, `xdotool` | `dzen2`, `xdotool` |
+| `qattach` | `Xdialog` | `xdialog` |
+| `qfile` | `nnn` (`tmux` is in base) | `nnn`, `tmux` |
+| `qmenu` (conductor menu) | `yad`, `xbindkeys` | `yad`, `xbindkeys` |
+| `qsite` | `yad`, `password-store`, `xclip` | `yad`, `password-store`, `xclip` |
+| `Syncthing` (userdoc) | `syncthing` | `syncthing` |
+| Integrity verification | `signify` (base) | `signify` (package) |
+| graphical session | a window manager (`cwm`, `fvwm`, `twm` are in base; `xfce`, `i3`, ... are packages) | a window manager (`xfce`, `twm`, `i3`, ... are packages) |
+
+`xrandr` is not a utility dependency. The session files run
+`xrandr --dpi 96` before the window manager starts. It is in base on
+OpenBSD and `pkg install xrandr` on FreeBSD.
 
 Install packages:
 
@@ -68,7 +97,7 @@ refer to the conductor use `$CONDUCTOR_USER`, so they work unchanged
 whether the conductor is named `conductor` or anything else:
 
 ```sh
-CONDUCTOR_USER="${CONDUCTOR_USER:-$(getent passwd | awk -F: 'index($5, "dropQbsd_conductor") > 0 {print $1; exit}')}"
+CONDUCTOR_USER="${CONDUCTOR_USER:-$(awk -F: '$5 == "dropQbsd_conductor" { print $1; exit }' /etc/passwd)}"
 CONDUCTOR_USER="${CONDUCTOR_USER:-conductor}"
 ```
 
@@ -92,13 +121,22 @@ CONDUCTOR_USER=myconductor doas ./install.sh
 Use the same name for the manual procedure: export it before running the
 commands in this manual.
 
+**The gate enforces the marker at runtime.** `run_app_impl` resolves
+the `dropQbsd_conductor` GECOS marker to a uid and compares it with
+the real uid the gate captured before `setuid(0)`. Exactly one account may
+carry the marker; zero or more than one stops the gate (see §4).
+
 ### Procedure
 
-Run as root.
+Run as root:
+
+| OpenBSD | FreeBSD |
+| ------- | ------- |
+| `groupadd drop` | `pw groupadd drop` |
+
+Then run: 
 
 ```sh
-groupadd drop
-
 # ------------------------------------------------------------------
 # The four domain users. Each is created with a dropQbsd GECOS marker
 # identifying its role. If an account already exists:
@@ -126,24 +164,40 @@ add_to_group_safe() {
 }
 
 # create_one_user: the only OS-specific step.
-#   FreeBSD: pw useradd takes the secondary group with -G, and mksh is
-#            under /usr/local/bin (the base system has no /bin/ksh).
-#   OpenBSD: useradd has NO -G, and /bin/ksh is in the base system, so
-#            the group is added afterwards with add_to_group_safe.
+#   FreeBSD: `pw useradd` takes the secondary group with `-G`, and `mksh` is
+#            under `/usr/local/bin` (the base system has no `/bin/ksh`).
+#   OpenBSD: useradd has NO `-G`, and `/bin/ksh` is in the base system, so
+#            the group is added afterwards with `add_to_group_safe`.
+#
+# `create_one_user` creates a per-user group on both platforms:
+# `pw groupadd <user>` on FreeBSD, `groupadd <user>` on OpenBSD, then
+# `pw useradd -g <user>` / `useradd -g <user>`. This keeps `chown
+# user:user` and `enforce_home` deterministic.
+#
+# `add_to_group_safe` excludes the primary group before
+# `pw usermod -G`/`usermod -G`; `create_users` creates the per-user group
+# even for existing accounts.
 create_one_user() {
-    local acct="$1" gecos="$2"
+    acct="$1"; gecos="$2"
     case "$(uname -s)" in
-        FreeBSD)
-            pw useradd "$acct" -m -G drop -s /usr/local/bin/mksh -c "$gecos"
-            ;;
-        OpenBSD)
-            useradd -m -s /bin/ksh -c "$gecos" "$acct"
-            add_to_group_safe "$acct" drop
-            ;;
-        *)
-            echo "ERROR: unsupported OS: $(uname -s)" >&2
-            exit 1
-            ;;
+    FreeBSD)
+        if ! getent group "$acct" >/dev/null 2>&1; then
+            pw groupadd "$acct"
+        fi
+        pw useradd "$acct" -m -g "$acct" -G drop -L "$acct" \
+            -s /usr/local/bin/mksh -c "$gecos"
+        ;;
+    OpenBSD)
+        if ! getent group "$acct" >/dev/null 2>&1; then
+            groupadd "$acct"
+        fi
+        useradd -m -g "$acct" -L "$acct" -s /bin/ksh -c "$gecos" "$acct"
+        add_to_group_safe "$acct" drop
+        ;;
+    *)
+        echo "ERROR: unsupported OS: $(uname -s)" >&2
+        exit 1
+        ;;
     esac
 }
 
@@ -152,7 +206,10 @@ create_or_verify_domain() {
     if ! id "$acct" >/dev/null 2>&1; then
         create_one_user "$acct" "$gecos"
         echo "OK: created domain account '$acct'"
-    elif getent passwd "$acct" | awk -F: -v m="$gecos" '$5 ~ m'; then
+    # Exact match, and a real exit status: awk exits 0 even when no
+    # line matches, so a bare '$5 ~ m' accepts any existing account.
+    elif getent passwd "$acct" | awk -F: -v m="$gecos" \
+        '$5 == m { found = 1 } END { exit !found }'; then
         add_to_group_safe "$acct" drop
         echo "OK: existing dropQbsd account '$acct' (upgrade/re-install)"
     else
@@ -168,6 +225,11 @@ create_or_verify_domain "$CONDUCTOR_USER" "dropQbsd_conductor"
 create_or_verify_domain userdoc  "dropQbsd_userdoc"
 create_or_verify_domain usermail "dropQbsd_usermail"
 create_or_verify_domain userweb  "dropQbsd_userweb"
+# The conductor must be able to `su -` to root: xterm_root runs
+# `su -` inside the terminal, and BSD `su` to root is restricted to
+# the wheel group. This is NOT a doas grant: doas.conf stays
+# 'permit nopass root', and the root password is still required.
+add_to_group_safe "$CONDUCTOR_USER" wheel
 ```
 
 **Never merge a pre-existing account into a domain role.** A conductor
@@ -197,6 +259,17 @@ usermod -c "dropQbsd_userweb"    userweb
 `usermod -c` changes only the GECOS field; it does not touch UID, home,
 groups, or data, and can be run with the users logged in. Verify with
 `getent passwd "$CONDUCTOR_USER" userdoc usermail userweb` -- each line must show its marker in the fifth field.
+
+### Root access and `wheel`
+
+The conductor is added to `wheel` so `Xtroot` can run `su -`. If your
+login account is not in `wheel`, `su -` will fail. Log in as `root` on
+the console (or use an admin account already in `wheel`) and run:
+
+- FreeBSD: `pw groupmod wheel -m <login>`
+- OpenBSD: `usermod -G "$(id -Gn <login> | tr ' ' ',')",wheel <login>`
+
+Log out and back in so the group change applies.
 
 ### Resource Limits
 
@@ -250,6 +323,14 @@ conductor:\
 ```
 **The class name follows the conductor account name**
 
+For the class to apply, `create_one_user` must pass `-L <account>` to
+`pw useradd` (FreeBSD) or `useradd` (OpenBSD). Without `-L`, the account
+uses the `default` class and these limits are not enforced.
+
+The `login.conf_append` block names the conductor class `conductor`.
+If `CONDUCTOR_USER` is renamed, generate the class with the same name,
+or the account will fall back to `default`.
+
 Rebuild the login database:
 
 ```sh
@@ -260,7 +341,7 @@ cap_mkdb /etc/login.conf
 
 ## 2. Create Directory Structure
 
-Run as root.
+Run as root:
 
 ```sh
 mkdir -p /opt/dropQbsd/{admin,bin,keys,libexec,sbin,src,templates,examples}
@@ -272,12 +353,39 @@ chown root:drop /home/drop /home/drop/userweb_export /home/drop/usermail_export
 chmod 2770 /home/drop
 chmod 2770 /home/drop/userweb_export /home/drop/usermail_export
 chmod 750 /home/drop/_quarantine
+chown root:wheel /home/drop/_quarantine
 chmod 700 /opt/dropQbsd/keys
+# Default [sync] directories and Downloads in every domain home.
+for u in "$CONDUCTOR_USER" userdoc usermail userweb; do
+    h="$(awk -F: -v u="$u" '$1 == u {print $6; exit}' /etc/passwd)"
+    [ -n "$h" ] && [ -d "$h" ] || continue
+    mkdir -p "$h/.cache/dropqbsd"
+    chown -R "$u":"$u" "$h/.cache"
+    chmod 700 "$h/.cache" "$h/.cache/dropqbsd"
+done
+mkdir -p /home/userweb/www /home/usermail/.mail /home/userdoc/Sync
+chown userweb:userweb /home/userweb/www
+chown usermail:usermail /home/usermail/.mail
+chown userdoc:userdoc /home/userdoc/Sync
+chmod 700 /home/userweb/www /home/usermail/.mail
+chmod 2700 /home/userdoc/Sync
+# Qsite cache directory: pre-create it as the user so a root-run
+# Qsite cannot leave it root:wheel.
+for u in "$CONDUCTOR_USER" userdoc usermail userweb; do
+   h="$(awk -F: -v u="$u" '$1 == u {print $6; exit}' /etc/passwd)"
+   [ -n "$h" ] && [ -d "$h" ] || continue
+   mkdir -p "$h/.cache/dropqbsd"
+   chown -R "$u":"$u" "$h/.cache"
+   chmod 700 "$h/.cache" "$h/.cache/dropqbsd"
+done 
 ```
 
 The `2770` mode (SGID) on `/home/drop` forces the `drop` group on all files
 placed there -- this is what makes the drop zone policed by construction rather
 than by convention.
+
+`~/.cache/dropqbsd` is created as `user:user 700`; this is where `Qsite`
+writes `qsite.err`, `qsite_cache`, and `qsite_state`.
 
 ---
 
@@ -297,6 +405,7 @@ chown -R root:wheel /opt/dropQbsd
 chmod 755 /opt/dropQbsd/bin/*
 chmod 755 /opt/dropQbsd/sbin/*
 chmod 755 /opt/dropQbsd/libexec/*
+chmod 700 /opt/dropQbsd/libexec/run_app_impl
 chmod 700 /opt/dropQbsd/admin/*
 ```
 
@@ -319,6 +428,19 @@ first use of the corresponding alias.
 executed through `libexec/wrapper`, which selects the correct shell for the
 platform. Do not add shebangs -- it would break portability.
 
+### 3.1 Session entry
+
+```sh
+mkdir -p /usr/local/share/xsessions
+cp templates/dropQbsd.desktop /usr/local/share/xsessions/dropQbsd.desktop
+chown root:wheel /usr/local/share/xsessions/dropQbsd.desktop
+chmod 644 /usr/local/share/xsessions/dropQbsd.desktop
+```
+
+`libexec/session` is copied by `cp -r libexec`; the existing
+`chmod 755 /opt/dropQbsd/libexec/*` sets it executable.
+```
+
 ---
 
 ## 4. Build the `run_app` gate
@@ -336,6 +458,11 @@ three files:
 `sbin/`, allowed by `/etc/dropQbsd/conductor.conf`. Each receives
 its argument plus the resolved display and X11 cookie. The only
 shipped action is `qattach`.
+
+**The invoker check.** `run_app_impl` refuses any invoker that is not the conductor:
+the gate passes the caller's real uid (captured before `setuid(0)`) as the first argument,
+and `run_app_impl` compares it with the uid resolved from the `dropQbsd_conductor`
+GECOS marker. No marker, no gate -- the installer and updater enforce the same rule.
 
 The `wrapper` (`libexec/wrapper`) is a separate component: it selects
 the Korn shell and sanitizes the environment for every dropQbsd script.
@@ -395,6 +522,8 @@ ls -l /opt/dropQbsd/bin/run_app
 
 The mode must show `-rwsr-xr-x` -- the `s` is the setuid bit. Without
 It, the gate does not escalate and domain applications will not launch.
+`run_app_impl` must be `0700 root:wheel`: no local user executes it
+directly; only the gate, as root, does.
 
 ---
 
@@ -445,7 +574,7 @@ install depends on the platform:
 | `~/.xinitrc`  | only if you use `startx` instead of xenodm | **yes** (startx) |
 
 **WARNING -- never install `~/.xsession` on FreeBSD.** SDDM reads
-`~/.xsession` and waits for it to exit; the `exec xfce4-session`
+`~/.xsession` and waits for it to exit; the `exec startxfce4`
 line never returns, so the graphical session freezes at login.
 On FreeBSD use `~/.xprofile` (for SDDM) or `~/.xinitrc` (for
 `startx`).
@@ -491,16 +620,43 @@ done
 **Coverage map:**
 
 | Session type | File read | OpenBSD | FreeBSD |
-| ------------ | --------- | ------- | ------- |
-| Text login (tty) | `~/.profile` | -- | -- |
-| `su -` / `ssh` | `~/.profile` | -- | -- |
-| xenodm | `~/.xsession` | -- | n/a |
-| SDDM / LightDM | `~/.xprofile` | if used | -- |
-| `startx` | `~/.xinitrc` | if used | -- |
-| Terminal in session | `$ENV` | -- | -- |
+|---|---|---|---|
+| Text login (`tty`) | `~/.profile` | yes | yes |
+| `su -` / `ssh` | `~/.profile` | yes | yes |
+| xenodm | `~/.xsession` | yes | n/a |
+| LightDM | `~/.profile` + `~/.xprofile` | if used | yes |
+| SDDM (DE session) | `~/.xprofile` | if used | yes |
+| SDDM “User Session” | `~/.xinitrc` | n/a | yes |
+| `startx` | `~/.xinitrc` | if used | yes |
+| Terminal in session | `$ENV` | yes | yes |
+
+
+On OpenBSD/xenodm, do not create ~/.xsession with `exec startxfce4`.
+The installer's ~/.xsession ends with:
+
+```sh
+exec /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/session
+```
+
+Set `[session] wm = startxfce4` in /etc/dropQbsd/local.conf.
+libexec/session reads that value and execs startxfce4.
+
+On FreeBSD, ~/.xsession is never installed; use ~/.xprofile and ~/.xinitrc.
 
 `$ENV` is set by `/etc/dropQbsd/kshrc` itself, so every interactive
 child shell sources the chain automatically.
+
+Each stub starts with a marker line, `# dropQbsd-stub: <version>`.
+The updater compares the `# dropQbsd-stub` marker, not the bytes. The
+stubs may contain operator additions; the WM is no longer in the stub:
+it is `[session] wm` in `/etc/dropQbsd/local.conf`. When you
+change the project-owned part of a stub, update its marker -- that is
+what tells an existing installation the shipped version has moved on.
+
+LightDM sources `~/.profile` and `~/.xprofile` before the session.
+startx and xenodm do not read `~/.xprofile`; they use `~/.xinitrc`
+and `~/.xsession`. `libexec/session` sources `~/.xprofile` as a hook,
+so the indicator/xbindkeys also start when the DM does not source it.
 
 **The domain indicator is started from all three session files**
 (`~/.xprofile`, `~/.xsession`, `~/.xinitrc`). Whichever one the
@@ -508,35 +664,69 @@ session manager reads, the indicator starts. If more than one is
 read in the same session, the indicator's uid-keyed lock prevents a
 double start -- the second instance finds the lock and exits.
 
-**The conductor menu hotkey.** `xbindkeys` is started only by the
-conductor (`$CONDUCTOR_USER`) -- the session files guard it with
-`if [ "$(id -un)" = "$CONDUCTOR_USER" ]`. Its configuration,
-`~/.xbindkeysrc`, maps **`Mod4+q`** to the `qmenu` launcher. Domains never
-run `xbindkeys` and cannot launch the conductor menu. The file is
-**operator-owned**: created if absent, never overwritten; an update
-reports it if the shipped version changed.
+The conductor's `~/.xbindkeysrc` is not a stub: see 5.4.
 
 **No modification to /etc/profile is required.**
 
-### 5.4 Adjust the desktop launcher
 
-In `~/.xsession` and `~/.xinitrc`, change the last line to your
-window manager or desktop environment:
+### 5.4 The conductor menu hotkey
 
-    exec xfce4-session      # XFCE
-    exec mate-session       # MATE
-    exec cwm                # OpenBSD native WM
-    exec twm                # FreeBSD base WM
-    exec i3                 # tiling WM
+`xbindkeys` is started only by the conductor (`$CONDUCTOR_USER`): the
+session files guard it with `if [ "$(id -un)" = "$CONDUCTOR_USER" ]`, and
+start one instance per session. Domains never run `xbindkeys` and cannot
+launch the conductor menu.
 
-### 5.5 Xdialog theme (GTK2)
+Its configuration, `~/.xbindkeysrc`, maps **`Mod4+q`** to the `qmenu`
+launcher. The file is **operator-owned**: created if absent, never
+overwritten, and reported by an update if the shipped version differs.
+It is not part of the integrity filelist. (Unlike `local.conf`, which is
+never written at all.)
+
+**`Mod4` is the Super key, and where that key sits depends on the
+keyboard:**
+
+- **PC keyboard** -- the key with the Windows logo, two positions to the
+  left of the space bar.
+- **Apple keyboard** -- **Command**, immediately left of the space bar,
+  where a PC keyboard has Alt. The Apple key sitting where a PC has the
+  Windows key is **Option**, and X reports it as `Alt` (Mod1).
+
+On a Mac keyboard, then, the key *next to the space bar* opens the menu
+while the key a PC user would reach for as "Super" does nothing. That is
+not a dropQbsd configuration issue: it is where the two vendors put the
+modifier.
+
+**A hotkey that does nothing is usually the wrong key, not the wrong
+configuration.** Check the key before the file:
+
+```sh
+xbindkeys -k         # press the combination: prints the modifier mask
+xev -event keyboard  # press one key: prints keysym and keycode
+```
+
+`Mod4` is mask `0x40`; `Alt`/Option is Mod1, `0x08`. A key that reports
+`Alt_L` will never trigger `Mod4+q`.
+
+### 5.5 Adjust the desktop launcher
+
+The last line of `~/.xinitrc` and `~/.xsession` is:
+
+```sh
+exec /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/session
+```
+
+The WM is not hardcoded there. Set `[session] wm` in
+`/etc/dropQbsd/local.conf`; `libexec/session` reads that value. This is
+the same on OpenBSD and FreeBSD.
+
+### 5.6 Xdialog theme (GTK2)
 
 Each domain home that runs pickers gets a `~/.gtkrc-2.0`, so
-Xdialog dialogs in `Qattach` show the per-domain colour.
+Xdialog dialogs in `Qattach` show the per-domain colour:
 
-    userdoc  -> copy examples/apps/gtk/gtkrc.userdoc.rc  -> ~userdoc/.gtkrc-2.0
-    usermail -> copy examples/apps/gtk/gtkrc.usermail.rc -> ~usermail/.gtkrc-2.0
-    userweb  -> copy examples/apps/gtk/gtkrc.userweb.rc  -> ~userweb/.gtkrc-2.0
+userdoc  -> copy examples/apps/gtk/gtkrc.userdoc.rc  -> ~userdoc/.gtkrc-2.0
+usermail -> copy examples/apps/gtk/gtkrc.usermail.rc -> ~usermail/.gtkrc-2.0
+userweb  -> copy examples/apps/gtk/gtkrc.userweb.rc  -> ~userweb/.gtkrc-2.0
 
 Install only if absent; never overwrite.
 
@@ -564,9 +754,11 @@ project ships.
 | `attach.conf` | qattach direction matrix (SRC:DST per line) | `templates/attach.conf_for_etc` |
 | `conductor.conf` | Conductor actions the gate may run as root | `templates/conductor.conf_for_etc` |
 | `domains.conf` | Portable policy (identical on every install) | `templates/domains.conf_for_etc` |
-| `/etc/doas.conf` | Privilege-escalation policy (one line: `permit nopass root`) | `templates/doas.conf_for_etc` |
-| `local.conf` | Your local config (subnet, mail, services) | `examples/system/local.conf.example` |
+| `/etc/doas.conf` (OpenBSD) / `/usr/local/etc/doas.conf` (FreeBSD) | Privilege-escalation policy (one line: `permit nopass root`) | `templates/doas.conf_for_etc` || `local.conf` | Your local config (subnet, mail, services) | `examples/system/local.conf.example` |
 | `schema` | Valid domains for this product | `templates/schema_for_etc` |
+
+`schema` is consumed by `gen_fwall`; `run_app_impl` carries the same three names in `is_domain()`.
+Adding a domain means editing both.
 
 Run as root:
 
@@ -583,7 +775,23 @@ chown root:wheel /etc/dropQbsd/attach.conf /etc/dropQbsd/conductor.conf /etc/dro
 # Directory mode is enforced here too, for parity with 5.2
 # (idempotent; harmless if already correct).
 chmod 755 /etc/dropQbsd
+
+# DOAS_CONF is OS-specific: /etc/doas.conf on OpenBSD,
+# /usr/local/etc/doas.conf on FreeBSD.
+case "$(uname -s)" in
+FreeBSD) DOAS_CONF="/usr/local/etc/doas.conf" ;;
+*)       DOAS_CONF="/etc/doas.conf" ;;
+esac
+export DOAS_CONF
+cp templates/doas.conf_for_etc "$DOAS_CONF"
+chown root:wheel "$DOAS_CONF"
+chmod 644 "$DOAS_CONF"
 ```
+
+The template is `permit nopass root`. It replaces the `permit :wheel`
+rule created in Prerequisites. The installer/updater backs the old
+file up; re-add your rule from the backup if you need `doas` after
+the install.
 
 ### Edit local.conf
 
@@ -605,17 +813,29 @@ commented -- read it carefully. Summary of the sections:
 	- `dst`      -- import destination (default `/home/userdoc/Sync`)
 	- `www_src`  -- web export source (default `/home/userweb/www`)
 	- `mail_src` -- mail export source (default `/home/usermail/.mail`)
-
-**`[sync]` directory behavior.** The import destination (`dst`) is created
-automatically if missing. The export sources (`www_src`, `mail_src`) are
-NOT created: a missing export source is a hard error for the export scripts
-(there is no data to export). Create the export directories yourself -- or
-let the application (browser, mail client) create them on first use:
-
+  **`[sync]` directory behavior.** The import destination (`dst`) is created
+  automatically if missing. The export sources (`www_src`, `mail_src`) are
+  NOT created: a missing export source is a hard error for the export scripts
+  (there is no data to export). Create the export directories yourself -- or
+  let the application (browser, mail client) create them on first use:
 ```sh
-mkdir -p /home/userweb/www
-mkdir -p /home/usermail/.mail
+  mkdir -p /home/userweb/www
+  mkdir -p /home/usermail/.mail
 ```
+- **`[locale]`** and **`[keyboard]`** are read by `templates/profile_for_etc`;
+  **`[session]`** wm is parsed by `profile_for_etc` into `DROPQBSD_WM`, and
+  `libexec/session` execs that value.
+  Set `lang` and `layout` to values that exist on the system (`locale -a`,
+  `setxkbmap -query`). In LightDM/SDDM select the `dropQbsd` session; if
+  you select the DE session, `[session] wm` is not used. On XFCE, also set
+  the layout in `xfce4-keyboard-settings`.
+- `[qmenu]` is read by `Qmenu`. Modify the default menu as needed, adding
+  or removing entries. Add missing programs with Pkg <program> or remove
+  the corresponding entry. 
+
+`gen_fwall` reads only `[network]`, `[mailserver]`, `[services]`,
+`[updates]`, and `[extra.*]`. `[locale]`, `[keyboard]`, and `[session]`
+do not affect the firewall.
 
 **Do not edit `domains.conf`.** It is the portable policy, identical on every
 installation. Personal needs go in `[extra.*]` sections of `local.conf`.
@@ -651,6 +871,15 @@ mail_src = /home/usermail/.mail
 # Format: tcp:PORT@lan, tcp:PORT@internet, udp:PORT@any, ...
 [extra.myexception]
 allow = tcp:8443@lan
+
+[locale]
+lang = en_US.UTF-8
+
+[keyboard]
+layout = us
+
+[session]
+wm = startxfce4
 
 # Conductor menu entries (read by qmenu, ignored by gen_fwall).
 [qmenu]
@@ -823,13 +1052,11 @@ The enforcers that can overlap use an atomic `mkdir` lock to prevent concurrent 
 (`enforce_drop` and `enforce_sync`; `enforce_home` is a simple stat + fix and takes
 no lock). The lock directories live in `/var/run/` and are cleared on reboot.
 
-The enforcers' locks carry a TTL (5 min): if a run is killed
-mid-cycle, the next run detects the orphaned lock by age, removes
-it, and re-acquires it -- a killed cycle costs at most 5 minutes of
-skipped runs, not a permanently blocked enforcer. Manual removal
-(`rmdir /var/run/enforce_*.lock`) is only a fallback if the reclaim
-itself fails (e.g. permissions); `qcontrol` surfaces an
-orphaned lock as a red entry.
+The enforcers' locks carry a TTL (15 min: `LOCK_TTL=900`). A slow
+cycle on a large Sync tree can take minutes; the TTL is a guard
+against an orphaned lock, not a performance target. If a lock is
+older than the TTL and the owning process is still alive, the next
+run reclaims it; investigate the process before doing it by hand.
 
 ### Enforcer rules
 
@@ -877,6 +1104,21 @@ After installation, verify each domain can perform its function:
 Each test exercises one branch. Expected output is shown after each command.
 All drop-zone test files age out on their own (30 min); remove Sync test files
 manually.
+
+The enforcers skip files younger than `GRACE_MIN=2` minutes.
+`enforce_home` has no grace period and fixes immediately.
+`enforce_drop`/`enforce_sync` need `sleep 150` after creating the test
+file. If a manual run exits immediately, cron holds the lock; wait for
+`/var/run/enforce_drop.lock` or `/var/run/enforce_sync.lock` to
+disappear and retry.
+
+**What the enforce_drop tests exercise.** The three cases are distinct:
+- a file with an **old mtime** is deleted as `abandoned` at the first
+  cycle, before any mode/GID check;
+- a **young** file with the wrong mode is fixed (`chmod 440`/`570`);
+- a **young** file with the wrong GID is quarantined, whatever its mode.
+Use `touch` to reset the mtime; otherwise the file is treated as stale
+and never reaches the mode or GID branch.
 
 ```sh
 # --- enforce_drop: cron is running (watch for ~1 minute) ------
@@ -931,8 +1173,8 @@ chmod 755 /home/userdoc
 sleep 150
 stat -f '%Lp %N' /home/userdoc
 # 700 /home/userdoc
-tail -1 /var/log/dropQbsd/enforce_home.log
-# cycle complete: fixed=1
+grep 'fixed mode: /home/userdoc' /var/log/dropQbsd/enforce_home.log | tail -1
+# fixed mode: /home/userdoc (was 755)
 ```
 
 ```sh
@@ -942,8 +1184,17 @@ chmod 755 /home/usermail
 sleep 150
 stat -f '%Lp %Su:%Sg %N' /home/usermail
 # 700 usermail:usermail /home/usermail
-tail -1 /var/log/dropQbsd/enforce_home.log
-# cycle complete: fixed=2
+grep -E 'fixed (mode|owner|group): /home/usermail' \
+    /var/log/dropQbsd/enforce_home.log | tail -3
+# fixed mode: /home/usermail (was 755)
+# fixed owner: /home/usermail (was userdoc)
+# fixed group: /home/usermail (was wheel)
+```
+
+```sh
+# --- enforce_home: cycle count (after 2a/2b) -------------------
+grep 'cycle complete: fixed=[1-9]' /var/log/dropQbsd/enforce_home.log | tail -1
+# cycle complete: fixed=3
 ```
 
 ```sh
@@ -958,7 +1209,7 @@ stat -f '%Lp %Su:%Sg %N' /root
 touch /home/userdoc/Sync/t_test.txt
 chmod 600 /home/userdoc/Sync/t_test.txt
 chown root:wheel /home/userdoc/Sync/t_test.txt
-sleep 120
+sleep 150
 ls -l /home/userdoc/Sync/t_test.txt
 # -rw-rw---- 1 userdoc userdoc ...
 tail -1 /var/log/dropQbsd/enforce_sync.log
@@ -969,8 +1220,9 @@ tail -1 /var/log/dropQbsd/enforce_sync.log
 # --- all three: no orphaned locks -------------------------------
 # Only enforce_drop and enforce_sync use locks; enforce_home does
 # not (it is a simple stat + fix, no lock needed).
-ls -d /var/run/enforce_drop.lock /var/run/enforce_sync.lock 2>/dev/null \
-    || echo "OK: no locks (idle)"
+for l in /var/run/enforce_drop.lock /var/run/enforce_sync.lock; do
+    [ -d "$l" ] && echo "lock: $l"
+done
 # A lock persisting over several checks = blocked enforcer:
 # reclaim it (rmdir) and investigate what killed the cycle.
 ```
@@ -1066,6 +1318,7 @@ for u in root "$CONDUCTOR_USER" userdoc usermail userweb; do
 
     # --- Midnight Commander: skins + preconfigured ini ----------
     mkdir -p "$h/.local/share/mc/skins" "$h/.config/mc"
+    chown "$u":"$grp" "${h}/.config" "$h/.local"
     cp -R examples/apps/mc/skins/. "$h/.local/share/mc/skins/"
     cp "examples/apps/mc/ini.${role}" "$h/.config/mc/ini"
     cp examples/apps/mc/menu_for_any "$h/.config/mc/menu"
@@ -1074,6 +1327,12 @@ for u in root "$CONDUCTOR_USER" userdoc usermail userweb; do
     find "$h/.local/share/mc/skins" -type f -exec chmod 644 {} +
     chmod 644 "$h/.config/mc/ini"
     chmod 644 "$h/.config/mc/menu"
+    for d in "${h}/.config" "$h/.local" "$h/.cache"; do
+        [ -d "$d" ] && chown -R "$u":"$grp" "$d"
+    done
+    # `~/.config`, `~/.local` and `~/.cache` must belong to the account.
+    # Without the parent chown, `~/.config` and `~/.local` can remain
+    # `root:conductor` and break GLib/XFCE and Qsite.
 
     # --- nnn plugins ----------------------------------------------
     mkdir -p "$h/.config/nnn/plugins"
@@ -1095,7 +1354,8 @@ done
 # The conductor gets the black theme for colour coherence
 # across its dialogs, even though it runs no Qattach pickers itself.
 # Root runs no pickers and gets no theme. The theme is operator-owned:
-# installed only if absent, never overwritten.
+# created if absent, never overwritten; an update reports it if the
+# shipped version differs.
 #
 # GTK2 loads ~/.gtkrc-2.0 automatically when Xdialog runs as that
 # domain, so the picker shows the domain colour. The conductor and
@@ -1164,10 +1424,27 @@ for u in "$CONDUCTOR_USER" userdoc usermail userweb; do
     done
 done
 
+# Xfe custom actions: xfqcp, xfqimport, xfqmv. Code, not seeds:
+# install and keep current, like the nnn plugins.
+for u in "$CONDUCTOR_USER" userdoc usermail userweb; do
+    h="/home/$u"
+    [ -d "$h" ] || continue
+    ts=$(date +%Y%m%d_%H%M%S)
+    [ -d "$h/.config/xfe/scripts" ] && \
+        cp -Rp "$h/.config/xfe/scripts" "$h/.config/xfe/scripts.bak.$ts"
+    mkdir -p "$h/.config/xfe/scripts"
+    cp -R examples/apps/xfe/scripts/. "$h/.config/xfe/scripts/"
+    chown -R "$u:$u" "$h/.config/xfe/scripts"
+    find "$h/.config/xfe/scripts" -type d -exec chmod 755 {} +
+    find "$h/.config/xfe/scripts" -type f -name 'xf*' -exec chmod 755 {} +
+done
+
 # ------------------------------------------------------------------
 # Conductor menu (qmenu) + xbindkeys -- conductor only
 # (`$CONDUCTOR_USER`, rename-proof).
-# Operator-owned: installed only if absent, never overwritten.
+# Operator-owned: created if absent by both the installer and the
+# updater, never overwritten. An update reports the file if the shipped
+# version differs from the one installed.
 # ------------------------------------------------------------------
 if [ ! -e "/home/$CONDUCTOR_USER/.xbindkeysrc" ]; then
     cp templates/xbindkeys_for_conductor "/home/$CONDUCTOR_USER/.xbindkeysrc"
@@ -1177,7 +1454,6 @@ if [ ! -e "/home/$CONDUCTOR_USER/.xbindkeysrc" ]; then
 fi
 # qmenu itself is a project script under /opt/dropQbsd/sbin/ --
 # installed by the installer/updater with the other scripts
-
 ```
 
 **Notes:**
@@ -1186,20 +1462,18 @@ fi
   replaces `~/.exrc`, `~/.config/mc/ini`, and
   `~/.config/nnn/plugins/`. The block backs these up first,
   appending `.bak.<timestamp>`, but the originals are still replaced.
-  **The one exception is the GTK theme (`~/.gtkrc-2.0`): it is
-  operator-owned and is installed only if absent, never
-  overwritten.** The conductor's `~/.xbindkeysrc` is likewise
-  operator-owned (installed only if absent). On a fresh install this
-  is harmless.
+  **Two exceptions, both operator-owned:** the GTK theme
+  (`~/.gtkrc-2.0`) and the conductor's `~/.xbindkeysrc`. They are
+  created if absent, never overwritten, and reported by an update if
+  the shipped version differs. On a fresh install this is harmless.
 - **nnn plugins are installed for every account, including `root`.**
   They are mandatory for `qfile` (10.5) and useful standalone:
   `;c` / `;m` / `;i` call `qcp` / `qmv` / `qimport`, which work from
   any shell.
 - **The conductor menu (`qmenu`) and `xbindkeys` are conductor-only.**
   Only the conductor (`$CONDUCTOR_USER`) runs the YAD conductor menu
-  (`Mod4+q`). Domains never run `xbindkeys` and cannot launch it. The
-  `~/.xbindkeysrc` is operator-owned: installed only if absent, never
-  overwritten.
+  (`Mod4+q` -- see 5.4 for the key mapping and what to check if it does
+  nothing). Domains never run `xbindkeys` and cannot launch it.
 - **`chown` uses the account's own group** -- the account's own group
   for the domains, `wheel` for `root` -- not the `drop` group. These
   are per-user dotfiles, not shared artifacts.
@@ -1216,18 +1490,24 @@ fi
   `[skin]` section naming the domain's skin. They are not skins
   themselves.
 - **The Xdialog theme is per-domain and operator-owned.**
-  `userdoc`, `usermail`, `userweb`, and `the conductor ($CONDUCTOR_USER)` get one,
-  from `examples/apps/gtk/gtkrc.<domain>.rc` to `~/.gtkrc-2.0`.
-  The conductor's theme is black, for colour coherence. Root runs no
-  pickers and gets none. GTK2 loads `~/.gtkrc-2.0` automatically when
-  Xdialog runs as that domain, so the picker shows the domain colour.
-  The theme is installed only if absent and never overwritten -- if you
-  customise the colour, an update will not clobber it.
+  `userdoc`, `usermail`, `userweb` and the conductor
+  (`$CONDUCTOR_USER`) get one, from `examples/apps/gtk/gtkrc.<role>`
+  to `~/.gtkrc-2.0`. The conductor's theme is black, for colour
+  coherence. Root runs no pickers and gets none. GTK2 loads
+  `~/.gtkrc-2.0` automatically when Xdialog runs as that domain, so the
+  picker shows the domain colour. The theme is created if absent and
+  never overwritten, so customising the colour is safe; an update
+  reports it if the shipped version differs.
 - **The Xfe templates are per-domain and operator-owned.** Each domain
   home gets a seed (`xferc`/`xfwrc`) from `examples/apps/xfe/`, installed
   only if absent. Xfe rewrites the file on exit, so the seed is not a live
   file -- after the first launch the live file is the operator's. The `$CONDUCTOR_USER`
   (conductor) seed uses the black theme, matching the mc skin and the GTK theme.
+- **The Xfe scripts are per-domain and project-owned.** Each domain home
+  gets `xfqcp`, `xfqimport` and `xfqmv` from `examples/apps/xfe/scripts`.
+  They are code, not seeds: the block copies them on every run, so an
+  update keeps them current. Do not customise them in place -- a local
+  edit is overwritten, like the nnn plugins.
 
 ### 10.2 Desktop Environment
 
@@ -1262,6 +1542,14 @@ application launcher** -- bind it with `xbindkeys` (`Mod4+q`). Domain
 differentiation is provided entirely by the color schemes of terminals,
 `mc`, `nnn` and `xfe` launchers. On these environments the color
 convention is not a suggestion -- it is the only domain signal available.
+
+XFCE on OpenBSD needs `pkg_add xfce xfce-extras`; `rcctl enable messagebus`,
+`rcctl start messagebus`.
+XFCE on FreeBSD needs `pkg install xfce`; `sysrc dbus_enable=YES`.
+Use `[session] wm = startxfce4`; `startxfce4` sets the XFCE environment
+before `xfce4-session`. The dropQbsd session entry (dropQbsd.desktop)
+and the `.xinitrc`/`.xsession` stubs call `libexec/session`, not `startxfce4`
+directly.
 
 ### 10.3 Disposable sessions
 
@@ -1336,7 +1624,6 @@ the `[qmenu]` entries in a file any domain user can write.
 
 | OpenBSD | FreeBSD |
 | ------- | ------- |
-| `pkg_add yad xbindkeys` | `pkg install yad xbindkeys` |
 
 ```sh
 cp templates/xbindkeys_for_conductor "/home/$CONDUCTOR_USER/.xbindkeysrc"
@@ -1344,11 +1631,11 @@ chown "$CONDUCTOR_USER:$CONDUCTOR_USER" "/home/$CONDUCTOR_USER/.xbindkeysrc"
 chmod 644 "/home/$CONDUCTOR_USER/.xbindkeysrc"
 ```
 
-The `.xbindkeysrc` is **operator-owned**: installed once, never
-overwritten by an update (same policy as `local.conf` and the GTK
-theme). It is not part of the integrity filelist.
+The `.xbindkeysrc` is **operator-owned**: created if absent, never overwritten;
+an update reports it if the shipped version differs.
 
-**Launch:** `Qmenu`, or **`Mod4+q`** via `xbindkeys`.
+**Launch:** `Qmenu`, or **`Mod4+q`** via `xbindkeys`. If the key does
+nothing, see 5.4 before touching the file.
 
 ### 10.5 Qfile (tmux + nnn)
 
@@ -1501,9 +1788,11 @@ chown -R "$d:$d" "/home/$d/.config/xfe"
 chmod 644 "/home/$d/.config/xfe/xferc" "/home/$d/.config/xfe/xfwrc"
 ```
 
-The guarded `[ -e ... ] || cp` form means an existing live file is
-never overwritten -- consistent with the bulk block and the GTK
-theme policy (operator-owned, install only if absent).
+The guarded `[ -e ... ] || cp` form means an existing live file is never
+overwritten -- consistent with the bulk block and the GTK theme policy
+(operator-owned, created if absent, never overwritten). No divergence is
+reported here: Xfe rewrites its config on exit, so after the first launch
+the live file is expected to differ from the seed.
 
 ### 10.7 -- 10.15: Utilities
 
@@ -1650,6 +1939,16 @@ for the signing path; `verify_integrity` mirrors it for the verification
 path. If you modify either script, verify the two filters are identical
 (see Shell portability rules, "Two copies of the same logic will diverge").
 
+If `signify` is missing or integrity was not configured during install,
+the installer prints `templates/integrity_setup`. The same commands are
+in that file; run them as root, then `Sign` and `Verify`.
+
+On a fresh install `signify -G -e` asks for the passphrase twice (set
+and confirm), and `Sign` asks for it once. `Verify` and the
+`verify_integrity` cron job use only the public key and never ask for
+the passphrase. If a key exists, answer **no** to "Regenerate the key
+pair?" to keep the trust anchor.
+
 **After updating scripts:** if you modify any monitored file,
 `verify_integrity` will report a violation. This is expected. Re-sign the
 manifest.
@@ -1726,6 +2025,12 @@ composing a mail or filling an upload form.
 | ------- | ------- |
 | `pkg_add Xdialog` | `pkg install xdialog` |
 
+`Xdialog` can block or prompt; install it separately. Without it,
+`Qattach` does not work.
+
+The installer creates `~/Downloads` in every domain home. If the
+directory is missing, `qattach` creates it before importing.
+
 **Configuration:** the direction matrix in `/etc/dropQbsd/attach.conf`,
 one `SRC:DST` per line:
 
@@ -1739,8 +2044,7 @@ The default is deliberately minimal: from the trusted source
 untrusted data into the trusted archive and are handled with
 `qcp` + `qimport`.
 
-**The conductor action** is declared in
-`/etc/dropQbsd/conductor.conf`:
+**The conductor action** is declared in `/etc/dropQbsd/conductor.conf`:
 
 ```
 qattach
@@ -1780,7 +2084,8 @@ The flow uses **three popups**: pick a file (the picker runs as `userdoc`,
 per the alias, confined to its home -- other domains' homes, mode 700,
 are invisible to it), pick the destination (from `attach.conf`), then confirm
 the file landing in the destination's `~/Downloads`. The file is staged in the
-drop zone under a unique name (`<basename>.<pid>.<timestamp>.qattach`), then imported.
+drop zone under a unique name (`<basename>.<pid>.<timestamp>.qattach`),
+then imported.
 
 **Requirements:** `Xdialog`. The binary is `Xdialog` on OpenBSD and
 `xdialog` on FreeBSD; `qattach` resolves the name at runtime.
@@ -1836,20 +2141,28 @@ Qinspect file1              # bare name: looked up in /home/drop
 Qinspect                    # NOT interactive -- needs a file argument
 ```
 
-**Risk verdict:**
+**Risk verdict.** The verdict has two axes:
 
-| Verdict | Meaning |
-| ------- | ------- |
-| LOW | Not executable, not an archive, type matches name. Safe to import. |
-| MEDIUM | Archive or binary data -- inspect the listing/preview carefully. |
-| HIGH | Executable, macro document, double extension, or type/name mismatch. Do not import unless certain of origin and purpose. |
+| Axis | Values | Meaning |
+|------|--------|---------|
+| CONTENT | LOW / MEDIUM / HIGH | executable, archive, macro document, double extension, type/name mismatch |
+| TRANSIT | OK / WARN / BLOCK | mtime, GID, mode: what `enforce_drop` will do |
+
+- **CONTENT LOW / TRANSIT OK** -- `IMPORT`.
+- **CONTENT LOW / TRANSIT WARN** -- `IMPORT WITH CAUTION`: the mode will
+  be fixed by `enforce_drop`.
+- **CONTENT LOW / TRANSIT BLOCK** -- `DO NOT IMPORT`: wrong GID or
+  stale; `enforce_drop` will quarantine or delete it before any import.
+- **CONTENT HIGH** -- `DO NOT IMPORT`, regardless of transit.
+
+Exit code: 0 import, 1 caution, 2 do not import.
 
 **Anti-masking.** A filename saying `.pdf` whose real type is an
 executable raises HIGH. Double extensions (`file.pdf.exe`) do too.
 The verdict is designed so a non-technical operator can act on it
 without knowing what a file signature is.
 
-**Signals that raise the risk:**
+**Content signals that raise the risk:**
 
 - Executable / script / ELF / shared object.
 - Documents with macros (Word, Excel, OLE).
@@ -1859,10 +2172,16 @@ without knowing what a file signature is.
 - Archive contents containing executables (list shows them).
 - Binary data where a text file was expected.
 
-**Exit code:** 0 (low), 1 (medium), 2 (high) -- scriptable.
+**Transit signals** (from `enforce_drop`'s rules):
+
+- **Wrong GID** (not `drop`, and not root-owned) -- BLOCK: the file will
+  be quarantined.
+- **mtime older than 30 minutes** -- BLOCK: the file will be deleted as
+  abandoned.
+- **Mode other than 0440** -- WARN: the file will be fixed to 0440.
 
 **Interactive use.** `qinspect` itself is non-interactive. To run it
-from a prompt or a desktop launcher, use `qprompt` (10.15).
+from a prompt or a desktop launcher, use `qprompt` (10.12).
 
 **Requirements:** base system tools (`file`, `stat`, `sha256`, `tar`, `head`).
 No additional packages.
@@ -1984,6 +2303,21 @@ pass insert finance/bank_pw
 ```sh
 Qsite
 ```
+
+On first start `Qsite` looks for `~/.config/dropQbsd/sites.conf`. If it
+is missing, it shows a popup with the copy commands:
+
+    mkdir -p ~/.config/dropQbsd
+    cp /opt/dropQbsd/examples/system/sites.conf.example ~/.config/dropQbsd/sites.conf
+
+If no supported browser is installed, `Qsite` shows the no-browser
+popup; install one through the dropQbsd package window, for example
+`Pkg qutebrowser`.
+
+`Qsite` uses `~/.cache/dropqbsd`; it must be owned by the conductor.
+If it is `root:wheel`, `Qsite` shows the cache-ownership popup with the
+`chown` command. Do not run `Qsite` as root; run it from the conductor's
+Qmenu/session.
 
 ### 10.14 Syncthing -- LAN File Synchronization
 
@@ -2153,7 +2487,7 @@ After a full installation:
 │   ├── local.conf               # Local config (edited)
 │   ├── profile                  # Environment variables (from templates/)
 │   └── schema                   # Valid domains (from templates/)
-├── doas.conf                    # Privilege escalation (from templates/)
+├── doas.conf                    # OpenBSD; FreeBSD: /usr/local/etc/doas.conf
 ├── newsyslog.conf               # Log rotation (dropQbsd entries appended)
 ├── pf.conf                      # GENERATED by gen_fwall (do not edit)
 └── rc.d/ (OpenBSD)              # or /usr/local/etc/rc.d/ (FreeBSD)
@@ -2196,6 +2530,7 @@ After a full installation:
 │   ├── indicator_de             # Domain indicator
 │   ├── root_snapshot            # Privileged data for qcontrol
 │   ├── run_app_impl             # Launch logic
+│   ├── session                  # WM launcher; reads [session] wm
 │   ├── update_mailserver_table  # Mail server PF table
 │   ├── update_services_table    # Services PF table
 │   ├── verify_integrity         # Script integrity check
@@ -2218,26 +2553,29 @@ After a full installation:
 │   └── xterm_userweb            # xterm, userweb color scheme
 ├── src/
 │   └── run_app.c                # C source (reference)
-└── templates/                   # Copy-as-is files
-    ├── alias_for_etc
-    ├── attach.conf_for_etc
-    ├── conductor.conf_for_etc
-    ├── doas.conf_for_etc
-    ├── domains.conf_for_etc
-    ├── filelist_for_etc
-    ├── kshrc_for_etc
-    ├── login.conf_append
-    ├── newsyslog_append
-    ├── profile_for_etc
-    ├── profile_for_home
-    ├── rc.d/
-    │   ├── syncthing_userdoc.freebsd
-    │   └── syncthing_userdoc.openbsd
-    ├── schema_for_etc
-    ├── xbindkeys_for_conductor
-    ├── xinitrc_for_home
-    ├── xprofile_for_home
-    └── xsession_for_home
+├── templates/                   # Copy-as-is files
+│   ├── alias_for_etc
+│   ├── attach.conf_for_etc
+│   ├── conductor.conf_for_etc
+│   ├── doas.conf_for_etc
+│   ├── domains.conf_for_etc
+│   ├── dropQbsd.desktop         # LightDM/SDDM session entry
+│   ├── filelist_for_etc
+│   ├── kshrc_for_etc
+│   ├── integrity_setup          # copy-paste integrity commands
+│   ├── login.conf_append
+│   ├── newsyslog_append
+│   ├── profile_for_etc
+│   ├── profile_for_home
+│   ├── rc.d/
+│   │   ├── syncthing_userdoc.freebsd
+│   │   └── syncthing_userdoc.openbsd
+│   ├── schema_for_etc
+│   ├── xbindkeys_for_conductor
+│   ├── xinitrc_for_home
+│   ├── xprofile_for_home
+│   └── xsession_for_home
+└── VERSION
 
 /home/
 ├── <conductor>/                 # Conductor (default: conductor)
@@ -2247,19 +2585,28 @@ After a full installation:
 │   ├── .xprofile                # Stub -> /etc/dropQbsd/kshrc
 │   ├── .xsession                # Stub + WM launch (xenodm)
 │   └── .xinitrc                 # Stub + WM launch (startx)
+├── drop/                        # 2770 root:drop, SGID: the only shared bridge
+│   ├── _quarantine/             # 750 root:wheel: quarantined items + tickets
+│   ├── usermail_export/         # 2770 root:drop: mail archives (export -> import)
+│   └── userweb_export/          # 2770 root:drop: www archives (export -> import)
 ├── userdoc/                     # Documents (700)
+│   ├── Downloads/               # qattach import destination
+│   ├── Sync/                    # libexec/import_* default destination
 │   ├── .config/
-│   ├── Sync/
 │   ├── .profile
 │   ├── .xprofile
 │   ├── .xsession
 │   └── .xinitrc
 ├── usermail/                    # Email (700)
+│   ├── .mail/                   # libexec/export_mail_to_drop default source
+│   ├── Downloads/               # qattach import destination
 │   ├── .profile
 │   ├── .xprofile
 │   ├── .xsession
 │   └── .xinitrc
 └── userweb/                     # Browser (700)
+    ├── Downloads/               # qattach import destination
+    ├── www/                     # libexec/export_www_to_drop default source
     ├── .profile
     ├── .xprofile
     ├── .xsession
@@ -2523,7 +2870,9 @@ environment before any script sees it:
 - `ENV` is not set here. The Korn shell reads `ENV` only in **interactive**
   mode, and the scripts executed by the wrapper are non-interactive.
   Interactive shells (xterm) get `ENV` from `xterm_conductor` / `xterm_userdoc`.
-- Only `DISPLAY`, `XAUTHORITY`, and `TERM` survive the crossing.
+- Only `DISPLAY`, `XAUTHORITY`, and `TERM` survive the crossing. The invoking
+  uid is not an environment variable: `run_app.c` passes it as the first argument,
+  and the wrapper forwards it unchanged.
 
 Scripts that need the X environment (for example `qsite`)
 apply safe defaults for `DISPLAY`, `XAUTHORITY`, and `TERM` when a

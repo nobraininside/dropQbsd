@@ -1,0 +1,71 @@
+# ==========================================================
+# dropQbsd -- session
+#
+# Launch the window manager or desktop environment configured
+# in /etc/dropQbsd/local.conf.
+#
+# The WM is not hardcoded here. /etc/dropQbsd/profile parses
+# the [session] section of local.conf and exports DROPQBSD_WM;
+# this script execs that value. The fallback is startxfce4.
+#
+# Path: /opt/dropQbsd/libexec/session
+# Permissions: 755 root:wheel
+#
+# Requirements:
+#   - /opt/dropQbsd/libexec/wrapper
+#   - /etc/dropQbsd/profile
+#   - getent(1) (base system)
+#
+# Usage:
+#   /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/session
+#
+# Invoked by:
+#   - templates/dropQbsd.desktop   (LightDM / SDDM)
+#   - ~/.xinitrc                   (startx / SDDM User Session)
+#   - ~/.xsession                  (xenodm)
+#
+# Notes:
+#   - No shebang: run through libexec/wrapper, which selects
+#     the Korn shell and sanitizes the environment.
+#   - The wrapper unsets HOME; this script rebuilds it from
+#     the password database.
+#   - The wrapper hardcodes PATH; this script keeps
+#     /usr/local/bin in it for FreeBSD packages.
+#   - ~/.xprofile is a hook, not a WM selector: it prepares
+#     the environment and starts the indicator, then the
+#     session entry (this script) launches the WM.
+#   - Any WM/DE works: startxfce4, mate-session, cwm,
+#     twm, i3, ...
+#
+# Exit codes:
+#   - the WM's status, because exec replaces this shell
+#   - 127 if the WM cannot be executed
+# ==========================================================
+
+# dropQbsd session launcher.
+# No shebang: run through libexec/wrapper.
+
+# The wrapper unsets HOME; rebuild it before anything uses it.
+HOME="$(getent passwd "$(id -u)" | cut -d: -f6)"
+[ -n "$HOME" ] || { echo "Error: cannot resolve home directory." >&2; exit 1; }
+export HOME
+
+# The wrapper hardcodes PATH; keep /usr/local/bin for FreeBSD packages.
+# Set the base before profile so profile's /opt/dropQbsd/bin append survives.
+PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH
+
+[ -f /etc/dropQbsd/profile ] && . /etc/dropQbsd/profile
+[ -f "$HOME/.xprofile" ] && . "$HOME/.xprofile"
+
+# Apply the X11 keyboard layout configured in [keyboard] layout.
+if [ -n "${DROPQBSD_XKB:-}" ]; then
+    command -v setxkbmap >/dev/null 2>&1 && setxkbmap "$DROPQBSD_XKB"
+fi
+
+_wm="${DROPQBSD_WM:-startxfce4}"
+if ! command -v "$_wm" >/dev/null 2>&1; then
+    echo "Error: window manager not found: $_wm" >&2
+    exit 1
+fi
+exec ${DROPQBSD_WM:-startxfce4}

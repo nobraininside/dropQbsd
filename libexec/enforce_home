@@ -45,11 +45,11 @@
 
 LOG="/var/log/dropQbsd/enforce_home.log"
 
-# Conductor account (derived from GECOS, single source of truth).
+# Conductor account (derived from GECOS; mirrors the gate's rule).
 # Cron runs this script with a minimal environment, so CONDUCTOR_USER
 # is not inherited; derive it here. Fallback to "conductor" if no
 # account carries the marker (pre-GECOS install).
-CONDUCTOR_USER="${CONDUCTOR_USER:-$(getent passwd | awk -F: 'index($5, "dropQbsd_conductor") > 0 {print $1; exit}')}"
+CONDUCTOR_USER="${CONDUCTOR_USER:-$(awk -F: '$5 == "dropQbsd_conductor" { print $1; exit }' /etc/passwd)}"
 CONDUCTOR_USER="${CONDUCTOR_USER:-conductor}"
 
 log() {

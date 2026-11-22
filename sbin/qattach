@@ -87,7 +87,7 @@ CONDUCTOR=""
 if [ -n "${CONDUCTOR_USER:-}" ]; then
     CONDUCTOR="$CONDUCTOR_USER"
 else
-    CONDUCTOR="$(getent passwd | awk -F: 'index($5, "dropQbsd_conductor") > 0 {print $1; exit}')"
+    CONDUCTOR="$(awk -F: '$5 == "dropQbsd_conductor" { print $1; exit }' /etc/passwd)"
 fi
 [ -n "$CONDUCTOR" ] || CONDUCTOR="conductor"
 COND_HOME=""
@@ -97,14 +97,23 @@ if [ -z "$COND_HOME" ] || [ ! -d "$COND_HOME" ]; then
     exit 1
 fi
 #-----------------------------------------------------------------------------
-# RUNTIME DIRECTORY (state lives in the conductor's cache)
+# RUNTIME DIRECTORY (root-owned state under the conductor's cache)
 #-----------------------------------------------------------------------------
 # MUST stay after COND_HOME is assigned above. Under `set -u` an earlier
 # reference aborts with "COND_HOME: parameter not set" -- which is exactly
 # the v0.4.0 crash this block was moved to fix. Do not hoist it.
-RUNDIR="$COND_HOME/.cache/dropQbsd"
+CACHE_DIR="$COND_HOME/.cache"
+if [ ! -d "$CACHE_DIR" ]; then
+    mkdir -p "$CACHE_DIR"
+    chown "$CONDUCTOR" "$CACHE_DIR"
+    chmod 700 "$CACHE_DIR"
+fi
+RUNDIR="$CACHE_DIR/dropQbsd"
 mkdir -p "$RUNDIR"
 chmod 700 "$RUNDIR"
+# Root-owned 700: only qattach (running as root) reads and writes it.
+# The conductor's cache is used as a location, not as shared state --
+# the conductor cannot read the file.
 
 #-----------------------------------------------------------------------------
 # X ENVIRONMENT
@@ -150,13 +159,13 @@ fi
 # qattach source/destination (it is not in attach.conf).
 is_valid_domain() {
     _d="$1"
-    _marker="dropQbsd_${_d}"   # e.g. userdoc -> dropQbsd_userdoc
+    _marker="dropQbsd_${_d}"   # userdoc -> dropQbsd_userdoc
     grep -v '^[[:space:]]*#' "$SCHEMA" \
-        | grep -v '^[[:space:]]*$' \
-        | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
-        | grep -qx -- "$_marker" \
-    && getent passwd | awk -F: -v m="$_marker" \
-        'index($5, m) > 0 {print $1; exit}' | grep -qx -- "$_d"
+    | grep -v '^[[:space:]]*$' \
+    | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+    | grep -qx -- "$_marker" \
+    && awk -F: -v u="$_d" -v m="$_marker" \
+        '$1 == u && $5 == m { found = 1 } END { exit !found }' /etc/passwd
 }
 
 #-----------------------------------------------------------------------------
@@ -227,6 +236,12 @@ TMP_AUTH_2=$(mktemp /tmp/qattach_auth2.XXXXXX)
 cleanup() {
     rm -f "$TMP_AUTH_1" "$TMP_AUTH_2" 2>/dev/null
     rm -f "$DEST_LIST" 2>/dev/null
+    # A failed run must not leave the staged item in the drop zone.
+    # DROP_FINAL is assigned later; ${DROP_FINAL:-} covers the early
+    # exit paths.
+    if [ -n "${DROP_FINAL:-}" ]; then
+        rm -rf "$DROP_FINAL" 2>/dev/null
+    fi
 }
 trap cleanup EXIT
 trap 'cleanup; trap - EXIT; exit 129' HUP
@@ -237,8 +252,11 @@ make_cookie_for() {
     _dom="$1"
     _dst="$2"
     cp "$AUTH_SRC" "$_dst"
-    chown "$_dom" "$_dst"
+    # chmod BEFORE chown: after chown the domain owns the file and can
+    # replace it with a symlink before chmod runs, and chmod would
+    # follow the link to its target.
     chmod 600 "$_dst"
+    chown "$_dom" "$_dst"
 }
 
 #-----------------------------------------------------------------------------
@@ -265,11 +283,10 @@ picker() {
     _title="$4"
     _filter="$5"
     _xd="$6"
-
     su -l "$_dom" -c '
-        COOKIE="$1"; ROOT="$2"; TITLE="$3"; FILTER="$4"; XD="$5"
-        export DISPLAY="'"$DISPLAY_ARG"'"
-        export XAUTHORITY="$COOKIE"
+COOKIE="$1"; ROOT="$2"; TITLE="$3"; FILTER="$4"; XD="$5"; DSP="$6"
+export DISPLAY="$DSP"
+export XAUTHORITY="$COOKIE"
 
         cur="$ROOT"
         selected=""
@@ -341,7 +358,7 @@ picker() {
         done
 
         printf "%s" "$selected"
-    ' -- "$_cookie" "$_root" "$_title" "$_filter" "$_xd"
+    ' -- "$_cookie" "$_root" "$_title" "$_filter" "$_xd" "$DISPLAY_ARG"
 }
 
 #-----------------------------------------------------------------------------
@@ -395,38 +412,92 @@ log "selected: $BASENAME"
 # qcp takes a path and stages the file under its basename. To get
 # the unique name, copy the file to a temp name inside the source's
 # home, qcp that, then rename it in the drop zone.
+#
+# Staging directory: mktemp -d, not a predictable path. The source
+# user owns their home and can pre-create a symlink at a predictable
+# name; cp -R would follow it and write into the target as root.
+# mktemp -d creates the directory with O_EXCL, so the copy destination
+# cannot be pre-created. The directory stays root-owned and is made
+# traversable (711) only after the copy, so the source can read the
+# staged item but cannot add or replace entries in it.
+#
+# Symlinks: rejected. Every later chgrp/chmod/chown follows links,
+# and a link to /etc/master.passwd would change a system file. The
+# check runs on the staged copy AND again on the drop-zone item:
+# the source user is in the drop group and can replace files in
+# transit, so the second check is not redundant.
 STAMP=$(date +%s)
 STAGED="${BASENAME}.$$.${STAMP}.qattach"
-TMP_STAGE="$SRC_HOME/.qattach_stage.$$"
+
+TMP_DIR=$(mktemp -d "$SRC_HOME/.qattach_stage.XXXXXX") || {
+    log "error: cannot create staging directory"
+    exit 1
+}
+# The random suffix from mktemp is the basename qcp will use in the
+# drop zone. It is unpredictable before this point, so the source
+# cannot pre-create the drop-zone entry under the same name.
+TMP_BASE="${TMP_DIR##*/}"
+TMP_STAGE="$TMP_DIR/$TMP_BASE"
 
 cp -R "$SELECTED" "$TMP_STAGE"
-chown "$SRC_DOMAIN" "$TMP_STAGE"
 
-if ! su -l "$SRC_DOMAIN" -c "$WRAPPER $QCP \"$TMP_STAGE\""; then
-    rm -rf "$TMP_STAGE"
+# Reject symlinks anywhere in the selected tree. cp -R preserves
+# them, and the root-owned chgrp/chmod/chown below would follow
+# them to their target.
+if [ -L "$SELECTED" ] || find "$TMP_STAGE" -type l | grep -q .; then
+    log "error: selected item contains symbolic links"
+    rm -rf "$TMP_DIR"
+    exit 1
+fi
+
+# The staged copy is read by qcp AS THE SOURCE. chown -R, not chown:
+# a directory's contents copied by root are still root-owned, and a
+# 600 file inside would be unreadable to the source.
+chown -R "$SRC_DOMAIN" "$TMP_STAGE"
+# Traverse only (no listing): the source must reach the staged item,
+# not enumerate the staging directory.
+chmod 711 "$TMP_DIR"
+
+# Pass the path as $1, not interpolated into the -c string: the
+# staged name derives from the selected file, and a name containing
+# quotes or semicolons must not become shell syntax.
+if ! su -l "$SRC_DOMAIN" -c "$WRAPPER $QCP \"\$1\"" -- "$TMP_STAGE"; then
+    rm -rf "$TMP_DIR"
     log "error: qcp failed for $BASENAME as $SRC_DOMAIN"
     exit 1
 fi
-rm -rf "$TMP_STAGE"
+rm -rf "$TMP_DIR"
 
-# qcp placed the file in the drop zone under its temp basename.
-DROP_TMP="$DROP_DIR/.qattach_stage.$$"
+# qcp placed the file in the drop zone under TMP_BASE.
+DROP_TMP="$DROP_DIR/$TMP_BASE"
 DROP_FINAL="$DROP_DIR/$STAGED"
-
 if [ ! -e "$DROP_TMP" ]; then
     log "error: qcp did not stage the file as expected"
     exit 1
 fi
-
 mv "$DROP_TMP" "$DROP_FINAL"
-chgrp -R drop "$DROP_FINAL"
+
+# Second symlink check, on the drop-zone item. The source user is in
+# the drop group and can replace a file in transit; the check above
+# covered the staged copy, not what qcp actually left behind.
+if [ -L "$DROP_FINAL" ] || find "$DROP_FINAL" -type l | grep -q .; then
+    log "error: staged item contains symbolic links"
+    rm -rf "$DROP_FINAL"
+    exit 1
+fi
+
+# -h: never follow a link. With the check above this is belt and
+# braces, but a link that slips through must not change its target.
+# chgrp -R and -h cannot be combined (OpenBSD and FreeBSD both reject
+# the pair). find without -L visits symlinks as symlinks; chgrp -h
+# changes the link itself, never its target.
+find "$DROP_FINAL" -exec chgrp -h drop {} +
 if [ -d "$DROP_FINAL" ]; then
     find "$DROP_FINAL" -type d -exec chmod 570 {} +
     find "$DROP_FINAL" -type f -exec chmod 440 {} +
 else
-    chmod 440 "$DROP_FINAL"
+    chmod -h 440 "$DROP_FINAL"
 fi
-
 log "staged: $STAGED"
 
 #-----------------------------------------------------------------------------
@@ -443,12 +514,14 @@ done < "$DEST_LIST"
 log "phase 2: destination menu"
 
 # shellcheck disable=SC2086
-DST_DOMAIN=$(su -l "$SRC_DOMAIN" -c "
-    export DISPLAY='$DISPLAY_ARG'
-    export XAUTHORITY='$TMP_AUTH_2'
-    $XDIALOG --stdout --no-tags --title 'dropQbsd - qattach' \
-        --menubox 'Attach \"$BASENAME\" to:' 40 100 10 $DEST_MENU 2>/dev/null
-") || DST_DOMAIN=""
+DST_DOMAIN=$(su -l "$SRC_DOMAIN" -c '
+DSP="$1"; COOKIE="$2"; XD="$3"; BASE="$4"
+shift 4
+export DISPLAY="$DSP"
+export XAUTHORITY="$COOKIE"
+"$XD" --stdout --no-tags --title "dropQbsd - qattach" \
+    --menubox "Attach \"$BASE\" to:" 40 100 10 "$@" 2>/dev/null
+' -- "$DISPLAY_ARG" "$TMP_AUTH_2" "$XDIALOG" "$BASENAME" $DEST_MENU) || DST_DOMAIN=""
 
 if [ -z "$DST_DOMAIN" ]; then
     log "cancelled at phase 2"
@@ -469,6 +542,19 @@ log "destination: $DST_DOMAIN"
 #-----------------------------------------------------------------------------
 DST_HOME=$(domain_home "$DST_DOMAIN")
 DL="$DST_HOME/Downloads"
+# The installer creates Downloads in every home, but a home may have
+# been rebuilt by hand. qimport cannot write into a missing directory,
+# and the failure would surface only in the log. Create it here as the
+# destination user, then continue.
+if [ ! -d "$DL" ]; then
+    mkdir -p "$DL" || {
+        log "error: cannot create $DL"
+        rm -f "$DROP_FINAL"
+        exit 1
+    }
+    chown "$DST_DOMAIN":"$DST_DOMAIN" "$DL"
+    chmod 700 "$DL"
+fi
 
 # Refuse to overwrite an existing file in Downloads.
 if [ -e "$DL/$BASENAME" ]; then
@@ -477,39 +563,44 @@ if [ -e "$DL/$BASENAME" ]; then
     exit 1
 fi
 
-log "qimport as $DST_DOMAIN: $STAGED"
-
-if ! su -l "$DST_DOMAIN" -c "$WRAPPER $QIMPORT \"$STAGED\""; then
-    log "error: qimport failed for $STAGED as $DST_DOMAIN"
+# Phase 2 can take minutes. The source user is in the drop group and
+# can replace the staged entry while the destination menu is open;
+# re-check before qimport reads it.
+if [ -L "$DROP_FINAL" ] || find "$DROP_FINAL" -type l | grep -q .; then
+    log "error: staged item contains symbolic links"
+    rm -rf "$DROP_FINAL"
     exit 1
 fi
 
+log "qimport as $DST_DOMAIN: $STAGED"
+# Pass the staged name as $1, not interpolated into the -c string:
+# it derives from the selected file, and a name containing quotes
+# or semicolons must not become shell syntax in the destination.
+if ! su -l "$DST_DOMAIN" -c "$WRAPPER $QIMPORT \"\$1\"" -- "$STAGED"; then
+    log "error: qimport failed for $STAGED as $DST_DOMAIN"
+    exit 1
+fi
 # qimport placed the file in the destination's ~/Downloads under
 # the staged name. Strip the unique suffix.
 if [ ! -e "$DL/$STAGED" ]; then
     log "error: qimport did not place '$STAGED' in $DL"
     exit 1
 fi
-
 mv "$DL/$STAGED" "$DL/$BASENAME"
-chown "$DST_DOMAIN" "$DL/$BASENAME"
-
-# Remove the staged file from the drop zone: qimport copies, it
-# does not move, so the artifact would otherwise linger until
-# enforce_drop reclaims it.
-rm -rf "$DROP_FINAL"
-
-log "done: $BASENAME $SRC_DOMAIN->$DST_DOMAIN"
+# -h: never follow a link. The staged item was checked twice, but a
+# link that slips through must not change its target's owner.
+chown -h "$DST_DOMAIN" "$DL/$BASENAME"
 
 #-----------------------------------------------------------------------------
 # DONE
 #-----------------------------------------------------------------------------
-su -l "$SRC_DOMAIN" -c "
-    export DISPLAY='$DISPLAY_ARG'
-    export XAUTHORITY='$TMP_AUTH_1'
-    $XDIALOG --stdout --title 'dropQbsd - qattach' \
-        --msgbox 'Attached:\n\n  $BASENAME\n\nfrom $SRC_DOMAIN to $DST_DOMAIN/Downloads' 0 0
-" 2>/dev/null || true
+su -l "$SRC_DOMAIN" -c '
+DSP="$1"; COOKIE="$2"; XD="$3"; BASE="$4"; SRC="$5"; DST="$6"
+export DISPLAY="$DSP"
+export XAUTHORITY="$COOKIE"
+"$XD" --stdout --title "dropQbsd - qattach" \
+    --msgbox "Attached:\n\n $BASE\n\nfrom $SRC to $DST/Downloads" 0 0
+' -- "$DISPLAY_ARG" "$TMP_AUTH_1" "$XDIALOG" "$BASENAME" "$SRC_DOMAIN" "$DST_DOMAIN" 2>/dev/null || true
 
 exit 0
 

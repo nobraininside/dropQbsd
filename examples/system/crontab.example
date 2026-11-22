@@ -1,3 +1,4 @@
+# BEGIN dropQbsd
 PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin
 SHELL=/bin/sh
 HOME=/root
@@ -35,3 +36,4 @@ HOME=/root
 
 # --- dropQbsd: www import (15 min after each export) ---
 15      8,10,12,14,16,18,20 * * *     su -l userdoc -c '/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/import_www_from_drop > /dev/null 2>&1'
+# END dropQbsd

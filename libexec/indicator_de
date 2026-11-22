@@ -38,8 +38,19 @@
 # ==========================================================
 
 # Conductor is rename-proof: resolve from the GECOS marker.
-# Fall back to 'conductor' only if no account carries the marker.
-CONDUCTOR_USER="${CONDUCTOR_USER:-$(getent passwd | awk -F: 'index($5, "dropQbsd_conductor") >0 {print $1; exit}')}"
+#
+# Exact match, exactly one: the gate (run_app_impl) and the installer
+# use the same rule. Do not use index() or getent: a substring match
+# or a full database scan diverges from the gate.
+#
+# Fall back to 'conductor' when there is not exactly one marker (zero:
+# pre-GECOS system; more than one: a broken system the gate refuses to
+# run). Keep the fallback: the case below has a *"$CONDUCTOR_USER"
+# pattern, and an empty value would match every window title.
+CONDUCTOR_USER="${CONDUCTOR_USER:-$(awk -F: '
+    $5 == "dropQbsd_conductor" { n++; name = $1 }
+    END { if (n == 1) print name }
+' /etc/passwd)}"
 CONDUCTOR_USER="${CONDUCTOR_USER:-conductor}"
 
 # indicator lock -- in a user-writable location, since the
