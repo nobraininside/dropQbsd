@@ -1,4 +1,5 @@
 # dropQbsd -- Installation (manual procedure)
+For dropQbsd 0.4.0. Last reviewed: 2026-11
 
 > **This is the manual, step-by-step procedure.** For the
 > recommended path -- the semi-automatic installer and updater --
@@ -50,10 +51,10 @@ exit
 ```
 
 `permit :wheel` lets your admin account use `doas`; `permit nopass
-root` is the line the dropQbsd template carries. The installer
-replaces the file with the template; your rule is backed up in
-`/var/backups/dropQbsd_<ts>/` and can be re-added afterwards. If you
-prefer not to install `doas`, use `su` for the root steps.
+root` is the line the dropQbsd template carries. The **installer**
+backs it up in `/var/backups/dropQbsd_<ts>/`; the manual procedure
+backs it up next to the file (section 6). If you prefer not to install
+`doas`, use `su` for the root steps.
 
 Everything else is optional. On FreeBSD, `signify`, `tmux`, `xrandr`
 and all of X11 are packages; on OpenBSD they are in base.
@@ -99,6 +100,9 @@ whether the conductor is named `conductor` or anything else:
 ```sh
 CONDUCTOR_USER="${CONDUCTOR_USER:-$(awk -F: '$5 == "dropQbsd_conductor" { print $1; exit }' /etc/passwd)}"
 CONDUCTOR_USER="${CONDUCTOR_USER:-conductor}"
+# Fail fast: every later block expands CONDUCTOR_USER into a path.
+: "${CONDUCTOR_USER:?set CONDUCTOR_USER first -- see 'Conductor account name'}"
+export CONDUCTOR_USER
 ```
 
 If you chose a non-default name at install time, you may skip this by
@@ -178,7 +182,7 @@ add_to_group_safe() {
 # `pw usermod -G`/`usermod -G`; `create_users` creates the per-user group
 # even for existing accounts.
 create_one_user() {
-    acct="$1"; gecos="$2"
+    local acct="$1" gecos="$2"
     case "$(uname -s)" in
     FreeBSD)
         if ! getent group "$acct" >/dev/null 2>&1; then
@@ -355,37 +359,50 @@ chmod 2770 /home/drop/userweb_export /home/drop/usermail_export
 chmod 750 /home/drop/_quarantine
 chown root:wheel /home/drop/_quarantine
 chmod 700 /opt/dropQbsd/keys
-# Default [sync] directories and Downloads in every domain home.
+
+# --- Per-user cache and Downloads ---------------------------------
+# ~/.cache/dropqbsd is created as user:user 700: this is where Qsite
+# writes qsite.err, qsite_cache and qsite_state. Pre-creating it as
+# the user prevents a root-run Qsite from leaving it root:wheel.
+# ~/Downloads is the import destination for qattach and qimport.
 for u in "$CONDUCTOR_USER" userdoc usermail userweb; do
     h="$(awk -F: -v u="$u" '$1 == u {print $6; exit}' /etc/passwd)"
     [ -n "$h" ] && [ -d "$h" ] || continue
-    mkdir -p "$h/.cache/dropqbsd"
-    chown -R "$u":"$u" "$h/.cache"
+    mkdir -p "$h/.cache/dropqbsd" "$h/Downloads"
+    chown -R "$u":"$u" "$h/.cache" "$h/Downloads"
     chmod 700 "$h/.cache" "$h/.cache/dropqbsd"
 done
+
+# --- Default [sync] directories -----------------------------------
 mkdir -p /home/userweb/www /home/usermail/.mail /home/userdoc/Sync
-chown userweb:userweb /home/userweb/www
+chown userweb:userweb   /home/userweb/www
 chown usermail:usermail /home/usermail/.mail
-chown userdoc:userdoc /home/userdoc/Sync
-chmod 700 /home/userweb/www /home/usermail/.mail
+chown userdoc:userdoc   /home/userdoc/Sync
+chmod 700  /home/userweb/www /home/usermail/.mail
 chmod 2700 /home/userdoc/Sync
-# Qsite cache directory: pre-create it as the user so a root-run
-# Qsite cannot leave it root:wheel.
-for u in "$CONDUCTOR_USER" userdoc usermail userweb; do
-   h="$(awk -F: -v u="$u" '$1 == u {print $6; exit}' /etc/passwd)"
-   [ -n "$h" ] && [ -d "$h" ] || continue
-   mkdir -p "$h/.cache/dropqbsd"
-   chown -R "$u":"$u" "$h/.cache"
-   chmod 700 "$h/.cache" "$h/.cache/dropqbsd"
-done 
 ```
 
-The `2770` mode (SGID) on `/home/drop` forces the `drop` group on all files
-placed there -- this is what makes the drop zone policed by construction rather
-than by convention.
+The `2770` mode on `/home/drop` (SGID) forces the `drop` group on every file
+**created** in the directory -- this is what makes the drop zone policed by
+construction rather than by convention. It does not reach files **moved** in:
+`mv` preserves the inode, so the file keeps the group it already had. The gap
+is covered from both sides. `qcp` and `qmv` set owner, group and mode
+explicitly when they stage, so what they publish is always `drop`-owned at
+`440`/`570`; and `enforce_drop` quarantines anything that arrives with a
+foreign group and is not root-owned.
 
-`~/.cache/dropqbsd` is created as `user:user 700`; this is where `Qsite`
-writes `qsite.err`, `qsite_cache`, and `qsite_state`.
+`~/.cache/dropqbsd` is created as `user:user 700`: `Qsite` writes `qsite.err`,
+`qsite_cache` and `qsite_state` there. Pre-creating it as the owning account is
+what keeps a first run from a root context -- `Qmenu` launched as root, or a
+`su -` shell -- from leaving the directory `root:wheel`; `Qsite` then refuses to
+start and shows the cache-ownership popup. The `nnn` plugins write
+their error log to a second, differently cased directory of their
+own -- `~/.cache/dropQbsd/nnn_plugins.log` -- which is created on first
+error and is **not** pre-created here. The two paths should be
+unified on the lower-case name; until they are, look in both places when
+debugging (see 10.5). `~/Downloads` is created in the same pass: it is
+the import destination for `qattach` and `qimport`, and `qattach`
+only creates it as a fallback when it is missing.
 
 ---
 
@@ -402,9 +419,10 @@ Set ownership and permissions:
 
 ```sh
 chown -R root:wheel /opt/dropQbsd
-chmod 755 /opt/dropQbsd/bin/*
-chmod 755 /opt/dropQbsd/sbin/*
-chmod 755 /opt/dropQbsd/libexec/*
+for f in /opt/dropQbsd/bin/* /opt/dropQbsd/sbin/* /opt/dropQbsd/libexec/*; do
+    [ -e "$f" ] || continue
+    chmod 755 "$f"
+done
 chmod 700 /opt/dropQbsd/libexec/run_app_impl
 chmod 700 /opt/dropQbsd/admin/*
 ```
@@ -428,6 +446,12 @@ first use of the corresponding alias.
 executed through `libexec/wrapper`, which selects the correct shell for the
 platform. Do not add shebangs -- it would break portability.
 
+**`admin/` is root-only (`0700 root:wheel`).** The aliases that call it -- `Gen`,
+`Sign`, `Patch`, `Pkg`, `Update`, `Upgrade` -- must be run as root
+(console root, or `Xtroot`). The `sbin/` and `libexec/` aliases
+(`Qcp`, `Qfile`, `Verify`, `Endrop`, …) work for the conductor.
+
+
 ### 3.1 Session entry
 
 ```sh
@@ -439,7 +463,6 @@ chmod 644 /usr/local/share/xsessions/dropQbsd.desktop
 
 `libexec/session` is copied by `cp -r libexec`; the existing
 `chmod 755 /opt/dropQbsd/libexec/*` sets it executable.
-```
 
 ---
 
@@ -470,9 +493,13 @@ It is not part of the `run_app` chain.
 
 ### Build with the helper script (recommended)
 
+Verify the result is static:
+
 ```sh
 /opt/dropQbsd/admin/build_run_app
 ```
+Expect `ELF 64-bit ... statically linked`. `readelf` is not in the OpenBSD
+base system; `file` is, on both platforms.
 
 This script:
 
@@ -521,7 +548,7 @@ ls -l /opt/dropQbsd/bin/run_app
 ```
 
 The mode must show `-rwsr-xr-x` -- the `s` is the setuid bit. Without
-It, the gate does not escalate and domain applications will not launch.
+it, the gate does not escalate and domain applications will not launch.
 `run_app_impl` must be `0700 root:wheel`: no local user executes it
 directly; only the gate, as root, does.
 
@@ -559,6 +586,14 @@ cp templates/conductor.conf_for_etc /etc/dropQbsd/conductor.conf
 cp templates/attach.conf_for_etc    /etc/dropQbsd/attach.conf
 chown root:wheel /etc/dropQbsd/profile /etc/dropQbsd/kshrc /etc/dropQbsd/alias /etc/dropQbsd/conductor.conf /etc/dropQbsd/attach.conf
 chmod 644        /etc/dropQbsd/profile /etc/dropQbsd/kshrc /etc/dropQbsd/alias /etc/dropQbsd/conductor.conf /etc/dropQbsd/attach.conf
+# Log rotation: append the dropQbsd entries once.
+if ! grep -q 'dropQbsd' /etc/newsyslog.conf 2>/dev/null; then
+    ts=$(date +%Y%m%d_%H%M%S)
+    [ -f ... ] && cp -p /etc/newsyslog.conf "/etc/newsyslog.conf.bak.$ts"
+    cat templates/newsyslog_append >> /etc/newsyslog.conf
+fi
+chown root:wheel /etc/newsyslog.conf
+chmod 644 /etc/newsyslog.conf
 ```
 
 ### 5.3 Per-user stubs (pointers only)
@@ -626,7 +661,7 @@ done
 | xenodm | `~/.xsession` | yes | n/a |
 | LightDM | `~/.profile` + `~/.xprofile` | if used | yes |
 | SDDM (DE session) | `~/.xprofile` | if used | yes |
-| SDDM “User Session” | `~/.xinitrc` | n/a | yes |
+| SDDM "User Session" | `~/.xinitrc` | n/a | yes |
 | `startx` | `~/.xinitrc` | if used | yes |
 | Terminal in session | `$ENV` | yes | yes |
 
@@ -643,8 +678,9 @@ libexec/session reads that value and execs startxfce4.
 
 On FreeBSD, ~/.xsession is never installed; use ~/.xprofile and ~/.xinitrc.
 
-`$ENV` is set by `/etc/dropQbsd/kshrc` itself, so every interactive
-child shell sources the chain automatically.
+`$ENV` is exported by `xterm_conductor` / `xterm_userdoc` for the first
+interactive shell; `/etc/dropQbsd/kshrc` re-exports it, so every interactive
+child shell in that session sources the chain automatically.
 
 Each stub starts with a marker line, `# dropQbsd-stub: <version>`.
 The updater compares the `# dropQbsd-stub` marker, not the bytes. The
@@ -672,9 +708,17 @@ The conductor's `~/.xbindkeysrc` is not a stub: see 5.4.
 ### 5.4 The conductor menu hotkey
 
 `xbindkeys` is started only by the conductor (`$CONDUCTOR_USER`): the
-session files guard it with `if [ "$(id -un)" = "$CONDUCTOR_USER" ]`, and
-start one instance per session. Domains never run `xbindkeys` and cannot
-launch the conductor menu.
+session files guard it with `if [ "$(id -un)" = "$CONDUCTOR_USER" ]`, and start
+one instance per user (uid-keyed, like indicator_de): X grants a key grab to a
+single client, so a second instance can end up owning `Mod4+q` depending
+on start order.
+
+`CONDUCTOR_USER` is not hardcoded in the stub: `profile_for_etc` writes
+the account name into `/etc/dropQbsd/profile` at install time, `kshrc` sources
+it, and the stub compares it with `/id -un`/. The guard therefore survives
+a rename performed by the installer or the updater. A rename done by hand
+does not -- update `CONDUCTOR_USER` in `/etc/dropQbsd/profile`, or the hotkey
+silently stops starting.
 
 Its configuration, `~/.xbindkeysrc`, maps **`Mod4+q`** to the `qmenu`
 launcher. The file is **operator-owned**: created if absent, never
@@ -753,12 +797,22 @@ project ships.
 | ---- | ------- | ------ |
 | `attach.conf` | qattach direction matrix (SRC:DST per line) | `templates/attach.conf_for_etc` |
 | `conductor.conf` | Conductor actions the gate may run as root | `templates/conductor.conf_for_etc` |
+| `doas.conf` | Privilege-escalation policy (one line: `permit nopass root`) | `templates/doas.conf_for_etc` |
 | `domains.conf` | Portable policy (identical on every install) | `templates/domains.conf_for_etc` |
-| `/etc/doas.conf` (OpenBSD) / `/usr/local/etc/doas.conf` (FreeBSD) | Privilege-escalation policy (one line: `permit nopass root`) | `templates/doas.conf_for_etc` || `local.conf` | Your local config (subnet, mail, services) | `examples/system/local.conf.example` |
+| `local.conf` | Your local config (subnet, mail, services) | `examples/system/local.conf.example` |
 | `schema` | Valid domains for this product | `templates/schema_for_etc` |
 
-`schema` is consumed by `gen_fwall`; `run_app_impl` carries the same three names in `is_domain()`.
-Adding a domain means editing both.
+**`doas.conf` is the one file in this table that does not live under
+`/etc/dropQbsd/`.** Its path is platform-specific: `/etc/doas.conf` on OpenBSD,
+`/usr/local/etc/doas.conf` on FreeBSD. It is `root:wheel`, mode `644`: `doas(1)`
+refuses a configuration file that is writable by group or by others, and a
+missing file fails closed -- every `doas` invocation errors until it exists.
+The block below resolves the path into `DOAS_CONF` with a `case "$(uname -s)"`
+and uses that variable for every operation (including the backup taken before
+the overwrite), so no later step hardcodes either path.
+
+`schema` is consumed by `gen_fwall`; `run_app_impl` carries the same three names
+in `is_domain()`. Adding a domain means editing both.
 
 Run as root:
 
@@ -783,6 +837,7 @@ FreeBSD) DOAS_CONF="/usr/local/etc/doas.conf" ;;
 *)       DOAS_CONF="/etc/doas.conf" ;;
 esac
 export DOAS_CONF
+cp -p "$DOAS_CONF" "$DOAS_CONF.bak.$(date +%Y%m%d_%H%M%S)"
 cp templates/doas.conf_for_etc "$DOAS_CONF"
 chown root:wheel "$DOAS_CONF"
 chmod 644 "$DOAS_CONF"
@@ -813,15 +868,12 @@ commented -- read it carefully. Summary of the sections:
 	- `dst`      -- import destination (default `/home/userdoc/Sync`)
 	- `www_src`  -- web export source (default `/home/userweb/www`)
 	- `mail_src` -- mail export source (default `/home/usermail/.mail`)
-  **`[sync]` directory behavior.** The import destination (`dst`) is created
-  automatically if missing. The export sources (`www_src`, `mail_src`) are
-  NOT created: a missing export source is a hard error for the export scripts
-  (there is no data to export). Create the export directories yourself -- or
-  let the application (browser, mail client) create them on first use:
-```sh
-  mkdir -p /home/userweb/www
-  mkdir -p /home/usermail/.mail
-```
+  **`[sync]` directory behavior.** The three default directories
+  (`dst` = `/home/userdoc/Sync`, `www_src` = `/home/userweb/www`,
+  `mail_src` = `/home/usermail/.mail`) are created by §2 / the installer,
+  empty. **If you change a path in `local.conf`, create the new directory
+  yourself:** a missing export source is a hard error for the export scripts
+  (there is nothing to export), and a missing `dst` is created on the next import.
 - **`[locale]`** and **`[keyboard]`** are read by `templates/profile_for_etc`;
   **`[session]`** wm is parsed by `profile_for_etc` into `DROPQBSD_WM`, and
   `libexec/session` execs that value.
@@ -913,7 +965,7 @@ Hostnames prefixed with `@` are resolved via `userweb` DNS each time the
 table-update script runs. All three table scripts run **every 15 minutes via
 cron**, so IPs stay current without manual intervention. A `pfctl -f` reload
 empties every persistent table; the cron repopulates them within 15 minutes,
-so run `Gen` + `pfctl -f` and let the cron refill the tables — or repopulate
+so run `Gen` + `pfctl -f` and let the cron refill the tables -- or repopulate
 them by hand (see §7) if you need mail/web back before the next cycle.
 
 ---
@@ -953,8 +1005,8 @@ Upservices
 Enupdates
 ```
 
-These scripts read from `local.conf`, resolve hostnames via `userweb` DNS, and
-populate the tables. Root never touches the network directly.
+`Upmailserver` and `Upservices` resolve hostnames via `userweb` DNS;
+`Enupdates` writes the mirror blocks from `[updates]`.
 
 **Ordering:** `gen_fwall` emits the table definitions (`table <mailserver>
 persist`, etc.) into `pf.conf`, so the tables exist -- empty -- when `pfctl -f`
@@ -962,10 +1014,10 @@ loads the ruleset. The `update_*` scripts then fill them. The order (generate >
 verify > apply > populate) is intentional.
 
 **Regenerating after policy changes:** any time you edit `domains.conf` or
-`local.conf`:
+`local.conf`. Run as root:
 
 ```sh
-Gen openbsd
+Gen openbsd        # FreeBSD: Gen freebsd
 pfctl -nf /etc/pf.conf
 pfctl -f /etc/pf.conf
 ```
@@ -1017,20 +1069,27 @@ crontab -l | grep dropQbsd
 **NOTE:** `crontab(1)` **replaces** the whole table -- it does not append. Never
 paste into `crontab -e` over pre-existing entries unless you edit in place.
 
-### Jobs NOT in the crontab (by design)
+### Table lifecycle, and the one job not in the crontab
 
 **`<updates>` table lifecycle.** All three table scripts (`ensure_updates_table`,
 `update_mailserver_table`, `update_services_table`) run **every 15 minutes via cron**.
 On top of that, the update scripts (`patch_tru_fwall`, `pkg_tru_fwall`, `update_tru_fwall`,
-`upgrade_tru_fwall`) repopulate `<updates>` on entry (before opening the network window)
-and -- by default (`FLUSH_ON_EXIT=1`) -- **flush it on exit**, so the table is **empty at rest**:
-the mirror IPs are only reachable while an update is actually running (least privilege).
-`<mailserver>` and `<services>` are NOT flushed by the update scripts: they are repopulated
-after any `pfctl -f` and remain populated for daily mail/web use. After a `pfctl -f` reload,
-all three tables are repopulated by the `*/15` cron (or by hand, see 7).
+`upgrade_tru_fwall`) repopulate `<updates>` on entry, before opening the network window,
+and -- with `FLUSH_ON_EXIT=1`, the default -- flush it on exit. The flush empties the
+table when an update finishes; the `*/15` cron refills it within 15 minutes, so between
+updates the table is normally populated, and empty only in the interval between an update
+finishing and the next cron tick. `FLUSH_ON_EXIT=0` leaves it populated after the run.
+`<mailserver>` and `<services>` are never flushed by the update scripts: they are
+repopulated after any `pfctl -f` and remain populated for daily mail/web use. After a
+`pfctl -f` reload, all three tables are repopulated by the `*/15` cron (or by hand, see 7).
 
-The list of jobs NOT in the crontab is therefore: **`root_snapshot`** (on demand, from
-`qcontrol`, press `a`).
+The list of jobs NOT in the crontab is therefore: **`root_snapshot`**
+(on demand, from `qcontrol`, press `a`).
+
+**Where the `<updates>` egress rule lives.** The `pass out` rule that admits traffic to
+`<updates>` on ports 80/443 is emitted by `gen_fwall`, not declared in `domains.conf`,
+and it carries no `user` qualifier. `domains.conf` covers the three domain users only;
+this rule sits outside it and is in force whenever the table is populated.
 
 ### Export/import race safety (by construction)
 
@@ -1052,11 +1111,10 @@ The enforcers that can overlap use an atomic `mkdir` lock to prevent concurrent 
 (`enforce_drop` and `enforce_sync`; `enforce_home` is a simple stat + fix and takes
 no lock). The lock directories live in `/var/run/` and are cleared on reboot.
 
-The enforcers' locks carry a TTL (15 min: `LOCK_TTL=900`). A slow
-cycle on a large Sync tree can take minutes; the TTL is a guard
-against an orphaned lock, not a performance target. If a lock is
-older than the TTL and the owning process is still alive, the next
-run reclaims it; investigate the process before doing it by hand.
+A lock older than `LOCK_TTL` (900 s) whose owner **no longer exists** is reclaimed.
+A lock older than the TTL whose owner is **still alive** is left in place **and logged**:
+the cycle takes seconds, so a live owner after 15 minutes means a hung process,
+not a slow one -- inspect it (`ps -p <pid>`) before removing the lock by hand.
 
 ### Enforcer rules
 
@@ -1091,9 +1149,9 @@ After installation, verify each domain can perform its function:
 - `userdoc`: access LAN storage, Syncthing syncs, cannot reach internet
 - `usermail`: send/receive email, cannot browse the web
 - `userweb`: browse the web, cannot reach LAN IPs
-- `Endrop` running in cron -- verify via the runbook below (lock-watch test), an empty log is normal
-- `Enhome` running in cron -- verify via the runbook below (lock-watch test), an empty log is normal
-- `Ensync` running in cron -- verify via the runbook below (lock-watch test), an empty log is normal
+- `enforce_drop` running in cron (`Endrop` when run by hand) -- verify via the runbook test below, an empty log is normal
+- `enforce_home` running in cron (`Enhome` when run by hand) -- verify via the runbook test below, an empty log is normal
+- `enforce_sync` running in cron (`Ensync` when run by hand) -- verify via the runbook test below, an empty log is normal
 - `Qcontrol` shows domain status and drop zone contents
 - `Qattach` opens the picker and imports into the destination's Downloads (requires Xdialog)
 - `Upmailserver` populates `<mailserver>` table
@@ -1112,20 +1170,30 @@ file. If a manual run exits immediately, cron holds the lock; wait for
 `/var/run/enforce_drop.lock` or `/var/run/enforce_sync.lock` to
 disappear and retry.
 
-**What the enforce_drop tests exercise.** The three cases are distinct:
+**What the enforce_drop tests exercise.** The four cases are distinct:
 - a file with an **old mtime** is deleted as `abandoned` at the first
   cycle, before any mode/GID check;
 - a **young** file with the wrong mode is fixed (`chmod 440`/`570`);
 - a **young** file with the wrong GID is quarantined, whatever its mode.
+- a **young, root-owned** file is left exactly as it is, whatever its mode and
+  group: this is an exporter's `*.tar.gz.tmp` archive mid-write. Neither the
+  mode fix (`440`/`570`) nor the GID quarantine applies to it -- the GID branch
+  is explicitly "wrong GID **and not root-owned**", and the mode branch requires
+  the correct GID.
+
 Use `touch` to reset the mtime; otherwise the file is treated as stale
 and never reaches the mode or GID branch.
 
+
 ```sh
 # --- enforce_drop: cron is running (watch for ~1 minute) ------
-while true; do
-    ls -d /var/run/enforce_drop.lock 2>/dev/null && break
-    sleep 1
-done && echo "OK: cycle observed"
+i=0
+while [ $i -lt 24 ]; do
+    now=$(tail -1 /var/log/dropQbsd/enforce_drop.log 2>/dev/null)
+    [ -n "$now" ] && [ "$now" != "$before" ] && break
+    i=$(( i + 1 )); sleep 5
+done
+[ $i -lt 24 ] && echo "OK: cycle observed" || echo "WARN: no log line in 2 min -- run Endrop by hand"
 ```
 
 ```sh
@@ -1156,15 +1224,18 @@ touch /home/drop/userweb_export/www_t.tar.gz.tmp
 chmod 600 /home/drop/userweb_export/www_t.tar.gz.tmp
 sleep 150
 stat -f '%Mp%Lp %N' /home/drop/userweb_export/www_t.tar.gz.tmp
-# 0600 ... -- must NOT be 440. Remove it manually afterwards.
+# 0600 ... -- must NOT be 440: root-owned files are outside both branches.
 ```
 
 ```sh
 # --- enforce_home: cron is running (watch for ~1 minute) ------
-while true; do
-    tail -1 /var/log/dropQbsd/enforce_home.log 2>/dev/null | grep -q "cycle complete" && break
-    sleep 1
-done && echo "OK: cycle observed"
+i=0
+while [ $i -lt 24 ]; do
+    now=$(tail -1 /var/log/dropQbsd/enforce_home.log 2>/dev/null)
+    [ -n "$now" ] && [ "$now" != "$before" ] && break
+    i=$(( i + 1 )); sleep 5
+done
+[ $i -lt 24 ] && echo "OK: cycle observed" || echo "WARN: no log line in 2 min -- run Enhome by hand"
 ```
 
 ```sh
@@ -1260,11 +1331,18 @@ The conductor menu (`qmenu`) is configured separately: it reads its
 application list from the `[qmenu]` section of `local.conf` (see
 10.4), not from `examples/`.
 
-**WARNING -- this block overwrites existing per-user configuration.**
-It replaces `~/.exrc`, `~/.config/mc/ini`, and
-`~/.config/nnn/plugins/`. The block backs these up first, appending
-`.bak.<timestamp>`, but the originals are still replaced. On a fresh
-install this is harmless.
+**This block overwrites existing per-user configuration.** It replaces
+`~/.exrc`, `~/.config/mc/ini`, `~/.config/mc/menu`,
+`~/.config/nnn/plugins/` and `~/.config/xfe/scripts/`. All five are backed
+up first as `.bak.<timestamp>` and then replaced. On a fresh install this
+is harmless.
+
+**Four paths are treated differently, in two categories.** *Installation
+seeds* -- the Xfe `~/.config/xfe/xferc` and `xfwrc` -- are copied once, only
+if absent: Xfe rewrites them on exit, so after the first launch the live file
+is the operator's. *Operator-owned files* -- the GTK theme (`~/.gtkrc-2.0`)
+and the conductor's `~/.xbindkeysrc` -- are created if absent and never
+overwritten; an update reports them if the shipped version differs.
 
 **Where to run this from.** The commands below assume `examples/`
 lives in `/opt/dropQbsd/`, i.e. that section 3 (Install Scripts) has
@@ -1290,6 +1368,23 @@ cd /opt/dropQbsd || { echo "ERROR: /opt/dropQbsd not found -- run section 3 firs
 [ -d examples ] || { echo "ERROR: examples/ not found in /opt/dropQbsd." >&2; exit 1; }
 
 # ------------------------------------------------------------------
+# role_of: account name -> ROLE. Defined HERE, before its first use.
+# The loop below calls role_of(); a definition placed further down
+# the block is not yet in scope when the loop runs, and the paste
+# stops with "role_of: not found".
+# The conductor is rename-proof: any account that is not one of the
+# three fixed domains resolves to the `conductor` role, so the
+# templates keep fixed names (ini.conductor, xferc.conductor, ...)
+# whatever the account is called.
+# ------------------------------------------------------------------
+role_of() {
+    case "$1" in
+        userdoc|usermail|userweb) echo "$1" ;;
+        *) echo "conductor" ;;
+    esac
+}
+
+# ------------------------------------------------------------------
 # Per-account examples (conductor, root, userdoc, usermail, userweb).
 # root's home is /root; the others are under /home. The group for
 # root is wheel (BSD convention); for the domains it is the user's
@@ -1303,14 +1398,15 @@ for u in root "$CONDUCTOR_USER" userdoc usermail userweb; do
         grp=wheel
         role="root"
     else
-        h="/home/$u"
+        h="$(awk -F: -v u="$u" '$1 == u {print $6; exit}' /etc/passwd)"
+        [ -n "$h" ] && [ -d "$h" ] || { echo "WARN: no home for '$u'" >&2; continue; }
         grp="$u"
         role="$(role_of "$u")"
     fi
 
     # --- Back up existing per-user config before overwriting -----
     ts=$(date +%Y%m%d_%H%M%S)
-    for f in "$h/.exrc" "$h/.config/mc/ini" "$h/.gtkrc-2.0"; do
+    for f in "$h/.exrc" "$h/.config/mc/ini" "$h/.config/mc/menu"; do
         [ -f "$f" ] && cp -p "$f" "$f.bak.$ts"
     done
     [ -d "$h/.config/nnn/plugins" ] && \
@@ -1358,19 +1454,16 @@ done
 # shipped version differs.
 #
 # GTK2 loads ~/.gtkrc-2.0 automatically when Xdialog runs as that
-# domain, so the picker shows the domain colour. The conductor and
-# root run no pickers, so they get none.
+# domain, so the picker shows the domain colour.
 #
 # DIFFERENT from the block above: the theme is installed ONLY IF
 # ABSENT and NEVER overwritten -- it is operator-owned (the user
 # may customise the colour). The mc/vi/nnn files above are
 # overwritten; the GTK theme is not.
-role_of() {
-    case "$1" in
-        userdoc|usermail|userweb) echo "$1" ;;
-        *) echo "conductor" ;;
-    esac
-}
+#
+# role_of() is defined at the top of this block. Do not redefine it
+# here: a second definition is both dead code and a silent source of
+# drift if the two versions ever diverge.
 
 for u in "$CONDUCTOR_USER" userdoc usermail userweb; do
     role="$(role_of "$u")"
@@ -1478,14 +1571,14 @@ fi
   for the domains, `wheel` for `root` -- not the `drop` group. These
   are per-user dotfiles, not shared artifacts.
 - **The mc skins encode the domain color** (see the color table in
-  10.2). They are not cosmetic. The matching `ini.<account>`
+  10.2). They are not cosmetic. The matching `ini.<role>`
   file is copied to `~/.config/mc/ini`, so the domain's skin is
   selected automatically from the first `mc` launch -- no manual
   step in `Options > Appearance` is required.
 - **Each account has two mc files:** a **skin** under
   `~/.local/share/mc/skins/<domain>.ini` (the colors), and a
   **configuration** `~/.config/mc/ini` that selects it. The
-  `ini.<account>` files in `examples/apps/mc/` are the
+  `ini.<role>` files in `examples/apps/mc/` are the
   configurations -- they contain `[Midnight-Commander]` and a
   `[skin]` section naming the domain's skin. They are not skins
   themselves.
@@ -1511,10 +1604,11 @@ fi
 
 ### 10.2 Desktop Environment
 
-dropQbsd works with any window manager. Two examples:
+dropQbsd works with any window manager. Three examples:
 
 - **XFCE** -- full desktop environment, familiar for users migrating
-  from Windows/macOS. Install with `Pkg xfce xfce-extras`.
+  from Windows/macOS. Install with `Pkg xfce xfce-extras` for OpenBSD,
+  `Pkg xfce` for FreeBSD.
 - **MATE** -- another full desktop environment. Install with
   `Pkg mate`.
 - **cwm** -- OpenBSD's native stacking window manager. Minimal,
@@ -1624,6 +1718,7 @@ the `[qmenu]` entries in a file any domain user can write.
 
 | OpenBSD | FreeBSD |
 | ------- | ------- |
+| `pkg_add xbindkeys` | `pkg install xbindkeys` |
 
 ```sh
 cp templates/xbindkeys_for_conductor "/home/$CONDUCTOR_USER/.xbindkeysrc"
@@ -1677,10 +1772,13 @@ Qfile
 
 | Key | Action |
 | --- | ------ |
-| `Space` | Select file(s) |
-| `;c` | Copy selected files to /home/drop (nnnqcp) |
-| `;m` | Move selected files to /home/drop (nnnqmv) |
-| `;i` | Import selected files from /home/drop (nnnqimport) |
+| `Space` | Select file(s) -- nnn selects, but the plugin acts on the current item |
+| `;c` | Copy the current item to /home/drop (nnnqcp) |
+| `;m` | Move the current item to /home/drop (nnnqmv) |
+| `;i` | Import the current item from /home/drop (nnnqimport) |
+
+The containing directory is never transferred; repeat the action per file,
+or use `qcp`/`qmv`/`qimport` with explicit paths.
 
 **Note on F1-F5:** the bindings are installed in tmux's root key
 table, so they are global to the tmux server. While qfile
@@ -1816,8 +1914,8 @@ window manager to publish a real `_NET_ACTIVE_WINDOW` before
 starting, so it works with any EWMH-compliant WM (XFCE, MATE, ...).
 
 The indicator's single-instance lock is keyed by uid and lives in
-`${XDG_RUNTIME_DIR:-/tmp}` -- **not** in `/var/run/`, which is
-root-only and would make the lock fail for the non-root domain user.
+`${XDG_RUNTIME_DIR:-/tmp}` -- **not** in `/var/run/`, which is writable
+only by root and would make the lock fail for the non-root domain user.
 
 For tiling window managers (`i3`, `dwm`, `spectrwm`) and the base window
 managers (`cwm` on OpenBSD, `twm` on FreeBSD), the OSD indicator is not used.
@@ -2104,7 +2202,7 @@ health.
 **What you see:**
 
 - **Domains** -- which compartments are active and what process is running in each
-- **Drop zone** -- files awaiting import (newer than 60 minutes), with the
+- **Drop zone** -- files awaiting import (newer than 30 minutes), with the
   file/quarantine totals in the section header, plus permissions and quarantine status
 - **System** -- PF state, load average, free space on /home, tmpfs usage, enforcement
   logs, integrity verification (requires root authentication)
@@ -2208,7 +2306,7 @@ directly.
 **The wrapper is implicit.** `qprompt` wraps the dropQbsd command
 internally: when you write `Qprompt qinspect`, the command is run as
 `wrapper qinspect`. Do NOT add an explicit third wrapper in a launcher
-line — `qprompt` would receive `wrapper` as the command name and fail.
+line -- `qprompt` would receive `wrapper` as the command name and fail.
 A launcher line that opens a terminal and runs `wrapper qprompt qinspect`
 already gives `qinspect` its (implicit) wrapper through `qprompt`.
 
@@ -2307,8 +2405,10 @@ Qsite
 On first start `Qsite` looks for `~/.config/dropQbsd/sites.conf`. If it
 is missing, it shows a popup with the copy commands:
 
-    mkdir -p ~/.config/dropQbsd
-    cp /opt/dropQbsd/examples/system/sites.conf.example ~/.config/dropQbsd/sites.conf
+```sh
+mkdir -p ~/.config/dropQbsd
+cp /opt/dropQbsd/examples/system/sites.conf.example ~/.config/dropQbsd/sites.conf
+```
 
 If no supported browser is installed, `Qsite` shows the no-browser
 popup; install one through the dropQbsd package window, for example
@@ -2375,7 +2475,12 @@ For mpv, use `--vo=x11 --hwdec=no`.
 
 System updates are performed through the scripts in `/opt/dropQbsd/admin/`, using the restrictive firewall.
 
-Root has no permanent network access. The `<updates>` PF table is populated every 15 minutes via cron (and again on entry of each update script), then **flushed on exit** when the operation completes — so the mirror IPs are reachable only while an update is running. Each update script also adds **temporary** DNS/HTTP rules for root (`grant_dns`), which are removed when the operation finishes (`revoke_dns`), restoring the strict ruleset. `<mailserver>` and `<services>` stay populated for daily use.
+Root has no permanent network access **beyond the policy in `domains.conf`**.
+The `<updates>` table is populated on entry of each update script and flushed on
+exit, but the `*/15` cron repopulates it -- see section 8 for the exact
+lifecycle. Each update script also adds **temporary** DNS/HTTP rules for root
+(`grant_dns`), removed when the operation finishes (`revoke_dns`), restoring the
+strict ruleset. `<mailserver>` and `<services>` stay populated for daily use.
 
 | Alias     | Script                 | Purpose                                                    |
 | --------- | ---------------------- | ---------------------------------------------------------- |
@@ -2637,6 +2742,9 @@ After a full installation:
 └── verify_integrity.log.detail   # raw signify output (on violation)
 ```
 
+**Note on dotfiles:** `.xsession` is OpenBSD/xenodm only -- never
+installed on FreeBSD, see 5.3.
+
 **Note on `/var/log/dropQbsd/`:** the directory starts empty after a
 fresh install. Each file appears the first time its script runs (the
 enforcers and `verify_integrity` via cron within minutes;
@@ -2690,8 +2798,10 @@ LOCK="${XDG_RUNTIME_DIR:-/tmp}/indicator_de.$(id -u).lock"
 ```
 
 **Do not place this lock in `/var/run/`.** The indicator runs as a
-domain user, not root, and `/var/run` is root-only (`drwxr-xr-x`).
-`mkdir` there fails with `EACCES`, and the guard
+domain user, not root. `/var/run` is owned by root and writable only by root
+(`drwxr-xr-x`), so `mkdir` there fails with `EACCES` for a non-root user, and
+the guard
+
 ```sh
 if ! mkdir "$LOCK" 2>/dev/null; then exit 0; fi
 ```
@@ -2729,7 +2839,6 @@ following are NOT available and must not be used:
 - `disown` (bash/zsh only) -- use a subshell `( cmd & )` to detach
 - Bash arrays (`arr=(...)`) -- use positional parameters or a file
 - `[[ "$x" =~ ... ]]` -- not portable; use `case` or external tools
-- `\#*` inside `[[ ]]` -- does not match `#`; use `case` for globs
 - Process substitution `<(...)` -- not in ksh; use temp files
 - `pipefail` -- not in PD KSH; write to a temp file to capture exit codes
 - `cat -A` (GNU) -- use `cat -v -e -t` (POSIX)
@@ -2748,7 +2857,7 @@ following are NOT available and must not be used:
   `if`/default, or use `VAR="${VAR:-$(cmd)}"`. Never reference a variable
   before it is assigned a value anywhere in the script.
 - `sed 'addr,+Np'` (GNU) -- not in BSD sed; use `sed -n '/from/,$p' | head -N`
-- `grep 'a\|b'` -- `\|` is not alternation in BRE; use `grep -E 'a|b'`
+- `grep 'a\|b'` -- `\|` is not alternation in BSD grep's BRE; use `grep -E 'a|b'`
 - `grep -A/-B/-C` -- supported on both, but prefer `sed`/`awk` when the
   output must stay byte-identical across versions
 - `sed -i ''` -- OpenBSD takes the backup extension ATTACHED
