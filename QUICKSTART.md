@@ -121,7 +121,7 @@ pkg_add mc xfe nnn dzen2 xdotool yad xbindkeys password-store xclip syncthing qu
 packages; `pf` is a kernel module. Load `pf`, then install the shell:
 
 ```sh
-kldload pf
+kldload pf 2>/dev/null || true
 sysrc pf_enable=YES
 pkg install -y doas mksh
 ```
@@ -139,10 +139,9 @@ pkg install -y mc xfe nnn tmux dzen2 xdotool yad xbindkeys password-store signif
 prompt, so a failure there must not abort the main package install. Skip it
 if you do not need `Qattach`; `Qattach` will not work without it.
 
-```sh
-pkg_add Xdialog           # OpenBSD
-pkg install -y xdialog    # FreeBSD
-```
+| OpenBSD | FreeBSD |
+| ------- | ------- |
+| `pkg_add Xdialog` | `pkg install -y xdialog` |
 
 ---
 

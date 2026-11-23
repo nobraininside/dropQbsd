@@ -399,8 +399,8 @@ start and shows the cache-ownership popup. The `nnn` plugins write
 their error log to a second, differently cased directory of their
 own -- `~/.cache/dropQbsd/nnn_plugins.log` -- which is created on first
 error and is **not** pre-created here. The two paths should be
-unified on the lower-case name; until they are, look in both places when
-debugging (see 10.5). `~/Downloads` is created in the same pass: it is
+unified on the the `dropQbsd` spelling; until they are, look in both places
+when debugging (see 10.5). `~/Downloads` is created in the same pass: it is
 the import destination for `qattach` and `qimport`, and `qattach`
 only creates it as a fallback when it is missing.
 
@@ -493,13 +493,9 @@ It is not part of the `run_app` chain.
 
 ### Build with the helper script (recommended)
 
-Verify the result is static:
-
 ```sh
 /opt/dropQbsd/admin/build_run_app
 ```
-Expect `ELF 64-bit ... statically linked`. `readelf` is not in the OpenBSD
-base system; `file` is, on both platforms.
 
 This script:
 
@@ -537,7 +533,11 @@ line of defence, not the first.
 Verify the result is static:
 
 ```sh
-readelf -d /opt/dropQbsd/bin/run_app | grep NEEDED
+file /opt/dropQbsd/bin/run_app
+```
+
+Expect `ELF 64-bit ... statically linked`. `readelf` is not in the OpenBSD
+base system; `file` is, on both platforms.
 ```
 No output means no dynamic dependencies: the binary is static.
 
@@ -589,7 +589,7 @@ chmod 644        /etc/dropQbsd/profile /etc/dropQbsd/kshrc /etc/dropQbsd/alias /
 # Log rotation: append the dropQbsd entries once.
 if ! grep -q 'dropQbsd' /etc/newsyslog.conf 2>/dev/null; then
     ts=$(date +%Y%m%d_%H%M%S)
-    [ -f ... ] && cp -p /etc/newsyslog.conf "/etc/newsyslog.conf.bak.$ts"
+    [ -f /etc/newsyslog.conf ] && cp -p /etc/newsyslog.conf "/etc/newsyslog.conf.bak.$ts"
     cat templates/newsyslog_append >> /etc/newsyslog.conf
 fi
 chown root:wheel /etc/newsyslog.conf
@@ -715,7 +715,7 @@ on start order.
 
 `CONDUCTOR_USER` is not hardcoded in the stub: `profile_for_etc` writes
 the account name into `/etc/dropQbsd/profile` at install time, `kshrc` sources
-it, and the stub compares it with `/id -un`/. The guard therefore survives
+it, and the stub compares it with `id -un`. The guard therefore survives
 a rename performed by the installer or the updater. A rename done by hand
 does not -- update `CONDUCTOR_USER` in `/etc/dropQbsd/profile`, or the hotkey
 silently stops starting.
@@ -1174,7 +1174,7 @@ disappear and retry.
 - a file with an **old mtime** is deleted as `abandoned` at the first
   cycle, before any mode/GID check;
 - a **young** file with the wrong mode is fixed (`chmod 440`/`570`);
-- a **young** file with the wrong GID is quarantined, whatever its mode.
+- a **young** file with the wrong GID is quarantined, whatever its mode;
 - a **young, root-owned** file is left exactly as it is, whatever its mode and
   group: this is an exporter's `*.tar.gz.tmp` archive mid-write. Neither the
   mode fix (`440`/`570`) nor the GID quarantine applies to it -- the GID branch
@@ -1186,7 +1186,8 @@ and never reaches the mode or GID branch.
 
 
 ```sh
-# --- enforce_drop: cron is running (watch for ~1 minute) ------
+# --- enforce_drop: cron is running (watch for ~2 minutes) ------
+before=$(tail -1 /var/log/dropQbsd/enforce_drop.log 2>/dev/null)
 i=0
 while [ $i -lt 24 ]; do
     now=$(tail -1 /var/log/dropQbsd/enforce_drop.log 2>/dev/null)
@@ -1229,6 +1230,7 @@ stat -f '%Mp%Lp %N' /home/drop/userweb_export/www_t.tar.gz.tmp
 
 ```sh
 # --- enforce_home: cron is running (watch for ~1 minute) ------
+before=$(tail -1 /var/log/dropQbsd/enforce_drop.log 2>/dev/null)
 i=0
 while [ $i -lt 24 ]; do
     now=$(tail -1 /var/log/dropQbsd/enforce_home.log 2>/dev/null)
@@ -1336,13 +1338,6 @@ application list from the `[qmenu]` section of `local.conf` (see
 `~/.config/nnn/plugins/` and `~/.config/xfe/scripts/`. All five are backed
 up first as `.bak.<timestamp>` and then replaced. On a fresh install this
 is harmless.
-
-**Four paths are treated differently, in two categories.** *Installation
-seeds* -- the Xfe `~/.config/xfe/xferc` and `xfwrc` -- are copied once, only
-if absent: Xfe rewrites them on exit, so after the first launch the live file
-is the operator's. *Operator-owned files* -- the GTK theme (`~/.gtkrc-2.0`)
-and the conductor's `~/.xbindkeysrc` -- are created if absent and never
-overwritten; an update reports them if the shipped version differs.
 
 **Where to run this from.** The commands below assume `examples/`
 lives in `/opt/dropQbsd/`, i.e. that section 3 (Install Scripts) has
@@ -1551,14 +1546,13 @@ fi
 
 **Notes:**
 
-- **This block overwrites existing per-user configuration.** It
-  replaces `~/.exrc`, `~/.config/mc/ini`, and
-  `~/.config/nnn/plugins/`. The block backs these up first,
-  appending `.bak.<timestamp>`, but the originals are still replaced.
-  **Two exceptions, both operator-owned:** the GTK theme
-  (`~/.gtkrc-2.0`) and the conductor's `~/.xbindkeysrc`. They are
-  created if absent, never overwritten, and reported by an update if
-  the shipped version differs. On a fresh install this is harmless.
+- **Four paths are treated differently, in two categories.** *Installation
+  seeds* -- the Xfe `~/.config/xfe/xferc` and `xfwrc` -- are copied once,
+  only if absent: Xfe rewrites them on exit, so after the first launch
+  the live file is the operator's. *Operator-owned files* -- the GTK theme
+  (`~/.gtkrc-2.0`) and the conductor's `~/.xbindkeysrc` -- are created
+  if absent and never overwritten; an update reports them if the shipped
+  version differs.
 - **nnn plugins are installed for every account, including `root`.**
   They are mandatory for `qfile` (10.5) and useful standalone:
   `;c` / `;m` / `;i` call `qcp` / `qmv` / `qimport`, which work from
@@ -2473,14 +2467,16 @@ For mpv, use `--vo=x11 --hwdec=no`.
 
 ## 11. Upgrading the OS
 
-System updates are performed through the scripts in `/opt/dropQbsd/admin/`, using the restrictive firewall.
+System updates are performed through the scripts in `/opt/dropQbsd/admin/`,
+using the restrictive firewall.
 
-Root has no permanent network access **beyond the policy in `domains.conf`**.
-The `<updates>` table is populated on entry of each update script and flushed on
-exit, but the `*/15` cron repopulates it -- see section 8 for the exact
-lifecycle. Each update script also adds **temporary** DNS/HTTP rules for root
-(`grant_dns`), removed when the operation finishes (`revoke_dns`), restoring the
-strict ruleset. `<mailserver>` and `<services>` stay populated for daily use.
+Root has no general network access. At rest, its only standing egress is the
+`<updates>` rule emitted by `gen_fwall` -- not user-scoped, and described in
+section 8. During an update, each script populates the table on entry and
+prepends temporary DNS and HTTP/S rules (`grant_dns`); on completion it restores
+the strict ruleset (`revoke_dns`) and flushes the table on exit
+(`FLUSH_ON_EXIT=1`). `<mailserver>` and `<services>` are never flushed: they stay
+populated for daily use.
 
 | Alias     | Script                 | Purpose                                                    |
 | --------- | ---------------------- | ---------------------------------------------------------- |
