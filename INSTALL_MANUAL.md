@@ -538,7 +538,7 @@ file /opt/dropQbsd/bin/run_app
 
 Expect `ELF 64-bit ... statically linked`. `readelf` is not in the OpenBSD
 base system; `file` is, on both platforms.
-```
+
 No output means no dynamic dependencies: the binary is static.
 
 ### Verify
@@ -938,6 +938,7 @@ wm = startxfce4
 CONDUCTOR
 /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qsite | Qsite
 ...
+```
 
 ### How PF Tables Work
 
@@ -956,7 +957,7 @@ configuration file.
 **Adding a hostname (resolved automatically):** add it to `[services]` in
 `local.conf`, prefixed with `@`:
 
-```
+```sh
 [services]
 hosts = 198.51.100.10 @myhost.xyz
 ```
@@ -1617,11 +1618,11 @@ by the terminals (`xterm_*`), and `mc`, `nnn`, `xfe` (via the skins installed in
 
 | User | Role | Suggested theme color |
 | ---- | ---- | --------------------- |
-| `$CONDUCTOR_USER` | Conductor | Black |
-| `root` | System | Dark red |
-| `userdoc` | Documents | Dark green |
-| `usermail` | Email | Dark orchid |
-| `userweb` | Web browser | Dark blue |
+| `$CONDUCTOR_USER` | Conductor | black |
+| `root` | System | darkred |
+| `userdoc` | Documents | darkgreen |
+| `usermail` | Email | darkorchid3 |
+| `userweb` | Web browser | darkblue |
 
 **On tiling window managers** (`i3`, `dwm`, `spectrwm`) and the base
 window managers (`cwm` on OpenBSD, `twm` on FreeBSD), the OSD
@@ -1998,8 +1999,8 @@ Verify
 
 Expected output on the terminal and in the log:
 
-```
-2026-10-07 15:54:33: OK - all files verified
+```sh
+2026-10-07 15:54:33 OK - all files verified
 ```
 
 **Order matters.** `Sign` must run before the `verify_integrity` cron job
@@ -2126,7 +2127,7 @@ directory is missing, `qattach` creates it before importing.
 **Configuration:** the direction matrix in `/etc/dropQbsd/attach.conf`,
 one `SRC:DST` per line:
 
-```
+```sh
 userdoc:usermail
 userdoc:userweb
 ```
@@ -2138,7 +2139,7 @@ untrusted data into the trusted archive and are handled with
 
 **The conductor action** is declared in `/etc/dropQbsd/conductor.conf`:
 
-```
+```sh
 qattach
 ```
 
@@ -2316,13 +2317,13 @@ Qprompt qimport ~/Documents     # prompts only for the file
 **From a desktop launcher.** Bind a launcher action to a normal terminal
 (not `xterm_conductor`) running the prompt:
 
-```
+```sh
 <terminal> -e /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qprompt qinspect
 ```
 
 For a `[qmenu]` entry (which already opens a conductor terminal):
 
-```
+```sh
 /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/xterm_conductor /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/sbin/qprompt qinspect | Qinspect
 ```
 
@@ -2375,7 +2376,7 @@ cp examples/system/sites.conf.example ~/.config/dropQbsd/sites.conf
 
 Edit `~/.config/dropQbsd/sites.conf` with your own sites. Format:
 
-```
+```sh
 # Label|URL|id_entry|pass_entry
 Bank |https://bank.example.com|finance/bank_id|finance/bank_pw
 ERP |https://erp.example.com|work/erp_id|work/erp_pw
@@ -2537,7 +2538,7 @@ The login notice -- a snippet in `/etc/dropQbsd/profile`, installed
 with the rest of the global configuration -- checks for the marker at
 every login shell and prints a reminder:
 
-```
+```sh
 >>> dropQbsd: release upgrade PENDING -- the reboot has not
 >>> been completed with the post-reboot install steps.
 dropQbsd release upgrade to 16.0-RELEASE prepared (2026-10-04 15:30:00)
@@ -2576,7 +2577,7 @@ The marker is written to `/var/log/dropQbsd/` (not directly under
 
 After a full installation:
 
-```
+```sh
 /etc/
 ├── dropQbsd/                    # 755 root:wheel (traversable by all domains)
 │   ├── alias                    # Shell aliases (from templates/)
@@ -2789,6 +2790,7 @@ than emit a firewall that silently drops per-user isolation.
 
 `indicator_de` takes a single-instance lock keyed by uid, in a
 user-writable location:
+
 ```sh
 LOCK="${XDG_RUNTIME_DIR:-/tmp}/indicator_de.$(id -u).lock"
 ```
@@ -2811,6 +2813,7 @@ others.
 The indicator is launched from the session file in a detached
 subshell that polls `_NET_ACTIVE_WINDOW` until a real window id
 appears. The atom has **two** fields:
+
 ```sh
 NET_ACTIVE_WINDOW(WINDOW): window id # 0x2800004, 0x0
 ```
@@ -2819,6 +2822,7 @@ The second field is always `0x0`. A naive test such as
 `grep -q 'window id'` matches even when the first field is `0x0`
 (no active window yet), so the indicator would start too early and
 poll an empty atom. Test only the **first** field:
+
 ```sh
 active=$(echo "$atom" | sed 's/.*window id # //' | cut -d',' -f1 | tr -d ' ')
 if [ -n "$active" ] && [ "$active" != "0x0" ]; then break; fi
@@ -2875,6 +2879,7 @@ invisible until a path or a comment hit the edge case.
 strip leading and trailing whitespace FIRST, then test for the
 comment marker. An indented comment (`  # note`) must still be
 skipped:
+
 ```sh
 line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 case "$line" in
@@ -2888,6 +2893,7 @@ passed to `sha256` or a file operation becomes a missing-file error.
 **Use `xargs -0` for path lists.** When a list of paths is
 materialised and later consumed by a command, write it NUL-separated
 and read it with `xargs -0`:
+
 ```sh
 printf '%s\0' "$path" >> "$FILE_ARGS"
 ...
@@ -2902,6 +2908,7 @@ passes each path as a single argument.
 
 Never create a temp file with a predictable name in a
 world-writable directory:
+
 ```sh
 TMP="/tmp/foo.$$"                         # WRONG
 TMP=$(mktemp /tmp/foo.XXXXXX) || exit 1   # RIGHT

@@ -1,4 +1,4 @@
-tyle "userweb" {
+style "userweb" {
     bg[NORMAL] = "#1565C0"
     fg[NORMAL] = "#ffffff"
     base[NORMAL] = "#0D47A1"
