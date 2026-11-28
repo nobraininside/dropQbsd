@@ -294,7 +294,7 @@ sanitize_line() {
 }
 
 render() {
-    typeset row n_files n_quar uw_pid um_pid ud_pid uw_proc um_proc ud_proc
+    typeset row n_files n_dirs n_quar uw_pid um_pid ud_pid uw_proc um_proc ud_proc
     typeset dz_total dz_shown dz_name dz_perms dz_age_min dz_type snap_line
     typeset f dz_mtime
 
@@ -304,7 +304,7 @@ render() {
     clear
 
     # Count items in drop zone (files + dirs, excluding export dirs and quarantine)
-    n_files=0; n_dirs=0; n_quar=0 
+    n_files=0; n_dirs=0; n_quar=0
     # `*` does not match a leading dot: add `.*` explicitly. Skip '.'
     # and '..', the export dirs, the quarantine dir and qcp/qmv staging
     # dirs (private, still in use -- enforce_drop skips them too).
@@ -314,18 +314,24 @@ render() {
         */usermail_export|*/userweb_export|*/_quarantine) continue ;;
         */.staging.*) continue ;;
         esac
-        # Same 60-minute window as the list: the header must count what
-        # the list shows. Older items are stale and enforce_drop's job.
-        dz_mtime=$(stat -f '%m' "$f" 2>/dev/null) || continue
-        dz_age_min=$(( ( $(now_epoch) - dz_mtime ) / 60 ))
-        [ "$dz_age_min" -gt 60 ] && continue
+        [ -e "$f" ] || continue
         if [ -d "$f" ]; then
             n_dirs=$(( n_dirs + 1 ))
-        elif [ -e "$f" ]; then
+        else
             n_files=$(( n_files + 1 ))
         fi
-    done  
+    done
 
+    # Quarantine count: the header prints it before the quarantine list
+    # is rendered, so it must be computed here, not in the loop below.
+    n_quar=0
+    for f in "$QUARANTINE_DIR"/* "$QUARANTINE_DIR"/.*; do
+        case "$f" in
+        "$QUARANTINE_DIR"/.|"$QUARANTINE_DIR"/..) continue ;;
+        esac
+        [ -f "$f" ] || continue
+        n_quar=$(( n_quar + 1 ))
+    done
     uw_pid=$(ps -U userweb -o pid= 2>/dev/null | wc -l | tr -d ' ')
     um_pid=$(ps -U usermail -o pid= 2>/dev/null | wc -l | tr -d ' ')
     ud_pid=$(ps -U userdoc -o pid= 2>/dev/null | wc -l | tr -d ' ')
@@ -402,10 +408,6 @@ render() {
         dz_mtime=$(stat -f '%m %Lp' "$f" 2>/dev/null) || continue 
         dz_age_min=$(( ( $(now_epoch) - ${dz_mtime%% *} ) / 60 ))
         dz_perms=$(print -r -- "${dz_mtime#* }" | tail -c 5)
-
-        # Only show items newer than 60 minutes (older items are stale
-        # and would be picked up by enforce_drop anyway)
-        [ "$dz_age_min" -gt 60 ] && continue
 
         dz_total=$(( dz_total + 1 ))
         [ "$dz_shown" -ge 8 ] && continue

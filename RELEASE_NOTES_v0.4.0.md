@@ -1,6 +1,7 @@
 # dropQbsd v0.4.0 -- Release Notes
 
 **Release date:** 2026-11-22
+**Revised:** 2026-11-28
 
 ## Overview
 
@@ -39,9 +40,9 @@ OpenBSD remains the reference platform; FreeBSD remains fully supported.
   overwrite `local.conf`: on a re-run the file is seeded once and left
   alone. Supports `--dry-run`, `--skip-backup`, `--help`.
 - **`update.sh`** -- updater for an existing installation. Preserves
-  `local.conf`, the single operator-owned file, and never writes it.
-  Replaces only project-owned files whose content actually changed (a
-  byte comparison, not a timestamp), backs up every file it overwrites
+  `local.conf -- the only file it never writes at all -- and replaces
+  only project-owned files whose content actually changed (a byte
+  comparison, not a timestamp), backs up every file it overwrites
   into one versioned directory, and never deletes or renames anything:
   files no longer in the repository are reported for the operator to
   review. Supports `--dry-run`, `--from <version>`, `--help`.
@@ -53,7 +54,7 @@ OpenBSD remains the reference platform; FreeBSD remains fully supported.
 - **Directory tree.** `/home/drop` with `userweb_export` and
   `usermail_export` (`2770 root:drop`) and `_quarantine`
   (`750 root:wheel`); `Downloads` in every domain home; `usermail/.mail`;
-  `userdoc/Sync` (`2770`); `~/.cache/dropqbsd` (user:user 700) in every
+  `userdoc/Sync` (`2770`); `~/.cache/dropQbsd` (user:user 700) in every
   domain home;`/opt/dropQbsd/libexec/session`;
   `/usr/local/share/xsessions/dropQbsd.desktop`;
   `/opt/dropQbsd/VERSION`; `templates/integrity_setup`.
@@ -89,7 +90,7 @@ OpenBSD remains the reference platform; FreeBSD remains fully supported.
   the group for existing accounts.
 - **Home ownership.** `install_examples_for` chowns `~/.config`,
   `~/.local`, and `~/.cache`; `create_working_dirs` pre-creates
-  `~/.cache/dropqbsd`.
+  `~/.cache/dropQbsd`.
 - **Session files.** `install_files` calls `install_session_desktop`,
   which seeds `/usr/local/share/xsessions/dropQbsd.desktop`.
   `templates/filelist_for_etc` lists `libexec/session` and
@@ -136,7 +137,7 @@ OpenBSD remains the reference platform; FreeBSD remains fully supported.
 - `sites.conf` missing -> popup with `mkdir`/`cp` commands.
 - No supported browser -> popup with `Pkg qutebrowser` and the full
   `pkg_tru_fwall` path.
-- `~/.cache/dropqbsd` root-owned -> popup with `chown`.
+- `~/.cache/dropQbsd` root-owned -> popup with `chown`.
 - Qsite run as root -> popup and exit; it must run as the conductor.
 - `pass`/`xclip` missing -> popup instead of silent `return 0`.
 
@@ -256,11 +257,15 @@ FreeBSD `lightdm` split.
 
 - **`q*` prefix standardised** across scripts and documentation. Aliases
   whose names changed are listed under *Upgrade notes*.
-- **`<updates>` table lifecycle made explicit**: populated every 15
-  minutes by `ensure_updates_table` and again on entry of each update
-  script, then **flushed on exit** (`FLUSH_ON_EXIT=1`), so the mirror IPs
-  are reachable only while an update is running. `<mailserver>` and
-  `<services>` stay populated for daily use.
+- **The `<updates>` egress rule is scoped to `user root`.** The `pass out` rule
+  emitted by `gen_fwall` carried no user qualifier, so it admitted traffic from
+  every local account: `userdoc` and `usermail` could reach the mirror IPs on
+  80/443 despite `deny = internet`. Fixed in the 2026-11-27 revision.
+- **`<updates>` table lifecycle**: **not scheduled.** Populated on entry of each
+  update script and again after the strict ruleset is restored, then **flushed on
+  exit** (`FLUSH_ON_EXIT=1`), so it is **empty at rest** and the mirror IPs are
+  reachable only while an update runs. `<mailserver>` and `<services>` keep the
+  `*/15` cron and stay populated for daily use. 
 - **Drop zone risk model documented**: `2770 root:drop` lets any member
   of `drop` remove or replace a file in transit. That is accepted by
   design -- the members of `drop` are the same operator in different
@@ -302,8 +307,9 @@ Problems present in 0.3.0 and corrected here.
   `listbackcolor` unified, which removes zebra striping. The manual
   install uses the guarded `[ -e ... ] || cp` form instead of `cp -n`,
   which is not portable.
-- **Colour tables corrected** to the dark convention, with the real
-  values from the mc skins and the OSD indicator.
+- **Colour tables corrected** to the dark convention, with the real values from
+  the mc skins and the OSD indicator -- including `darkorchid3` (`#9A32CD`) for
+  `usermail`, which is the only domain that does not use a base X11 name. 
 - **Optional-package table** now separates base-system tools from
   packages: it lists `doas` and `mksh` (FreeBSD prerequisites), `signify`,
   `tmux` and `xrandr` (FreeBSD packages; base on OpenBSD) and a window
@@ -326,10 +332,13 @@ Problems present in 0.3.0 and corrected here.
 - **`qattach`.** Symlink rejection; `su -c ... -- "$STAGED"`;
   `chgrp -h` / `chmod -h` / `chown -h`; `Downloads` guard; exact
   `is_valid_domain`.
-- **`qcontrol`.** Dotfiles and dotfolders in the drop zone; `n_files` and
-  `n_dirs` counted separately; the 60-minute window applied to both the
-  list and the count; the header right-aligned by the actual length of
-  the key hints; type labels yellow, `WARN` red.
+- **`qcontrol`.** Dotfiles and dotfolders in the drop zone; `n_files` and `n_dirs`
+  counted separately; the header right-aligned by the actual length of the key hints;
+  type labels yellow, `WARN` red. Two fixes in the drop-zone section: the quarantined
+  count was never incremented, so the header always read 0 and `(empty)` printed over a
+  populated quarantine list; and the 60-minute age filter is gone from both the list and
+  the count -- `enforce_drop` already bounds the transit area at 30 minutes, so the
+  filter either did nothing or hid a stopped enforcer. 
 - **`qfile`.** The terminal is resized to 3/4 of the screen; qcontrol
   starts one second late, after the resize, so it does not redraw on
   every SIGWINCH.
@@ -364,7 +373,7 @@ Problems present in 0.3.0 and corrected here.
   `final_checklist` checks it.
 - **`[locale]`/`[keyboard]`/`[session]`.** Added to `local.conf.example`;
   `profile_for_etc` parses them.
-- **Qsite cache.** `~/.cache/dropqbsd` pre-created as `user:user 700`.
+- **Qsite cache.** `~/.cache/dropQbsd` pre-created as `user:user 700`.
 - **`setxkbmap`.** Added to the optional packages and the session.
 - **`GRACE_MIN=2`.** Enforcer tests now sleep 150 seconds.
 
@@ -411,8 +420,8 @@ source version and will ask for it:
 
 ```sh
 cd installer
-doas ./update.sh --dry-run
-doas ./update.sh --from 0.3.0
+./update.sh --dry-run
+./update.sh --from 0.3.0
 ```
 
 ### 3. Add the new local.conf sections
@@ -442,7 +451,7 @@ stubs, bump the marker or merge by hand. On FreeBSD never create
 
 ### 5. Qsite
 
-`Qsite` now uses `~/.cache/dropqbsd` and shows popups for missing
+`Qsite` now uses `~/.cache/dropQbsd` and shows popups for missing
 `sites.conf`, missing browser, and root-owned cache. Install a browser
 with `Pkg qutebrowser`; create `sites.conf` from
 `examples/system/sites.conf.example`.
@@ -460,7 +469,7 @@ what to expect, and how to confirm it worked:
 
 | step | what happens | confirm with |
 |------|--------------|--------------|
-| firewall | `gen_fwall`, `pfctl -nf`, `pfctl -f`, then the three tables repopulated | `pfctl -s info`, `pfctl -t mailserver -T show` |
+| firewall | `gen_fwall`, `pfctl -nf`, `pfctl -f`, then `<mailserver>` and `<services>` repopulated; `<updates>` left empty | `pfctl -s info`, `pfctl -t mailserver -T show` |
 | `run_app` | rebuilt: static, `root:wheel`, mode 4755; `run_app_impl` set to 0700; the gate drops supplementary groups and sets gid 0 | `ls -l /opt/dropQbsd/bin/run_app` -> `-rwsr-xr-x`; `ls -l /opt/dropQbsd/libexec/run_app_impl` -> `-rwx------` |
 | integrity | manifest re-signed (the passphrase may be asked) | `Verify` |
 | cron | the `# BEGIN` / `# END` block replaced in root's crontab | `crontab -l \| grep dropQbsd` |
@@ -470,7 +479,7 @@ what to expect, and how to confirm it worked:
 | `libexec/session` | replaced when changed | `ls -l /opt/dropQbsd/libexec/session` |
 | `dropQbsd.desktop` | seeded if absent | `ls -l /usr/local/share/xsessions/dropQbsd.desktop` |
 | `VERSION` | written | `cat /opt/dropQbsd/VERSION` |
-| `~/.cache/dropqbsd` | pre-created | `ls -ld /home/*/.cache/dropqbsd` |
+| `~/.cache/dropQbsd` | pre-created | `ls -ld /home/*/.cache/dropQbsd` |
 | per-user groups | created | `id -gn conductor` |
 
 If the passphrase is not at hand, the update completes, but

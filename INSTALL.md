@@ -1,5 +1,7 @@
 # dropQbsd -- Installation (semi-automatic procedure)
 
+For dropQbsd 0.4.0. Last reviewed: 2026-11-28.
+
 dropQbsd runs on **OpenBSD** (7.5+) and **FreeBSD** (14.0+).
 This file covers the **recommended path**: the semi-automatic
 installer, followed by a short list of manual steps and
@@ -135,12 +137,16 @@ Warnings in a dry run are expected: missing users, home directories,
 examples/apps, configuration files, PF tables, or cron entries are
 created by the real install. They are not failures.
 
-The installer is idempotent and non-destructive of **system
-configuration**: it never touches `local.conf`, the signing keys, or
-operator-owned files. It **does** overwrite per-user dotfiles
-(`~/.exrc`, `~/.config/mc/ini`, `~/.config/nnn/plugins/` and the files
-listed in INSTALL_MANUAL.md 10.1) when installing the desktop
-integration -- each overwritten file is backed up first as `.bak.<timestamp>`.
+The installer is idempotent and non-destructive of **system configuration**: it
+never writes `local.conf`, never overwrites operator-owned files, and never
+replaces an existing signing key unless you answer **yes** to *Regenerate the
+key pair?*. It **does** overwrite per-user configuration -- `~/.exrc`,
+`~/.config/mc/ini`, `~/.config/mc/menu`, `~/.config/nnn/plugins/` and
+`~/.config/xfe/scripts/` -- each backed up first as `.bak.<timestamp>`. Four
+paths are treated differently: the Xfe seeds (`~/.config/xfe/xferc`, `xfwrc`)
+are copied once and only if absent, and `~/.gtkrc-2.0` plus the conductor's
+`~/.xbindkeysrc` are created if absent and never overwritten. See
+INSTALL_MANUAL.md 10.1.
 
 The installer writes `/opt/dropQbsd/VERSION` and installs
 `/usr/local/share/xsessions/dropQbsd.desktop` and
@@ -170,7 +176,7 @@ In order:
     `su -` to root with the root password. This is not a `doas` grant:
     `doas.conf` has no conductor rule.
     On FreeBSD, `create_one_user` in `installer/lib/users`, called by
-    `install.sh`/`update.sh`” creates a per-user group and uses
+    `install.sh`/`update.sh` creates a per-user group and uses
     `pw useradd -g <user> -G drop`. On OpenBSD, `useradd -g <user>` plus
     `usermod -G drop`. add_to_group_safe excludes the primary group before
     `pw usermod -G`, and create_users creates the per-user group even for
@@ -182,7 +188,7 @@ In order:
     `usermail_export` (`2770 root:drop`), `_quarantine` (`750 root:wheel`),
     and `Downloads` in every domain home. Also creates the default
     `[sync]` directories: `userdoc/Sync`, `userweb/www`, `usermail/.mail`.
-    For every domain user, pre-create ~/.cache/dropqbsd as user:user 700.
+    For every domain user, pre-create ~/.cache/dropQbsd as user:user 700.
     This is the Qsite cache directory; pre-creating it prevents a root-run
     Qsite from leaving it root:wheel.
 4.  **Configuration** -- copies policy, scripts and dotfiles under
@@ -216,7 +222,7 @@ In order:
 7.  **`login.conf`** -- appends the per-user resource classes and
     rebuilds the login database with `cap_mkdb`.
 8.  **Firewall** -- generates `pf.conf` from the policy, applies
-    it, and populates the three PF tables.
+    it, and populates <mailserver> and <services>.
 9. **Integrity (Sign)** -- optionally configures `signify` and signs the
     manifest via `admin/sign_filelist`. The installer asks whether to
     configure script integrity. If you answer yes and no key exists, it
@@ -395,8 +401,10 @@ pfctl -nf /etc/pf.conf && pfctl -f /etc/pf.conf
 
 /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/update_mailserver_table
 /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/update_services_table
-/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/ensure_updates_table
 ```
+
+`ensure_updates_table` is deliberately absent: `<updates>` is empty at rest and
+is populated only by the update scripts, on entry.
 
 `pfctl -f` empties **every** persistent table, so repopulating is
 mandatory, not cosmetic. Without it, `usermail` and `userweb`
@@ -465,7 +473,7 @@ Install one through the dropQbsd package window, for example:
 Pkg qutebrowser
 ```
 
-Qsite uses `~/.cache/dropqbsd`; it must be owned by the conductor. If
+Qsite uses `~/.cache/dropQbsd`; it must be owned by the conductor. If
 it is root-owned, Qsite shows the cache-ownership popup with the
 `chown` command.
 
@@ -525,8 +533,8 @@ pfctl -t services -T show
 pfctl -t updates -T show
 ```
 
-Each should list the resolved IPs. If empty, re-run the
-corresponding `update_*` script (3.3).
+`<mailserver>` and `<services>` should list the resolved IPs. `<updates>` is
+expected to be **empty** at rest -- it is populated only while an update runs.
 
 ### 4.4 Resource limits
 
@@ -584,10 +592,10 @@ directory is missing, `qattach` creates it before importing.
   the popup with the copy commands if it is missing.
 - A supported browser is installed. If not, Qsite shows the
   no-browser popup and suggests `Pkg qutebrowser`.
-- `~/.cache/dropqbsd` is owned by the conductor. If it is root-owned,
+- `~/.cache/dropQbsd` is owned by the conductor. If it is root-owned,
   Qsite shows the cache-ownership popup with the `chown` command.
 - Qsite runs as the conductor from Qmenu; if it was run as root,
-  `~/.cache/dropqbsd` may be root:wheel.
+  `~/.cache/dropQbsd` may be root:wheel.
 
 ### 4.9 Session
 
@@ -662,8 +670,11 @@ chmod +x update.sh
 
 ### What the updater does
 
-- **Preserves** the operator's configuration. `local.conf` is the
-  single operator-owned file; it is never written.
+- **Preserves** the operator's configuration. `local.conf` is the only file
+  the updater never writes at all. Others are protected differently:
+  `~/.gtkrc-2.0`, `~/.xbindkeysrc` and the Xfe seeds are created once and
+  never replaced; the session stubs are replaced only when their
+  `# dropQbsd-stub` marker changes.
 - **Replaces** the project-owned files and directories, but only
   those whose content actually changed.
 - **Backs up** every file it overwrites, into a single versioned

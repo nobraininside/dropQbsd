@@ -1,5 +1,6 @@
 # dropQbsd -- Installation (manual procedure)
-For dropQbsd 0.4.0. Last reviewed: 2026-11
+
+For dropQbsd 0.4.0. Last reviewed: 2026-11-28.
 
 > **This is the manual, step-by-step procedure.** For the
 > recommended path -- the semi-automatic installer and updater --
@@ -399,7 +400,7 @@ start and shows the cache-ownership popup. The `nnn` plugins write
 their error log to a second, differently cased directory of their
 own -- `~/.cache/dropQbsd/nnn_plugins.log` -- which is created on first
 error and is **not** pre-created here. The two paths should be
-unified on the the `dropQbsd` spelling; until they are, look in both places
+unified on the `dropQbsd` spelling; until they are, look in both places
 when debugging (see 10.5). `~/Downloads` is created in the same pass: it is
 the import destination for `qattach` and `qimport`, and `qattach`
 only creates it as a fallback when it is missing.
@@ -538,8 +539,6 @@ file /opt/dropQbsd/bin/run_app
 
 Expect `ELF 64-bit ... statically linked`. `readelf` is not in the OpenBSD
 base system; `file` is, on both platforms.
-
-No output means no dynamic dependencies: the binary is static.
 
 ### Verify
 
@@ -963,11 +962,13 @@ hosts = 198.51.100.10 @myhost.xyz
 ```
 
 Hostnames prefixed with `@` are resolved via `userweb` DNS each time the
-table-update script runs. All three table scripts run **every 15 minutes via
-cron**, so IPs stay current without manual intervention. A `pfctl -f` reload
-empties every persistent table; the cron repopulates them within 15 minutes,
-so run `Gen` + `pfctl -f` and let the cron refill the tables -- or repopulate
-them by hand (see §7) if you need mail/web back before the next cycle.
+table-update script runs. Two of the three table scripts run **every 15 minutes via cron**
+(`update_mailserver_table`, `update_services_table`); `ensure_updates_table` runs
+on entry of each update script instead, and `<updates>` is empty at rest. A
+`pfctl -f` reload empties every persistent table, so the cron refills
+`<mailserver>` and `<services>` within 15 minutes -- run `Gen` + `pfctl -f` and
+let it catch up, or repopulate them by hand (see 7) if you need mail/web back
+before the next cycle. 
 
 ---
 
@@ -1003,11 +1004,12 @@ pfctl -f /etc/pf.conf
 ```sh
 Upmailserver
 Upservices
-Enupdates
 ```
 
-`Upmailserver` and `Upservices` resolve hostnames via `userweb` DNS;
-`Enupdates` writes the mirror blocks from `[updates]`.
+`Upmailserver` and `Upservices` resolve hostnames via `userweb` DNS.
+`<updates>` is deliberately not populated here: it is **empty at rest**, and the
+update scripts fill it on entry. Running `Enupdates` by hand would open root's
+egress to the mirrors until the next flush.
 
 **Ordering:** `gen_fwall` emits the table definitions (`table <mailserver>
 persist`, etc.) into `pf.conf`, so the tables exist -- empty -- when `pfctl -f`
@@ -1072,25 +1074,27 @@ paste into `crontab -e` over pre-existing entries unless you edit in place.
 
 ### Table lifecycle, and the one job not in the crontab
 
-**`<updates>` table lifecycle.** All three table scripts (`ensure_updates_table`,
-`update_mailserver_table`, `update_services_table`) run **every 15 minutes via cron**.
-On top of that, the update scripts (`patch_tru_fwall`, `pkg_tru_fwall`, `update_tru_fwall`,
-`upgrade_tru_fwall`) repopulate `<updates>` on entry, before opening the network window,
-and -- with `FLUSH_ON_EXIT=1`, the default -- flush it on exit. The flush empties the
-table when an update finishes; the `*/15` cron refills it within 15 minutes, so between
-updates the table is normally populated, and empty only in the interval between an update
-finishing and the next cron tick. `FLUSH_ON_EXIT=0` leaves it populated after the run.
-`<mailserver>` and `<services>` are never flushed by the update scripts: they are
-repopulated after any `pfctl -f` and remain populated for daily mail/web use. After a
-`pfctl -f` reload, all three tables are repopulated by the `*/15` cron (or by hand, see 7).
+**`<updates>` table lifecycle.** Only two table scripts run on a schedule:
+`update_mailserver_table` and `update_services_table`, both **every 15 minutes
+via cron**. The third, `ensure_updates_table`, is **not** scheduled. It runs on
+entry of each update script (`patch_tru_fwall`, `pkg_tru_fwall`,
+`update_tru_fwall`, `upgrade_tru_fwall`), before the network window opens, and
+again after the strict ruleset is restored -- except when `FLUSH_ON_EXIT=1` (the
+default), where the table is about to be emptied and repopulating it would be
+wasted work. With the default, `<updates>` is **empty at rest**: populated only
+while an update runs. `<mailserver>` and `<services>` are never flushed; they are
+repopulated after any `pfctl -f` and refilled by the `*/15` cron within 15
+minutes if they are ever emptied.
 
 The list of jobs NOT in the crontab is therefore: **`root_snapshot`**
 (on demand, from `qcontrol`, press `a`).
 
-**Where the `<updates>` egress rule lives.** The `pass out` rule that admits traffic to
-`<updates>` on ports 80/443 is emitted by `gen_fwall`, not declared in `domains.conf`,
-and it carries no `user` qualifier. `domains.conf` covers the three domain users only;
-this rule sits outside it and is in force whenever the table is populated.
+**Where the `<updates>` egress rule lives.** The `pass out` rule that admits
+traffic to `<updates>` on ports 80/443 is emitted by `gen_fwall`, not declared in
+`domains.conf`. It is scoped to `user root`: only root's own traffic is admitted,
+so the rule is inert for `userdoc`, `usermail` and `userweb` even when the table
+is populated. `domains.conf` covers the three domain users only; this rule sits
+outside it.
 
 ### Export/import race safety (by construction)
 
@@ -1204,7 +1208,7 @@ touch /home/drop/t_perm.txt
 chmod 600 /home/drop/t_perm.txt
 chgrp drop /home/drop/t_perm.txt
 sleep 150
-stat -f '%Mp%Lp %N' /home/drop/t_perm.txt
+stat -f '%Lp %N' /home/drop/t_perm.txt
 # 0440 /home/drop/t_perm.txt
 tail -1 /var/log/dropQbsd/enforce_drop.log
 # abandoned=0 quarantined=0 perms_fixed=1
@@ -1225,13 +1229,13 @@ ls /home/drop/_quarantine/
 touch /home/drop/userweb_export/www_t.tar.gz.tmp
 chmod 600 /home/drop/userweb_export/www_t.tar.gz.tmp
 sleep 150
-stat -f '%Mp%Lp %N' /home/drop/userweb_export/www_t.tar.gz.tmp
+stat -f '%Lp %N' /home/drop/userweb_export/www_t.tar.gz.tmp
 # 0600 ... -- must NOT be 440: root-owned files are outside both branches.
 ```
 
 ```sh
 # --- enforce_home: cron is running (watch for ~1 minute) ------
-before=$(tail -1 /var/log/dropQbsd/enforce_drop.log 2>/dev/null)
+before=$(tail -1 /var/log/dropQbsd/enforce_home.log 2>/dev/null)
 i=0
 while [ $i -lt 24 ]; do
     now=$(tail -1 /var/log/dropQbsd/enforce_home.log 2>/dev/null)
@@ -2197,8 +2201,8 @@ health.
 **What you see:**
 
 - **Domains** -- which compartments are active and what process is running in each
-- **Drop zone** -- files awaiting import (newer than 30 minutes), with the
-  file/quarantine totals in the section header, plus permissions and quarantine status
+- **Drop zone** -- files awaiting import, with the file/folder/quarantined totals in
+  the section header, plus permissions and quarantine status 
 - **System** -- PF state, load average, free space on /home, tmpfs usage, enforcement
   logs, integrity verification (requires root authentication)
 
@@ -2471,13 +2475,12 @@ For mpv, use `--vo=x11 --hwdec=no`.
 System updates are performed through the scripts in `/opt/dropQbsd/admin/`,
 using the restrictive firewall.
 
-Root has no general network access. At rest, its only standing egress is the
-`<updates>` rule emitted by `gen_fwall` -- not user-scoped, and described in
-section 8. During an update, each script populates the table on entry and
-prepends temporary DNS and HTTP/S rules (`grant_dns`); on completion it restores
-the strict ruleset (`revoke_dns`) and flushes the table on exit
-(`FLUSH_ON_EXIT=1`). `<mailserver>` and `<services>` are never flushed: they stay
-populated for daily use.
+Root has no general network access. At rest it has none at all: the `<updates>`
+table is empty, and the rule that admits traffic to it is scoped to `user root`,
+so an empty table means no path. Everything is opened per update by `grant_dns`
+and closed by `revoke_dns`, which also flushes the table. `<mailserver>` and
+`<services>` are never flushed: they stay populated for daily use. See section 8
+for the exact lifecycle.
 
 | Alias     | Script                 | Purpose                                                    |
 | --------- | ---------------------- | ---------------------------------------------------------- |

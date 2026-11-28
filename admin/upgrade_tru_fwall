@@ -172,7 +172,9 @@ revoke_dns() {
     if [ "$DNS_RULES_ADDED" -eq 1 ]; then
         pfctl -f /etc/pf.conf
         DNS_RULES_ADDED=0
-        "$ENSURE_SCRIPT"
+        if [ "$FLUSH_ON_EXIT" -eq 0 ]; then
+            "$ENSURE_SCRIPT"
+        fi 
         [ -x "$UPD_MAILSERV" ] && "$UPD_MAILSERV"
         [ -x "$UPD_SERVICES" ] && "$UPD_SERVICES"
         log "Temporary DNS access revoked; strict ruleset and tables restored."

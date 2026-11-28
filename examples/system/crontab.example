@@ -9,7 +9,6 @@ HOME=/root
 *       *       *       *       *       /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/enforce_sync
 
 # --- dropQbsd: PF table updates ---
-*/15    *       *       *       *       /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/ensure_updates_table
 */15    *       *       *       *       /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/update_mailserver_table
 */15     *       *       *       *       /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/update_services_table
 

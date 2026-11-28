@@ -1,3 +1,7 @@
+# dropQbsd -- GDPR
+
+For dropQbsd 0.4.0. Last reviewed: 2026-11-28.
+
 ## 1. The structural problem
 
 GDPR accountability rests on two pillars that most organisations treat as
@@ -104,7 +108,7 @@ The relevant properties for a controller are architectural, not procedural:
 | | Mainstream stack | dropQbsd on the BSD family |
 | -- | -- | -- |
 | **Telemetry** | Vendor-defined, on by default | None in the base system (applications are separate -- see section 4) |
-| **Auditability** | Closed source | ~6,500 lines of shell and C, all of it readable: ~3,900 shell, ~2,100 installer/updater, ~490 templates, 74 C |
+| **Auditability** | Closed source | ~6,580 lines of shell and C, all of it readable: ~3,900 shell, ~2,110 installer/updater, ~500 templates, 74 C |
 | **Licensing cost** | OS + productivity + endpoint security | None (ISC license) |
 | **Endpoint security model** | Reactive scanning software with root access | Domain isolation enforced by Unix permissions and `pf` |
 | **Verification method** | Contract, certification, audit report -- each an intermediary whose scope you must also trust | Direct source inspection -- no intermediary, no scope to negotiate |
@@ -113,7 +117,7 @@ The relevant properties for a controller are architectural, not procedural:
 The split matters more than the total. The **~3,900 lines that run** --
 `sbin/`, `libexec/`, `admin/` -- are covered by a signed manifest that
 `verify_integrity` checks every five minutes: tampering is detected, not
-merely discouraged. The **~2,100 that build the system**, in `installer/`, are
+merely discouraged. The **~2,110 that build the system**, in `installer/`, are
 not: they execute once, as root, before any firewall exists, and there is no
 runtime check on them. Review them as part of any procurement assessment, or
 accept them on trust. The distinction is stated because a controller
@@ -133,7 +137,7 @@ security auditing. **FreeBSD** is supported.
 
 Adopting dropQbsd changes what a controller can demonstrate:
 
-- **Data protection by design becomes architectural rather than declarative.** The base system has no telemetry to disable. Cross-domain propagation is prevented by Unix permissions and a default-deny firewall, policed every 60 seconds — not by policy. The safeguards are not described in a document; they are embodied in the architecture. This is what Art. 25(1) asks for: protection integrated *"into the processing itself."*
+- **Data protection by design becomes architectural rather than declarative.** The base system has no telemetry to disable. Cross-domain propagation is prevented by Unix permissions and a default-deny firewall, policed every 60 seconds -- not by policy. The safeguards are not described in a document; they are embodied in the architecture. This is what Art. 25(1) asks for: protection integrated *"into the processing itself."*
 - **Data protection by default becomes the starting point, not an opt-out.** Mainstream systems maximise collection and ask the user to retreat. dropQbsd starts from a default-deny posture: each domain can reach only what its function requires. There is nothing to disable because nothing is enabled that should not be.
 - **Staff awareness becomes operational rather than ceremonial.** Personnel work daily with a system that requires deliberate action to move data between contexts. This is not a substitute for a training programme; it is an environment in which the training has a corresponding practice. The controller can point to a system whose everyday use *is* the demonstration of awareness.
 
@@ -160,9 +164,9 @@ A provider that does not state its limits is a provider whose limits you are abo
 
 ## 5. On the separation of roles
 
-If a DPO also supplies the system they are assessing, the independence required by Art. 38(3) and Art. 39(1)(b) is compromised — not necessarily in intent, but in structure. The same principle that prevents a lawyer from advising a client and certifying the same matter applies here.
+If a DPO also supplies the system they are assessing, the independence required by Art. 38(3) and Art. 39(1)(b) is compromised -- not necessarily in intent, but in structure. The same principle that prevents a lawyer from advising a client and certifying the same matter applies here.
 
-**For a given controller, the roles must be separated:** either the provider of dropQbsd, or the DPO — not both. This is not a limitation of the project. It is the condition under which any recommendation of it remains credible.
+**For a given controller, the roles must be separated:** either the provider of dropQbsd, or the DPO -- not both. This is not a limitation of the project. It is the condition under which any recommendation of it remains credible.
 
 ---
 
@@ -170,10 +174,10 @@ If a DPO also supplies the system they are assessing, the independence required 
 
 If you advise clients on GDPR compliance while their processing runs on systems you cannot inspect, the question is worth asking directly:
 
-- Is the gap between what you claim and what you can verify something your architecture closes — or something your documentation is asked to cover?
+- Is the gap between what you claim and what you can verify something your architecture closes -- or something your documentation is asked to cover?
 - Can you verify what the operating system does with the personal data your client processes?
 - Can you determine what leaves the network, under what legal basis, and to whom?
 
-Where the answer is no, that gap is the controller's residual risk — not the vendor's.
+Where the answer is no, that gap is the controller's residual risk -- not the vendor's.
 
 dropQbsd offers one path to closing part of it: an auditable, telemetry-free, compartmentalized system with no licensing cost, running on hardware you already own. It is not a compliance certificate. It is a verifiable foundation.

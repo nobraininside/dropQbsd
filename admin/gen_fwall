@@ -504,7 +504,7 @@ emit_pf() {
             emit_domain "$DOMAIN" "$ACCOUNT" "$IFACE"
         done  
 
-        echo "pass out quick on $IFACE proto tcp from any to <updates> port { 80 443 } flags S/SA"
+        echo "pass out quick on $IFACE proto tcp from any to <updates> port { 80 443 } user root flags S/SA"
         echo ""
     } > "$TMP_OUTPUT"
 }

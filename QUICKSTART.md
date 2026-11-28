@@ -1,6 +1,6 @@
 # dropQbsd Quickstart
 
-For dropQbsd 0.4.0. Last reviewed: 2026-11.
+For dropQbsd 0.4.0. Last reviewed: 2026-11-28.
 
 This is the **installer-based** path to a working system, not the full
 manual. It gets you to immediate operability. Complete it with
@@ -299,7 +299,7 @@ starts directly; the `~/.xprofile` hook still runs.
 
 ### Regenerate the firewall
 
-As root. `pfctl -f` empties every persistent table, so the three `update_*`
+As root. `pfctl -f` empties every persistent table, so the two `update_*`
 calls belong to the same operation -- they are not optional.
 
 ```sh
@@ -309,8 +309,10 @@ GEN=openbsd               # FreeBSD: GEN=freebsd
 pfctl -nf /etc/pf.conf && pfctl -f /etc/pf.conf
 /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/update_mailserver_table
 /opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/update_services_table
-/opt/dropQbsd/libexec/wrapper /opt/dropQbsd/libexec/ensure_updates_table
 ```
+
+`ensure_updates_table` is deliberately absent: `<updates>` is empty at rest and
+is populated only by the update scripts, on entry.
 
 ### Qsite
 

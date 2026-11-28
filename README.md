@@ -13,7 +13,7 @@ Qubes-style domain isolation using native Unix users, `pf`, and `ksh`. Web, mail
 and documents run as separate users with no shared access except a policed drop
 zone. No hypervisor, no VM images, no daemon.
 
-About 6,560 lines in total, comments and blank lines excluded
+About 6,580 lines in total, comments and blank lines excluded
 (counted -- see [Recount it](#recount-it)). One person who knows shell
 can read all of it in a day -- and audit it, boundaries and all, in a few.
 
@@ -32,6 +32,8 @@ Zero lock-in.
 [![Repo](https://img.shields.io/badge/repo-tangled.org-9cf)](https://tangled.org/nobraininside.tngl.sh/dropQbsd)
 [![Mirror](https://img.shields.io/badge/mirror-GitHub-181717?logo=github)](https://github.com/nobraininside/dropQbsd)
 [![Mirror](https://img.shields.io/badge/mirror-SourceHut-000000?logo=git)](https://git.sr.ht/~nobraininside/dropQbsd)
+
+For dropQbsd 0.4.0. Last reviewed: 2026-11-28
 
 ---
 
@@ -53,8 +55,8 @@ Each domain -- web, mail, documents -- runs as a dedicated user. They share
 nothing except a single policed exchange directory. A handful of `ksh` scripts,
 a declarative firewall policy, and standard Unix permissions do the rest.
 
-No multi-gigabyte VM images. No Xen. No moving parts you can't audit in an
-afternoon.
+No multi-gigabyte VM images. No Xen. No moving parts you can't audit in a
+day.
 
 ---
 
@@ -613,9 +615,6 @@ is provided by the color schemes of terminals, `mc`, and `xfe` launchers
 
 Requires `dzen2`, `xdotool` and `xprop` (base X11).
 
-Color per domain, and where each color appears: see *Knowing where you are*,
-under Desktop Integration.
-
 ---
 
 ## Daily Usage
@@ -842,8 +841,8 @@ health.
 **What you see:**
 
 - **Domains** -- which compartments are active and what process is running in each
-- **Drop zone** -- files awaiting import (newer than 30 minutes), with the file/quarantine
-  totals in the section header, plus permissions and quarantine status
+- **Drop zone** -- files awaiting import, with the file/folder/quarantined totals in
+  the section header, plus permissions and quarantine status 
 - **System** -- PF state, load average, free space on /home, tmpfs usage, enforcement logs,
   integrity verification (requires root authentication)
 
@@ -916,15 +915,12 @@ INSTALL_MANUAL.md 10.13 for the setup.
 
 System updates are performed through the scripts in `/opt/dropQbsd/admin/`, using the restrictive firewall.
 
-Root has no general network access. The `<updates>` PF table is populated on
-entry of each update script and flushed on exit (`FLUSH_ON_EXIT=1`), but the
-`*/15` cron repopulates it -- so between updates the table is normally
-populated, and empty only in the interval between an update finishing and the
-next cron tick. Each update script prepends **temporary** DNS/HTTP rules for
-root (`grant_dns`), removed when the operation finishes (`revoke_dns`),
-restoring the strict ruleset. The `<updates>` egress rule is emitted by
-`gen_fwall` and is not scoped to a user; see INSTALL_MANUAL.md section 8.
-`<mailserver>` and `<services>` stay populated for daily use.
+Root has no general network access. At rest it has none: the `<updates>` PF table
+is empty, and the rule that admits traffic to it is scoped to `user root`, so an
+empty table means no path. Each update script populates the table on entry and
+prepends **temporary** DNS/HTTP rules for root (`grant_dns`); on completion it
+restores the strict ruleset (`revoke_dns`) and flushes the table on exit
+(`FLUSH_ON_EXIT=1`). `<mailserver>` and `<services>` stay populated for daily use.
 
 
 | Alias     | Purpose                                                    |
@@ -1100,7 +1096,7 @@ next run imports the complete archive.
 | ------------------------- | ------ | -------------------------------------------------------------------------------------------- |
 | `update_mailserver_table` | root   | Resolve mail server hostnames via userweb DNS, populate `<mailserver>` table from local.conf |
 | `update_services_table`   | root   | Populate `<services>` table from local.conf                                                  |
-| `ensure_updates_table`    | root   | Populate `<updates>` table with Fastly CDN blocks from local.conf                            |
+| `ensure_updates_table`    | root   | Populate <updates> on entry of each update script (not scheduled)                            |
 
 ### System Updates (root only)
 
@@ -1111,12 +1107,10 @@ next run imports the complete archive.
 | `upgrade_tru_fwall`   | root   | Upgrade to next BSD release through restrictive PF (reboots)                 |
 | `update_tru_fwall`    | root   | Full update: patch + firmware + pkg update + orphan cleanup                  |
 
-**`<updates>` lifecycle.** Populated on entry of every update script and
-flushed on exit (`FLUSH_ON_EXIT=1`), so it is normally populated between
-updates; the `*/15` cron refills it. The full lifecycle, and the `<updates>`
-egress rule that `gen_fwall` emits, are described in INSTALL_MANUAL.md
-section 8. `<mailserver>` and `<services>` are never flushed -- they stay
-populated for daily use.
+**`<updates>` lifecycle.** Not scheduled. Populated on entry of every update
+script and flushed on exit (`FLUSH_ON_EXIT=1`), so it is empty at rest.
+`<mailserver>` and `<services>` are the two the `*/15` cron keeps warm. Full
+detail, and the root-scoped egress rule, in INSTALL_MANUAL.md section 8.
 
 ### Integrity
 
@@ -1219,13 +1213,13 @@ Comments and blank lines excluded, in four parts:
 
 - **~3,900** of shell -- what runs: `sbin/`, `libexec/`, `admin/`.
   Covered by the signed manifest that `verify_integrity` checks.
-- **~2,100** for the `installer/` and `update.sh` tree -- what builds the
+- **~2,110** for the `installer/` and `update.sh` tree -- what builds the
   system. Runs once, as root, before any firewall exists. Not copied to
   `/opt`, so not covered by the manifest: it is read, or it is trusted.
-- **~490** of shell templates.
+- **~500** of shell templates.
 - **74** of C.
 
-Total: about 6,560 lines.
+Total: about 6,580 lines.
 
 Nothing up our sleeve -- the numbers are reproducible:
 
@@ -1323,6 +1317,18 @@ argument for dropQbsd is developed in full in [GDPR.md](./GDPR.md): why
 privacy by design (Art. 25) and staff training (Art. 39) are properties of
 the system  rather than of the policy document -- which is not a substitute
 for a training programme, but is the environment that gives it effect.
+
+---
+
+## How this was written
+
+The prose and a substantial part of the code were drafted with the help of
+large language models, used as editors and reviewers rather than as authors of
+record. Every change was read, tested on both platforms, and signed by the
+maintainer. The integrity manifest covers the code, not the documentation: the
+scripts are verifiable with `Verify`, the prose only by reading it. That
+asymmetry is stated here because it is the kind of thing this project asks of
+others.
 
 ---
 

@@ -461,7 +461,6 @@ print_manual_steps() {
     echo "      pfctl -nf /etc/pf.conf && pfctl -f /etc/pf.conf"
     echo "      ${INSTALL_DIR}/libexec/wrapper ${INSTALL_DIR}/libexec/update_mailserver_table"
     echo "      ${INSTALL_DIR}/libexec/wrapper ${INSTALL_DIR}/libexec/update_services_table"
-    echo "      ${INSTALL_DIR}/libexec/wrapper ${INSTALL_DIR}/libexec/ensure_updates_table"
     echo ""
     echo " 4. Run and verify the enforcers now (cron also runs them every minute):"
     echo ""

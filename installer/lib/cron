@@ -23,10 +23,13 @@
 #
 #  Exclusions asserted below (INSTALL_MANUAL.md 8):
 #  - root_snapshot is on demand from qcontrol, NOT cron.
-#
-#  ensure_updates_table IS in cron (*/15), and the check below asserts
-#  it: the update scripts repopulate <updates> on entry, but the cron
-#  keeps the table warm after any pfctl -f reload.
+#  - ensure_updates_table is NOT scheduled. <updates> is populated on
+#    entry of each update script and must stay empty at rest: the egress
+#    rule that admits traffic to it is scoped to `user root`, so a
+#    populated table means a permanent path to the mirrors. The check
+#    below warns rather than fails -- on an upgrade from an older
+#    version the line can survive OUTSIDE the # BEGIN dropQbsd block,
+#    because the block replacement only covers what is inside it. 
 #
 #  Sourced by install.sh. No shebang, no extension.
 # ==========================================================
@@ -74,9 +77,12 @@ install_cron() {
     check_sh "crontab -l | grep -q dropQbsd"
 
     # Assert the schedule shape. root_snapshot must NOT be in cron
-    # (it runs unasked); ensure_updates_table must be (it keeps the
-    # <updates> table warm after a pfctl -f reload). 
-    check_sh "crontab -l | grep -q ensure_updates_table"
+    # (it runs unasked). ensure_updates_table must NOT be in cron: 
+    # the table is populated on entry by the update scripts and
+    # must stay empty at rest. 
+    if crontab -l 2>/dev/null | grep -q 'ensure_updates_table'; then
+        warn "crontab still schedules ensure_updates_table -- remove that line"
+    fi 
     check_sh "! crontab -l | grep -q root_snapshot"
 
     # Every job must reference a script that exists and is

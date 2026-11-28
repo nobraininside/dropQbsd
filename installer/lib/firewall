@@ -25,13 +25,17 @@
 #  the v0.3.0 scripts):
 #    0  success, including "nothing to do" (section absent)
 #    2  not running as root -- a real failure
-#    3  FATAL: the table could not be populated. In
-#       ensure_updates_table this means no mirrors resolved,
-#       no IPs resolved, or the table is empty after replace.
-#       It is NOT a lock. A lock concept does not exist in
-#       these scripts. Exit 3 must STOP the install: a live
-#       firewall with an empty <updates> table silently breaks
-#       system updates later.
+#    3  FATAL: a table could not be populated. For
+#       update_mailserver_table this means no mail hostnames
+#       resolved; for update_services_table, no service entries.
+#       It is NOT a lock -- a lock concept does not exist in
+#       these scripts. Exit 3 must STOP the install: it must not
+#       declare success while usermail or userweb is offline
+#       because its table is empty. The */15 cron would refill
+#       either table later, but the operator has already been
+#       told the install worked.
+#       <updates> is deliberately NOT populated here: it is
+#       empty at rest and filled by the update scripts on entry.
 #    *  real failure -- stop the install
 #
 #  A firewall that fails to load leaves the system without
@@ -110,7 +114,7 @@ setup_firewall() {
         info "[dry-run] would run: $wrapper $gen $FW_BACKEND"
         info "[dry-run] would verify: pfctl -nf /etc/pf.conf"
         info "[dry-run] would apply: pfctl -f /etc/pf.conf"
-        info "[dry-run] would populate: update_mailserver_table update_services_table ensure_updates_table"
+        info "[dry-run] would populate: update_mailserver_table update_services_table"
         return 0
     fi
 
@@ -136,7 +140,7 @@ setup_firewall() {
         info "[dry-run] would run: $wrapper $gen $FW_BACKEND"
         info "[dry-run] would verify: pfctl -nf /etc/pf.conf"
         info "[dry-run] would apply: pfctl -f /etc/pf.conf"
-        info "[dry-run] would populate: update_mailserver_table update_services_table ensure_updates_table"
+        info "[dry-run] would populate: update_mailserver_table update_services_table"
         return 0
     fi
 
@@ -206,12 +210,9 @@ setup_firewall() {
         ;;
     esac
 
-    # 5. Repopulate the tables. Order matters: ensure_updates_table
-    # is the one the admin scripts depend on, and it does its own
-    # final empty-table check.
+    # 5. Repopulate the tables.
     populate_table update_mailserver_table
     populate_table update_services_table
-    populate_table ensure_updates_table
     success "firewall generated, applied, tables populated"
 }
 
